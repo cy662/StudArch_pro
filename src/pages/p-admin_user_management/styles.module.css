@@ -1,0 +1,46 @@
+
+
+.pageWrapper {
+  background-color: #f9fafb;
+  min-height: 100vh;
+}
+
+.sidebarTransition {
+  transition: all 0.3s ease-in-out;
+}
+
+.navItemActive {
+  background-color: #e1daf0;
+  color: #3b188c;
+  border-right: 3px solid #3b188c;
+}
+
+.navItem:hover {
+  background-color: #f3f4f6;
+  color: #745ab8;
+}
+
+.tableRow:hover {
+  background-color: #f9fafb;
+}
+
+.modalOverlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.modalContent {
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.formInputFocus:focus {
+  outline: none;
+  border-color: #745ab8;
+  box-shadow: 0 0 0 2px rgba(116, 90, 184, 0.2);
+}
+

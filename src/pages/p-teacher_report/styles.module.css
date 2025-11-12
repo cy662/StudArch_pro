@@ -1,0 +1,51 @@
+
+
+.pageWrapper {
+  background-color: #f9fafb;
+  min-height: 100vh;
+}
+
+.sidebarTransition {
+  transition: all 0.3s ease-in-out;
+}
+
+.cardHover:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+}
+
+.navItemActive {
+  background-color: #e1daf0;
+  color: #3b188c;
+  border-right: 3px solid #3b188c;
+}
+
+.navItem:hover {
+  background-color: #f3f4f6;
+  color: #745ab8;
+}
+
+.gradientBg {
+  background: linear-gradient(135deg, #e1daf0 0%, #f3f4f6 100%);
+}
+
+.chartContainer {
+  position: relative;
+  height: 300px;
+  width: 100%;
+}
+
+.tabActive {
+  background-color: #745ab8;
+  color: white;
+}
+
+.tabInactive {
+  background-color: #f3f4f6;
+  color: #6b7280;
+}
+
+.tabInactive:hover {
+  background-color: #e5e7eb;
+}
+
