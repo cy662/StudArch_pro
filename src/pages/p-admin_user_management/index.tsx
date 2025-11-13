@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import UserService from '../../services/userService_fixed';
 import { UserWithRole, UserSearchParams, UserListResponse } from '../../types/user';
+import * as XLSX from 'xlsx';
 
 interface UserFormData {
   username: string;
@@ -148,7 +149,7 @@ const AdminUserManagement: React.FC = () => {
         full_name: user.full_name,
         email: user.email,
         password: '',
-        status: user.status
+        status: user.status === 'active' || user.status === 'inactive' ? user.status as 'active' | 'inactive' : 'active'
       });
     } else {
       setFormData({
@@ -316,13 +317,25 @@ const AdminUserManagement: React.FC = () => {
       ['5. 学号/工号可以为空', '', '', '', '', '']
     ];
 
-    // 创建Excel文件（UTF-8 BOM编码，确保中文正确显示）
-    let csvContent = '\uFEFF'; // 添加BOM字符，确保Excel正确显示中文
-    templateData.forEach(row => {
-      csvContent += row.map(cell => `"${cell.replace(/"/g, '""')}"`).join(',') + '\r\n';
-    });
+    // 创建真正的Excel文件
+    const worksheet = XLSX.utils.aoa_to_sheet(templateData);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '用户导入模板');
+    
+    // 设置列宽（可选，让Excel文件更美观）
+    const colWidths = [
+      {wch: 15}, // 用户名列
+      {wch: 15}, // 角色列
+      {wch: 15}, // 学号/工号列
+      {wch: 15}, // 姓名列
+      {wch: 20}, // 邮箱列
+      {wch: 10}  // 状态列
+    ];
+    worksheet['!cols'] = colWidths;
 
-    const blob = new Blob([csvContent], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    // 生成Excel文件
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -353,44 +366,173 @@ const AdminUserManagement: React.FC = () => {
       
       reader.onload = async (e) => {
         try {
-          const content = e.target?.result as string;
-          const lines = content.split('\n');
+          const data = e.target?.result as ArrayBuffer;
+          console.log('文件内容:', data);
           
-          // 解析CSV数据
-          const headers = lines[0].split(',');
-          const importData = [];
+          let importData: any[] = [];
           
-          for (let i = 1; i < lines.length; i++) {
-            if (lines[i].trim()) {
-              const values = lines[i].split(',');
-              const row: any = {};
-              
-              headers.forEach((header, index) => {
-                row[header.trim()] = values[index] ? values[index].trim() : '';
-              });
-              
-              // 映射角色名称到角色ID
-              let roleId = '';
-              if (row['角色'] === 'teacher') {
-                roleId = roles.find(r => r.name === 'teacher')?.id || '';
-              } else if (row['角色'] === 'student') {
-                roleId = roles.find(r => r.name === 'student')?.id || '';
-              } else if (row['角色'] === 'super_admin') {
-                roleId = roles.find(r => r.name === 'super_admin')?.id || '';
-              }
-              
-              if (roleId && row['用户名'] && row['姓名'] && row['邮箱']) {
-                importData.push({
-                  username: row['用户名'],
-                  full_name: row['姓名'],
-                  email: row['邮箱'],
-                  user_number: row['学号/工号'] || '',
-                  role_id: roleId,
-                  status: row['状态'] === 'active' ? 'active' : 'inactive',
-                  password: '123456' // 默认密码
+          // 检查文件类型，处理Excel文件
+          if (importFile.name.endsWith('.xlsx') || importFile.name.endsWith('.xls')) {
+            // 解析Excel文件
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            
+            // 将Excel数据转换为JSON
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+            console.log('Excel解析后的数据:', jsonData);
+            
+            if (jsonData.length < 2) {
+              alert('Excel文件内容为空或格式不正确，请检查文件格式');
+              return;
+            }
+            
+            // 解析表头
+            const headers = jsonData[0].map((header: any) => 
+              String(header).replace(/"/g, '').trim()
+            );
+            console.log('Excel表头:', headers);
+            
+            // 处理数据行
+            for (let i = 1; i < jsonData.length; i++) {
+              const rowData = jsonData[i];
+              if (rowData && rowData.length > 0) {
+                const row: any = {};
+                
+                headers.forEach((header, index) => {
+                  row[header] = rowData[index] ? String(rowData[index]).trim() : '';
                 });
+                
+                // 映射角色名称到角色ID
+                let roleId = '';
+                const roleValue = row['角色'] || '';
+                
+                if (roleValue === 'teacher' || roleValue === '教师') {
+                  roleId = roles.find(r => r.role_name === 'teacher')?.id || '';
+                } else if (roleValue === 'student' || roleValue === '学生') {
+                  roleId = roles.find(r => r.role_name === 'student')?.id || '';
+                } else if (roleValue === 'super_admin' || roleValue === '超级管理员') {
+                  roleId = roles.find(r => r.role_name === 'super_admin')?.id || '';
+                }
+                
+                console.log('Excel行数据处理:', row, '角色ID:', roleId);
+                
+                // 检查必填字段
+                if (!row['用户名']) {
+                  console.log('跳过：用户名为空', row);
+                  continue;
+                }
+                if (!row['姓名']) {
+                  console.log('跳过：姓名为空', row);
+                  continue;
+                }
+                if (!row['邮箱']) {
+                  console.log('跳过：邮箱为空', row);
+                  continue;
+                }
+                
+                if (roleId && row['用户名'] && row['姓名'] && row['邮箱']) {
+                  importData.push({
+                    username: row['用户名'],
+                    full_name: row['姓名'],
+                    email: row['邮箱'],
+                    user_number: row['学号/工号'] || '',
+                    role_id: roleId,
+                    status: row['状态'] === 'active' ? 'active' : 'inactive',
+                    password: '123456' // 默认密码，UserService会映射到password_hash
+                  });
+                } else {
+                  console.log('跳过：角色匹配失败或必填字段缺失', row);
+                }
               }
             }
+            
+          } else {
+            // 处理CSV文件（原有逻辑）
+            const content = new TextDecoder().decode(data);
+            console.log('CSV文件内容:', content);
+            
+            // 改进的CSV解析：处理各种换行符和编码
+            const lines = content
+              .replace(/\r\n/g, '\n')  // 统一换行符
+              .replace(/\r/g, '\n')   // 处理Mac格式
+              .split('\n')
+              .filter(line => line.trim() && !line.includes('说明：'));
+            console.log('CSV解析后的行数:', lines.length);
+            
+            if (lines.length < 2) {
+              alert('CSV文件内容为空或格式不正确，请检查文件格式');
+              return;
+            }
+            
+            // 解析表头，去除引号
+            const headers = lines[0].split(',').map(header => 
+              header.replace(/"/g, '').trim()
+            );
+            console.log('CSV表头:', headers);
+            
+            for (let i = 1; i < lines.length; i++) {
+              if (lines[i].trim()) {
+                // 改进数据行解析：去除引号
+                const values = lines[i].split(',').map(value => 
+                  value.replace(/"/g, '').trim()
+                );
+                const row: any = {};
+                
+                headers.forEach((header, index) => {
+                  row[header] = values[index] || '';
+                });
+                
+                // 映射角色名称到角色ID
+                let roleId = '';
+                const roleValue = row['角色'] || '';
+                
+                if (roleValue === 'teacher' || roleValue === '教师') {
+                  roleId = roles.find(r => r.role_name === 'teacher')?.id || '';
+                } else if (roleValue === 'student' || roleValue === '学生') {
+                  roleId = roles.find(r => r.role_name === 'student')?.id || '';
+                } else if (roleValue === 'super_admin' || roleValue === '超级管理员') {
+                  roleId = roles.find(r => r.role_name === 'super_admin')?.id || '';
+                }
+                
+                console.log('CSV行数据处理:', row, '角色ID:', roleId);
+                
+                // 检查必填字段
+                if (!row['用户名']) {
+                  console.log('跳过：用户名为空', row);
+                  continue;
+                }
+                if (!row['姓名']) {
+                  console.log('跳过：姓名为空', row);
+                  continue;
+                }
+                if (!row['邮箱']) {
+                  console.log('跳过：邮箱为空', row);
+                  continue;
+                }
+                
+                if (roleId && row['用户名'] && row['姓名'] && row['邮箱']) {
+                  importData.push({
+                    username: row['用户名'],
+                    full_name: row['姓名'],
+                    email: row['邮箱'],
+                    user_number: row['学号/工号'] || '',
+                    role_id: roleId,
+                    status: row['状态'] === 'active' ? 'active' : 'inactive',
+                    password: '123456' // 默认密码，UserService会映射到password_hash
+                  });
+                } else {
+                  console.log('跳过：角色匹配失败或必填字段缺失', row);
+                }
+              }
+            }
+          }
+          
+          console.log('最终导入数据:', importData);
+          
+          if (importData.length === 0) {
+            alert('没有找到可导入的用户数据。请检查：\n1. 文件格式是否正确（支持.xlsx, .xls, .csv格式）\n2. 数据是否按照模板格式填写\n3. 角色名称是否正确（teacher/教师, student/学生, super_admin/超级管理员）\n4. 必填字段是否完整（用户名、姓名、邮箱）');
+            return;
           }
           
           // 批量导入用户
@@ -401,6 +543,7 @@ const AdminUserManagement: React.FC = () => {
             try {
               await UserService.createUser(userData);
               successCount++;
+              console.log('成功导入用户:', userData.username);
             } catch (error) {
               console.error(`导入用户失败: ${userData.username}`, error);
               errorCount++;
@@ -427,7 +570,7 @@ const AdminUserManagement: React.FC = () => {
           
         } catch (error) {
           console.error('解析文件失败:', error);
-          alert('文件格式错误，请检查模板格式');
+          alert('文件格式错误，请检查模板格式。支持.xlsx, .xls, .csv格式的文件。');
         }
       };
       
@@ -435,7 +578,12 @@ const AdminUserManagement: React.FC = () => {
         alert('文件读取失败，请重试');
       };
       
-      reader.readAsText(importFile);
+      // 根据文件类型选择读取方式
+      if (importFile.name.endsWith('.xlsx') || importFile.name.endsWith('.xls')) {
+        reader.readAsArrayBuffer(importFile);
+      } else {
+        reader.readAsText(importFile);
+      }
       
     } catch (error) {
       console.error('导入失败:', error);

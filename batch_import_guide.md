@@ -24,48 +24,34 @@ graph TD
 
 ## Excel模板格式
 
-### 教师导入模板
+### 统一用户导入模板
 
-**文件命名**: `teachers_import_template.xlsx`
+系统现在支持直接导入Excel文件（.xlsx, .xls格式），无需转换为CSV。推荐使用系统提供的模板文件进行数据填写。
 
-| 字段名 | 数据类型 | 必填 | 说明 | 示例 |
-|--------|----------|------|------|------|
-| username | 文本 | 是 | 用户名，唯一，3-50字符 | zhang_teacher |
-| email | 文本 | 否 | 邮箱地址 | zhang@school.edu |
-| user_number | 文本 | 是 | 教师工号，唯一 | T2024001 |
-| full_name | 文本 | 是 | 教师姓名 | 张老师 |
-| department | 文本 | 是 | 所属院系 | 计算机学院 |
-| phone | 文本 | 否 | 手机号码 | 13800138000 |
-
-**示例数据行**:
-```
-username,email,user_number,full_name,department,phone
-zhang_teacher,zhang@school.edu,T2024001,张老师,计算机学院,13800138000
-li_teacher,li@school.edu,T2024002,李老师,数学学院,13900139000
-wang_teacher,wang@school.edu,T2024003,王老师,物理学院,13700137000
-```
-
-### 学生导入模板
-
-**文件命名**: `students_import_template.xlsx`
+**模板字段说明**:
 
 | 字段名 | 数据类型 | 必填 | 说明 | 示例 |
 |--------|----------|------|------|------|
-| username | 文本 | 是 | 用户名，唯一，3-50字符 | student_2021001 |
-| email | 文本 | 否 | 邮箱地址 | 2021001@student.school.edu |
-| user_number | 文本 | 是 | 学生学号，唯一 | 2021001 |
-| full_name | 文本 | 是 | 学生姓名 | 李小明 |
-| department | 文本 | 是 | 所属院系 | 计算机学院 |
-| grade | 文本 | 是 | 年级 | 2021级 |
-| class_name | 文本 | 是 | 班级名称 | 计算机科学与技术1班 |
-| phone | 文本 | 否 | 手机号码 | 13800138000 |
+| 用户名 | 文本 | 是 | 用户名，唯一，3-50字符 | teacher_zhang |
+| 角色 | 文本 | 是 | 用户角色：teacher/教师, student/学生, super_admin/超级管理员 | teacher |
+| 学号/工号 | 文本 | 否 | 学生学号或教师工号 | T2024001 或 2021001 |
+| 姓名 | 文本 | 是 | 用户真实姓名 | 张老师 |
+| 邮箱 | 文本 | 是 | 邮箱地址 | zhang@example.com |
+| 状态 | 文本 | 否 | 用户状态：active(启用), inactive(停用) | active |
 
 **示例数据行**:
-```
-username,email,user_number,full_name,department,grade,class_name,phone
-student_2021001,2021001@student.school.edu,2021001,李小明,计算机学院,2021级,计算机科学与技术1班,13800138000
-student_2021002,2021002@student.school.edu,2021002,王小红,数学学院,2021级,数学与应用数学1班,13900139000
-```
+
+| 用户名 | 角色 | 学号/工号 | 姓名 | 邮箱 | 状态 |
+|--------|------|-----------|------|------|------|
+| teacher_zhang | teacher | T2024001 | 张老师 | zhang@example.com | active |
+| student_li | student | 2021001 | 李同学 | li@example.com | active |
+| admin_wang | super_admin | ADMIN001 | 王管理员 | wang@example.com | active |
+
+### 文件格式支持
+- **Excel格式**: `.xlsx` (推荐), `.xls`
+- **CSV格式**: `.csv` (兼容原有格式)
+- **文件大小**: 最大支持 10MB
+- **编码**: UTF-8 (推荐)
 
 ## 数据验证规则
 

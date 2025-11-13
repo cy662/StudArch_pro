@@ -1,0 +1,4 @@
+用户名,角色,学号/工号,姓名,邮箱,状态
+teacher_zhang,teacher,T2024001,张老师,zhang@example.com,active
+student_li,student,2021001,李同学,li@example.com,active
+admin_wang,super_admin,ADMIN001,王管理员,wang@example.com,active
