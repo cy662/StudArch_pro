@@ -19,7 +19,7 @@ export class AuthService {
     try {
       const { identifier, password } = credentials
       
-      // 首先查找用户（支持用户名、学号、邮箱登录）
+      // 查找用户（支持用户名、学号、邮箱登录）
       const { data: users, error: userError } = await supabase
         .from('users')
         .select(`

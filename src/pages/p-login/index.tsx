@@ -6,10 +6,10 @@ import styles from './styles.module.css';
 import AuthService, { LoginCredentials } from '../../services/authService';
 
 interface LoginFormData {
-  identifier: string; // 用户名、学号或工号
+  identifier: string; // 学号或工号
   password: string;
   captcha: string;
-  loginType: 'username' | 'student_id' | 'teacher_id'; // 登录方式
+  loginType: 'student_id' | 'teacher_id'; // 登录方式
 }
 
 const LoginPage: React.FC = () => {
@@ -20,7 +20,7 @@ const LoginPage: React.FC = () => {
     identifier: '',
     password: '',
     captcha: '',
-    loginType: 'username'
+    loginType: 'student_id'
   });
   
   // UI状态
@@ -58,6 +58,15 @@ const LoginPage: React.FC = () => {
     setShowPassword(!showPassword);
   };
 
+  // 登录方式切换
+  const handleLoginTypeChange = (type: 'student_id' | 'teacher_id') => {
+    setFormData(prev => ({
+      ...prev,
+      loginType: type,
+      identifier: '' // 清空输入框
+    }));
+  };
+
   // 验证码刷新
   const handleRefreshCaptcha = () => {
     generateCaptcha();
@@ -92,7 +101,7 @@ const LoginPage: React.FC = () => {
     const { identifier, password, captcha } = formData;
 
     if (!identifier.trim()) {
-      showErrorMessage('请输入用户名/学号/工号');
+      showErrorMessage('请输入学号/工号');
       return false;
     }
 
@@ -118,8 +127,8 @@ const LoginPage: React.FC = () => {
       return false;
     }
 
-    if (formData.loginType === 'teacher_id' && !/^[A-Za-z]\d{3,8}$/.test(identifier)) {
-      showErrorMessage('请输入正确的工号格式（字母开头，3-8位数字）');
+    if (formData.loginType === 'teacher_id' && !/^[A-Za-z]+\d{1,8}$/.test(identifier)) {
+      showErrorMessage('请输入正确的工号格式（字母开头，后跟1-8位数字，如：T2024001 或 ADMIN001）');
       return false;
     }
 
@@ -139,19 +148,13 @@ const LoginPage: React.FC = () => {
       // 根据角色跳转到不同页面
       const redirectPath = AuthService.getRedirectPath(result.user.role.role_name);
       navigate(redirectPath);
+      setIsLoading(false); // 登录成功后关闭加载状态
     } else {
       throw new Error(result.error || '登录失败');
     }
   };
 
-  // 登录方式切换
-  const handleLoginTypeChange = (type: 'username' | 'student_id' | 'teacher_id') => {
-    setFormData(prev => ({
-      ...prev,
-      loginType: type,
-      identifier: '' // 清空输入框
-    }));
-  };
+
 
   // 表单提交处理
   const handleSubmit = async (e: React.FormEvent) => {
@@ -170,7 +173,9 @@ const LoginPage: React.FC = () => {
         password: password.trim()
       });
     } catch (error) {
-      showErrorMessage(error as string);
+      // 确保错误信息是字符串，避免直接渲染错误对象
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      showErrorMessage(errorMessage);
       setIsLoading(false);
       generateCaptcha();
     }
@@ -238,17 +243,6 @@ const LoginPage: React.FC = () => {
             <div className="flex space-x-2 mb-4">
               <button
                 type="button"
-                onClick={() => handleLoginTypeChange('username')}
-                className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
-                  formData.loginType === 'username'
-                    ? 'bg-secondary text-white'
-                    : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
-                }`}
-              >
-                用户名登录
-              </button>
-              <button
-                type="button"
                 onClick={() => handleLoginTypeChange('student_id')}
                 className={`flex-1 py-2 px-4 rounded-lg text-sm font-medium transition-colors ${
                   formData.loginType === 'student_id'
@@ -274,14 +268,12 @@ const LoginPage: React.FC = () => {
             {/* 标识符输入框 */}
             <div className="space-y-2">
               <label htmlFor="identifier" className="block text-sm font-medium text-text-primary">
-                {formData.loginType === 'username' && '用户名'}
                 {formData.loginType === 'student_id' && '学号'}
                 {formData.loginType === 'teacher_id' && '工号'}
               </label>
               <div className="relative">
                 <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <i className={`fas ${
-                    formData.loginType === 'username' ? 'fa-user' :
                     formData.loginType === 'student_id' ? 'fa-graduation-cap' :
                     'fa-chalkboard-teacher'
                   } text-text-secondary`}></i>
@@ -296,7 +288,6 @@ const LoginPage: React.FC = () => {
                   onBlur={handleInputBlur}
                   className={`w-full pl-10 pr-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus} transition-all duration-300`}
                   placeholder={
-                    formData.loginType === 'username' ? '请输入用户名' :
                     formData.loginType === 'student_id' ? '请输入学号（5-12位数字）' :
                     '请输入工号（字母开头，3-8位数字）'
                   }
