@@ -4,7 +4,18 @@ import { useAuth } from '../../hooks/useAuth';
 import StudentProfileService from '../../services/studentProfileService';
 import useStudentProfile from '../../hooks/useStudentProfile';
 import { StudentProfile, StudentProfileFormData as StudentProfileDBFormData, UserWithRole } from '../../types/user';
-import styles from './styles.module.css';
+
+// 样式类名常量
+const STYLES = {
+  pageWrapper: 'bg-gray-50 min-h-screen',
+  sidebarTransition: 'transition-all duration-300 ease-in-out',
+  navItem: 'flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors',
+  navItemActive: 'bg-purple-100 text-purple-800 border-r-2 border-purple-800',
+  sectionCard: 'bg-white rounded-xl shadow-sm border border-gray-200',
+  readonlyField: 'bg-gray-50 border-gray-300 text-gray-600 cursor-not-allowed',
+  editableField: 'bg-white border-gray-300 text-gray-900',
+  formInputFocus: 'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200'
+};
 
 interface StudentProfileFormData {
   studentId: string;
@@ -228,33 +239,74 @@ const StudentProfileEdit: React.FC = () => {
         throw new Error('用户信息获取失败，请重新登录');
       }
 
+      console.log('开始保存个人信息，用户ID:', currentUser.id);
+      console.log('表单数据:', profile);
+
       // 转换表单数据为数据库格式
-      const profileData: any = {
+      const profileData: StudentProfileDBFormData = {
         gender: profile.studentGender,
-        birth_date: profile.birthDate,
-        id_card: profile.idCard,
-        nationality: profile.ethnicity,
-        political_status: profile.politicalStatus,
+        birth_date: profile.birthDate || undefined,
+        id_card: profile.idCard || undefined,
+        nationality: profile.ethnicity || undefined,
+        political_status: profile.politicalStatus || undefined,
         phone: profile.contactPhone,
-        emergency_contact: profile.emergencyContactName,
+        emergency_contact: profile.emergencyContactName || undefined,
         emergency_phone: profile.emergencyContactPhone,
-        home_address: profile.homeAddress,
+        home_address: profile.homeAddress || undefined,
         admission_date: profile.enrollmentYear ? `${profile.enrollmentYear}-09-01` : undefined,
         graduation_date: profile.enrollmentYear ? `${parseInt(profile.enrollmentYear) + 4}-06-30` : undefined,
         student_type: '全日制'
       };
 
+      console.log('转换后的数据库数据:', profileData);
+
       // 保存到数据库
-      await StudentProfileService.createOrUpdateStudentProfile(currentUser.id, profileData as StudentProfileDBFormData);
+      const result = await StudentProfileService.createOrUpdateStudentProfile(currentUser.id, profileData);
+      console.log('保存成功，返回结果:', result);
       
-      // 刷新个人资料
+      // 添加延迟确保数据库更新完成
+      await new Promise(resolve => setTimeout(resolve, 800));
+      
+      // 强制刷新个人资料 - 使用更激进的刷新策略
       await refreshStudentProfile();
       await refreshProfile();
       
-      showSuccessMessage('个人信息保存成功！');
+      // 使用新的查询重新获取最新数据
+      const latestProfile = await StudentProfileService.getStudentProfile(currentUser.id);
+      console.log('保存后最新数据:', latestProfile);
+      
+      // 检查数据是否真正同步
+      if (latestProfile) {
+        const isSynced = 
+          latestProfile.phone === profileData.phone &&
+          latestProfile.emergency_phone === profileData.emergency_phone &&
+          latestProfile.home_address === profileData.home_address;
+        
+        if (isSynced) {
+          showSuccessMessage('个人信息保存成功！数据已实时同步到档案中。');
+        } else {
+          showSuccessMessage('个人信息保存成功！数据正在同步中，请稍后刷新页面查看。');
+        }
+      } else {
+        showSuccessMessage('个人信息保存成功！');
+      }
     } catch (error) {
       console.error('保存个人信息失败:', error);
-      showErrorMessage('保存失败，请稍后重试：' + (error instanceof Error ? error.message : '未知错误'));
+      
+      // 提供更详细的错误信息
+      let errorMessage = '保存失败，请稍后重试';
+      if (error instanceof Error) {
+        errorMessage += `：${error.message}`;
+        
+        // 根据错误类型提供更具体的建议
+        if (error.message.includes('RLS') || error.message.includes('policy')) {
+          errorMessage += '。请检查数据库权限设置。';
+        } else if (error.message.includes('network') || error.message.includes('fetch')) {
+          errorMessage += '。请检查网络连接。';
+        }
+      }
+      
+      showErrorMessage(errorMessage);
     } finally {
       setSaving(false);
     }
@@ -333,7 +385,7 @@ const StudentProfileEdit: React.FC = () => {
   }
 
   return (
-    <div className={styles.pageWrapper}>
+    <div className={STYLES.pageWrapper}>
       {/* 顶部导航栏 */}
       <header className="fixed top-0 left-0 right-0 bg-white border-b border-border-light h-16 z-50">
         <div className="flex items-center justify-between h-full px-6">
@@ -365,7 +417,7 @@ const StudentProfileEdit: React.FC = () => {
                   {loading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '未知用户')}
                 </div>
                 <div className="text-text-secondary">
-                  {loading ? '加载中...' : (currentUser?.role === 'student' ? '学生' : currentUser?.role || '用户')}
+                  {loading ? '加载中...' : (currentUser?.role === 'student' ? '学生' : (typeof currentUser?.role === 'object' ? '未知角色' : currentUser?.role || '用户'))}
                 </div>
               </div>
               <i className="fas fa-chevron-down text-xs text-text-secondary"></i>
@@ -383,11 +435,11 @@ const StudentProfileEdit: React.FC = () => {
       </header>
 
       {/* 左侧菜单 */}
-      <aside className={`fixed left-0 top-16 bottom-0 w-64 bg-white border-r border-border-light z-40 ${styles.sidebarTransition}`}>
+      <aside className={`fixed left-0 top-16 bottom-0 w-64 bg-white border-r border-border-light z-40 ${STYLES.sidebarTransition}`}>
         <nav className="p-4 space-y-2">
           <Link 
             to="/student-dashboard" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
+            className={`${STYLES.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
           >
             <i className="fas fa-home text-lg"></i>
             <span className="font-medium">学生服务平台</span>
@@ -395,7 +447,7 @@ const StudentProfileEdit: React.FC = () => {
           
           <Link 
             to="/student-my-profile" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
+            className={`${STYLES.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
           >
             <i className="fas fa-user text-lg"></i>
             <span className="font-medium">我的档案</span>
@@ -403,7 +455,7 @@ const StudentProfileEdit: React.FC = () => {
           
           <Link 
             to="/student-profile-edit" 
-            className={`${styles.navItem} ${styles.navItemActive} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors`}
+            className={`${STYLES.navItem} ${STYLES.navItemActive} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors`}
           >
             <i className="fas fa-edit text-lg"></i>
             <span className="font-medium">个人信息维护</span>
@@ -411,7 +463,7 @@ const StudentProfileEdit: React.FC = () => {
           
           <Link 
             to="/student-graduation-fill" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
+            className={`${STYLES.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
           >
             <i className="fas fa-rocket text-lg"></i>
             <span className="font-medium">毕业去向填报</span>
@@ -419,7 +471,7 @@ const StudentProfileEdit: React.FC = () => {
           
           <Link 
             to="/student-document-view" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
+            className={`${STYLES.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
           >
             <i className="fas fa-file-alt text-lg"></i>
             <span className="font-medium">信息查看与下载</span>
@@ -460,7 +512,7 @@ const StudentProfileEdit: React.FC = () => {
         {/* 个人信息表单 */}
         <div className="space-y-6">
           {/* 基本信息区域 */}
-          <section className={`${styles.sectionCard} p-6`}>
+          <section className={`${STYLES.sectionCard} p-6`}>
             <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center">
               <i className="fas fa-user-circle text-secondary mr-2"></i>
               基本信息
@@ -473,7 +525,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="student-id" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                   value={profile.studentId} 
                   readOnly 
                 />
@@ -487,7 +539,7 @@ const StudentProfileEdit: React.FC = () => {
                   <input 
                     type="text" 
                     id="student-name" 
-                    className={`flex-1 px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                    className={`flex-1 px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                     value={profile.studentName} 
                     readOnly 
                   />
@@ -529,7 +581,7 @@ const StudentProfileEdit: React.FC = () => {
                   <input 
                     type="text" 
                     id="id-card" 
-                    className={`flex-1 px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                    className={`flex-1 px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                     value={profile.idCard} 
                     readOnly 
                   />
@@ -550,7 +602,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="ethnicity" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.editableField} ${styles.formInputFocus}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   placeholder="请输入民族"
                   value={profile.ethnicity}
                   onChange={(e) => handleInputChange('ethnicity', e.target.value)}
@@ -564,7 +616,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="date" 
                   id="birth-date" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.editableField} ${styles.formInputFocus}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   value={profile.birthDate}
                   onChange={(e) => handleInputChange('birthDate', e.target.value)}
                 />
@@ -576,7 +628,7 @@ const StudentProfileEdit: React.FC = () => {
                 <label htmlFor="political-status" className="block text-sm font-medium text-text-primary">政治面貌</label>
                 <select 
                   id="political-status" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.editableField} ${styles.formInputFocus}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   value={profile.politicalStatus}
                   onChange={(e) => handleInputChange('politicalStatus', e.target.value)}
                 >
@@ -593,7 +645,7 @@ const StudentProfileEdit: React.FC = () => {
           </section>
 
           {/* 联系方式区域 */}
-          <section className={`${styles.sectionCard} p-6`}>
+          <section className={`${STYLES.sectionCard} p-6`}>
             <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center">
               <i className="fas fa-phone text-secondary mr-2"></i>
               联系方式
@@ -606,7 +658,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="tel" 
                   id="contact-phone" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.editableField} ${styles.formInputFocus}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   placeholder="请输入手机号码"
                   value={profile.contactPhone}
                   onChange={(e) => handleInputChange('contactPhone', e.target.value)}
@@ -620,7 +672,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="email" 
                   id="email" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.editableField} ${styles.formInputFocus}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   placeholder="请输入邮箱地址"
                   value={profile.email}
                   onChange={(e) => handleInputChange('email', e.target.value)}
@@ -634,7 +686,7 @@ const StudentProfileEdit: React.FC = () => {
                 <textarea 
                   id="home-address" 
                   rows={3}
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.editableField} ${styles.formInputFocus} resize-none`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus} resize-none`}
                   placeholder="请输入详细家庭地址"
                   value={profile.homeAddress}
                   onChange={(e) => handleInputChange('homeAddress', e.target.value)}
@@ -645,7 +697,7 @@ const StudentProfileEdit: React.FC = () => {
           </section>
 
           {/* 紧急联系人区域 */}
-          <section className={`${styles.sectionCard} p-6`}>
+          <section className={`${STYLES.sectionCard} p-6`}>
             <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center">
               <i className="fas fa-exclamation-triangle text-secondary mr-2"></i>
               紧急联系人
@@ -658,7 +710,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="emergency-contact-name" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.editableField} ${styles.formInputFocus}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   placeholder="请输入联系人姓名"
                   value={profile.emergencyContactName}
                   onChange={(e) => handleInputChange('emergencyContactName', e.target.value)}
@@ -672,7 +724,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="tel" 
                   id="emergency-contact-phone" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.editableField} ${styles.formInputFocus}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   placeholder="请输入联系人手机号码"
                   value={profile.emergencyContactPhone}
                   onChange={(e) => handleInputChange('emergencyContactPhone', e.target.value)}
@@ -683,7 +735,7 @@ const StudentProfileEdit: React.FC = () => {
           </section>
 
           {/* 学籍信息区域 */}
-          <section className={`${styles.sectionCard} p-6`}>
+          <section className={`${STYLES.sectionCard} p-6`}>
             <h3 className="text-lg font-semibold text-text-primary mb-4 flex items-center">
               <i className="fas fa-graduation-cap text-secondary mr-2"></i>
               学籍信息
@@ -696,7 +748,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="department" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                   value={profile.department} 
                   readOnly 
                 />
@@ -709,7 +761,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="major" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                   value={profile.major} 
                   readOnly 
                 />
@@ -722,7 +774,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="class" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                   value={profile.class} 
                   readOnly 
                 />
@@ -735,7 +787,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="enrollment-year" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                   value={profile.enrollmentYear} 
                   readOnly 
                 />
@@ -748,7 +800,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="academic-system" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                   value={profile.academicSystem} 
                   readOnly 
                 />
@@ -761,7 +813,7 @@ const StudentProfileEdit: React.FC = () => {
                 <input 
                   type="text" 
                   id="academic-status" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.readonlyField}`}
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
                   value={profile.academicStatus} 
                   readOnly 
                 />
@@ -770,35 +822,51 @@ const StudentProfileEdit: React.FC = () => {
             </div>
           </section>
 
-          {/* 操作按钮区域 */}
-          <div className="flex justify-end space-x-4 pt-6">
+        {/* 操作按钮区域 */}
+        <div className="flex justify-end space-x-4 pt-6">
+          {/* 调试按钮（仅开发环境显示） */}
+          {process.env.NODE_ENV === 'development' && (
             <button 
               type="button" 
-              onClick={handleCancel}
-              disabled={saving}
-              className="px-6 py-2 border border-border-light text-text-secondary rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+              onClick={() => {
+                console.log('当前表单数据:', profile);
+                console.log('当前用户信息:', currentUser);
+                console.log('学生个人信息:', studentProfile);
+                showSuccessMessage('调试信息已输出到控制台');
+              }}
+              className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-sm"
             >
-              取消
+              调试信息
             </button>
-            <button 
-              type="button" 
-              onClick={handleSave}
-              disabled={saving}
-              className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center"
-            >
-              {saving ? (
-                <>
-                  <i className="fas fa-spinner fa-spin mr-2"></i>
-                  保存中...
-                </>
-              ) : (
-                <>
-                  <i className="fas fa-save mr-2"></i>
-                  保存修改
-                </>
-              )}
-            </button>
-          </div>
+          )}
+          
+          <button 
+            type="button" 
+            onClick={handleCancel}
+            disabled={saving}
+            className="px-6 py-2 border border-border-light text-text-secondary rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+          >
+            取消
+          </button>
+          <button 
+            type="button" 
+            onClick={handleSave}
+            disabled={saving}
+            className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center"
+          >
+            {saving ? (
+              <>
+                <i className="fas fa-spinner fa-spin mr-2"></i>
+                保存中...
+              </>
+            ) : (
+              <>
+                <i className="fas fa-save mr-2"></i>
+                保存修改
+              </>
+            )}
+          </button>
+        </div>
         </div>
       </main>
 
@@ -849,7 +917,7 @@ const StudentProfileEdit: React.FC = () => {
                   <input 
                     type="text" 
                     id="new-value" 
-                    className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
+                    className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.formInputFocus}`}
                     placeholder="请输入新值"
                     value={changeApplication.newValue}
                     onChange={(e) => setChangeApplication(prev => ({ ...prev, newValue: e.target.value }))}
@@ -861,7 +929,7 @@ const StudentProfileEdit: React.FC = () => {
                   <textarea 
                     id="change-reason" 
                     rows={3}
-                    className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus} resize-none`}
+                    className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.formInputFocus} resize-none`}
                     placeholder="请说明修改原因"
                     value={changeApplication.reason}
                     onChange={(e) => setChangeApplication(prev => ({ ...prev, reason: e.target.value }))}
