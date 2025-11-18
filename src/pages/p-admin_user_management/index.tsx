@@ -690,12 +690,6 @@ const AdminUserManagement: React.FC = () => {
           
           {/* 用户信息和操作 */}
           <div className="flex items-center space-x-4">
-            {/* 消息通知 */}
-            <button className="relative p-2 text-text-secondary hover:text-secondary transition-colors">
-              <i className="fas fa-bell text-lg"></i>
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">3</span>
-            </button>
-            
             {/* 用户信息 */}
             <div className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors">
               <img 
@@ -753,13 +747,7 @@ const AdminUserManagement: React.FC = () => {
             <span className="font-medium">系统设置</span>
           </Link>
           
-          <Link 
-            to="/admin-operation-log" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
-          >
-            <i className="fas fa-history text-lg"></i>
-            <span className="font-medium">操作日志审计</span>
-          </Link>
+
         </nav>
       </aside>
 

@@ -8,7 +8,7 @@ import P_admin_dashboard from '../pages/p-admin_dashboard';
 import P_admin_user_management from '../pages/p-admin_user_management';
 import P_admin_role_permission from '../pages/p-admin_role_permission';
 import P_admin_system_settings from '../pages/p-admin_system_settings';
-import P_admin_operation_log from '../pages/p-admin_operation_log';
+
 import P_teacher_dashboard from '../pages/p-teacher_dashboard';
 import P_teacher_student_list from '../pages/p-teacher_student_list';
 import P_teacher_student_detail from '../pages/p-teacher_student_detail';
@@ -105,17 +105,7 @@ const router = createBrowserRouter([
     ),
     errorElement: <ErrorPage />,
   },
-      {
-    path: '/admin-operation-log',
-    element: (
-      <ErrorBoundary>
-        <AuthGuard requiredRole="super_admin">
-          <P_admin_operation_log />
-        </AuthGuard>
-      </ErrorBoundary>
-    ),
-    errorElement: <ErrorPage />,
-  },
+
       {
     path: '/teacher-dashboard',
     element: (

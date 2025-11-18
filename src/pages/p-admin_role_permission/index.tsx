@@ -90,7 +90,7 @@ const AdminRolePermission: React.FC = () => {
     { value: 'user_manage', label: '用户管理', group: 'system' },
     { value: 'role_manage', label: '角色权限管理', group: 'system' },
     { value: 'system_settings', label: '系统设置', group: 'system' },
-    { value: 'log_audit', label: '操作日志审计', group: 'system' },
+
     { value: 'view_student_profile', label: '查看学生档案', group: 'student' },
     { value: 'edit_student_info', label: '编辑学生信息', group: 'student' },
     { value: 'batch_import_students', label: '批量导入学生', group: 'student' },
@@ -272,12 +272,6 @@ const AdminRolePermission: React.FC = () => {
           
           {/* 用户信息和操作 */}
           <div className="flex items-center space-x-4">
-            {/* 消息通知 */}
-            <button className="relative p-2 text-text-secondary hover:text-secondary transition-colors">
-              <i className="fas fa-bell text-lg"></i>
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">3</span>
-            </button>
-            
             {/* 用户信息 */}
             <div className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors">
               <img src="https://s.coze.cn/image/-YVkyc5y_so/" 
@@ -320,10 +314,7 @@ const AdminRolePermission: React.FC = () => {
             <span className="font-medium">系统设置</span>
           </Link>
           
-          <Link to="/admin-operation-log" className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}>
-            <i className="fas fa-file-alt text-lg"></i>
-            <span className="font-medium">操作日志审计</span>
-          </Link>
+
         </nav>
       </aside>
 
