@@ -45,10 +45,7 @@ const SystemSettingsPage: React.FC = () => {
   // 系统设置加载状态
   const [settingsLoading, setSettingsLoading] = useState<boolean>(true);
 
-  // 备份信息相关状态
-  const [lastBackupTime, setLastBackupTime] = useState<string>('2024年1月15日 02:00');
-  const [backupSize, setBackupSize] = useState<string>('2.5 GB');
-  const [backupStatus, setBackupStatus] = useState<string>('成功');
+
 
   // 模态框相关状态
   const [showConfirmModal, setShowConfirmModal] = useState<boolean>(false);
@@ -175,62 +172,7 @@ const SystemSettingsPage: React.FC = () => {
     }
   };
 
-  // 立即备份处理
-  const handleBackupNow = () => {
-    showConfirmModalHandler(
-      '立即备份',
-      '备份过程中系统可能会有短暂的性能影响，确定要立即执行备份吗？',
-      () => {
-        performBackup();
-      }
-    );
-  };
 
-  const performBackup = () => {
-    showLoadingModalHandler('正在执行备份...');
-    
-    // 模拟备份过程
-    setTimeout(() => {
-      hideLoadingModal();
-      
-      // 更新备份信息
-      const now = new Date();
-      const timeString = now.toLocaleString('zh-CN', {
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      
-      setLastBackupTime(timeString);
-      setBackupStatus('成功');
-      
-      // 显示成功提示
-      showSuccessMessage('备份操作已完成');
-    }, 3000);
-  };
-
-  // 恢复数据处理
-  const handleRestoreData = () => {
-    showConfirmModalHandler(
-      '恢复数据',
-      '数据恢复是一个高风险操作，将覆盖当前所有数据。请确保您已了解此操作的后果。确定要继续吗？',
-      () => {
-        performRestore();
-      }
-    );
-  };
-
-  const performRestore = () => {
-    showLoadingModalHandler('正在恢复数据...');
-    
-    // 模拟恢复过程
-    setTimeout(() => {
-      hideLoadingModal();
-      showSuccessMessage('数据恢复操作已完成');
-    }, 5000);
-  };
 
   // 退出登录处理
   const handleLogout = () => {
@@ -473,136 +415,10 @@ const SystemSettingsPage: React.FC = () => {
               {studentProfileEditDescription}
             </div>
             
-            {/* 功能说明 */}
-            <div className="mt-4 pt-4 border-t border-border-light">
-              <h4 className="font-medium text-text-primary mb-3">功能说明</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div className="flex items-start space-x-2">
-                  <i className="fas fa-check-circle text-green-600 mt-1"></i>
-                  <span className="text-text-secondary">新登录的学生需要自行添加个人信息</span>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <i className="fas fa-check-circle text-green-600 mt-1"></i>
-                  <span className="text-text-secondary">学生通过班级区分，自动归属</span>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <i className="fas fa-check-circle text-green-600 mt-1"></i>
-                  <span className="text-text-secondary">教师可以通过班级批量操作学生数据</span>
-                </div>
-                <div className="flex items-start space-x-2">
-                  <i className="fas fa-check-circle text-green-600 mt-1"></i>
-                  <span className="text-text-secondary">支持成绩上传等批量操作</span>
-                </div>
-              </div>
-            </div>
+
           </div>
 
-          {/* 数据备份与恢复 */}
-          <div className={`bg-white rounded-xl shadow-card p-6 transition-all duration-300 ${styles.cardHover}`}>
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center">
-                <i className="fas fa-database text-white text-xl"></i>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-text-primary">数据备份与恢复</h3>
-                <p className="text-sm text-text-secondary">管理系统数据的备份和恢复操作</p>
-              </div>
-            </div>
-            
-            {/* 备份信息 */}
-            <div className="mb-6">
-              <h4 className="font-medium text-text-primary mb-3">最近备份</h4>
-              <div className="bg-gray-50 rounded-lg p-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                  <div>
-                    <span className="text-text-secondary">备份时间：</span>
-                    <span className="text-text-primary font-medium">{lastBackupTime}</span>
-                  </div>
-                  <div>
-                    <span className="text-text-secondary">备份大小：</span>
-                    <span className="text-text-primary font-medium">{backupSize}</span>
-                  </div>
-                  <div>
-                    <span className="text-text-secondary">备份状态：</span>
-                    <span className="text-green-600 font-medium">{backupStatus}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            {/* 操作按钮 */}
-            <div className="flex flex-col sm:flex-row gap-4">
-              <button 
-                onClick={handleBackupNow}
-                className="flex-1 bg-secondary hover:bg-accent text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center space-x-2"
-              >
-                <i className="fas fa-download"></i>
-                <span>立即备份</span>
-              </button>
-              <button 
-                onClick={handleRestoreData}
-                className="flex-1 bg-orange-500 hover:bg-orange-600 text-white font-medium py-3 px-6 rounded-lg transition-colors flex items-center justify-center space-x-2"
-              >
-                <i className="fas fa-upload"></i>
-                <span>恢复数据</span>
-              </button>
-            </div>
-            
-            {/* 备份策略 */}
-            <div className="mt-6 pt-6 border-t border-border-light">
-              <h4 className="font-medium text-text-primary mb-3">自动备份策略</h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                <div className="flex items-center justify-between">
-                  <span className="text-text-secondary">自动备份频率：</span>
-                  <span className="text-text-primary font-medium">每日凌晨 2:00</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-text-secondary">备份保留天数：</span>
-                  <span className="text-text-primary font-medium">30天</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-text-secondary">备份存储位置：</span>
-                  <span className="text-text-primary font-medium">云端 + 本地</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-text-secondary">加密保护：</span>
-                  <span className="text-green-600 font-medium">已启用</span>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          {/* 系统信息 */}
-          <div className={`bg-white rounded-xl shadow-card p-6 transition-all duration-300 ${styles.cardHover}`}>
-            <div className="flex items-center space-x-3 mb-6">
-              <div className="w-12 h-12 bg-gradient-to-br from-gray-400 to-gray-600 rounded-lg flex items-center justify-center">
-                <i className="fas fa-info-circle text-white text-xl"></i>
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-text-primary">系统信息</h3>
-                <p className="text-sm text-text-secondary">查看系统版本和运行状态</p>
-              </div>
-            </div>
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-text-primary mb-1">v2.1.0</div>
-                <div className="text-sm text-text-secondary">系统版本</div>
-              </div>
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-green-600 mb-1">正常</div>
-                <div className="text-sm text-text-secondary">运行状态</div>
-              </div>
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-text-primary mb-1">156</div>
-                <div className="text-sm text-text-secondary">在线用户</div>
-              </div>
-              <div className="text-center p-4 bg-gray-50 rounded-lg">
-                <div className="text-2xl font-bold text-text-primary mb-1">2024-01-15</div>
-                <div className="text-sm text-text-secondary">最后更新</div>
-              </div>
-            </div>
-          </div>
         </div>
       </main>
 
