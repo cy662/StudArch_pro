@@ -308,14 +308,7 @@ const SystemSettingsPage: React.FC = () => {
             <span className="font-medium">用户管理</span>
           </Link>
           
-          <Link 
-            to="/admin-role-permission" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
-          >
-            <i className="fas fa-user-shield text-lg"></i>
-            <span className="font-medium">角色权限管理</span>
-          </Link>
-          
+
           <Link 
             to="/admin-system-settings" 
             className={`${styles.navItem} ${styles.navItemActive} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors`}

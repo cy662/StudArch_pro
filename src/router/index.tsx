@@ -6,7 +6,7 @@ import AuthGuard from '../components/AuthGuard';
 import P_login from '../pages/p-login';
 import P_admin_dashboard from '../pages/p-admin_dashboard';
 import P_admin_user_management from '../pages/p-admin_user_management';
-import P_admin_role_permission from '../pages/p-admin_role_permission';
+
 import P_admin_system_settings from '../pages/p-admin_system_settings';
 
 import P_teacher_dashboard from '../pages/p-teacher_dashboard';
@@ -85,17 +85,7 @@ const router = createBrowserRouter([
     ),
     errorElement: <ErrorPage />,
   },
-      {
-    path: '/admin-role-permission',
-    element: (
-      <ErrorBoundary>
-        <AuthGuard requiredRole="super_admin">
-          <P_admin_role_permission />
-        </AuthGuard>
-      </ErrorBoundary>
-    ),
-    errorElement: <ErrorPage />,
-  },
+
       {
     path: '/admin-system-settings',
     element: (

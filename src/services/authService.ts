@@ -1,6 +1,15 @@
 import { supabase } from '../lib/supabase'
 import { UserWithRole } from '../types/user'
 
+// 密码哈希函数（与userService中的保持一致）
+const hashPassword = async (password: string): Promise<string> => {
+  const encoder = new TextEncoder()
+  const data = encoder.encode(password + 'salt_value')
+  const hashBuffer = await crypto.subtle.digest('SHA-256', data)
+  const hashArray = Array.from(new Uint8Array(hashBuffer))
+  return hashArray.map(b => b.toString(16).padStart(2, '0')).join('')
+}
+
 export interface LoginCredentials {
   identifier: string // 用户名、学号或工号
   password: string
@@ -125,33 +134,41 @@ export class AuthService {
       const user = users[0]
       console.log('找到用户:', user.username)
 
-      // 验证密码 - 如果RPC函数不存在，使用简化验证
-      try {
-        const { data: passwordCheck, error: passwordError } = await supabase.rpc(
-          'verify_password',
-          {
-            user_id: user.id,
-            password: password
+      // 首先尝试验证用户设置的密码
+      const inputPasswordHash = await hashPassword(password)
+      
+      // 验证密码是否匹配
+      if (inputPasswordHash === user.password_hash) {
+        console.log('密码验证成功（用户设置密码）')
+      } else {
+        // 尝试使用RPC函数验证（如果存在）
+        try {
+          const { data: passwordCheck, error: passwordError } = await supabase.rpc(
+            'verify_password',
+            {
+              user_id: user.id,
+              password: password
+            }
+          )
+
+          console.log('密码验证结果:', { passwordCheck, passwordError })
+
+          if (passwordError) {
+            console.warn('RPC函数错误，尝试简化验证:', passwordError.message)
+            // RPC函数不存在，使用简化验证
+            return this.simplifiedLogin(identifier, password)
           }
-        )
 
-        console.log('密码验证结果:', { passwordCheck, passwordError })
-
-        if (passwordError) {
-          console.warn('RPC函数错误，使用简化验证:', passwordError.message)
-          // RPC函数不存在，使用简化验证
+          if (!passwordCheck) {
+            return {
+              success: false,
+              error: '密码错误'
+            }
+          }
+        } catch (rpcError) {
+          console.warn('RPC调用异常，使用简化验证:', rpcError)
           return this.simplifiedLogin(identifier, password)
         }
-
-        if (!passwordCheck) {
-          return {
-            success: false,
-            error: '密码错误'
-          }
-        }
-      } catch (rpcError) {
-        console.warn('RPC调用异常，使用简化验证:', rpcError)
-        return this.simplifiedLogin(identifier, password)
       }
 
       // 更新最后登录时间
@@ -176,96 +193,114 @@ export class AuthService {
   }
 
   // 简化登录（用于RLS限制或RPC不可用的情况）
-  private static simplifiedLogin(identifier: string, password: string): AuthResponse {
+  private static async simplifiedLogin(identifier: string, password: string): Promise<AuthResponse> {
     console.log('使用简化登录验证')
     
-    return new Promise((resolve) => {
-      setTimeout(() => {
-        // 尝试从真实数据库查询用户
-        supabase
-          .from('users')
+    try {
+      // 尝试从真实数据库查询用户
+      const { data: users, error } = await supabase
+        .from('users')
+        .select('*')
+        .or(`username.eq.${identifier},user_number.eq.${identifier},email.eq.${identifier}`)
+        .eq('status', 'active')
+
+      if (error) {
+        console.warn('数据库查询失败，使用模拟用户:', error.message)
+        // 使用模拟用户进行验证
+        return this.mockLogin(identifier, password)
+      }
+
+      if (!users || users.length === 0) {
+        return {
+          success: false,
+          error: '用户不存在'
+        }
+      }
+
+      const user = users[0]
+      
+      // 首先尝试验证用户设置的密码
+      const inputPasswordHash = await hashPassword(password)
+      
+      // 验证密码是否匹配
+      if (inputPasswordHash === user.password_hash) {
+        console.log('密码验证成功（用户设置密码）')
+        // 获取角色信息
+        const { data: role } = await supabase
+          .from('roles')
           .select('*')
-          .or(`username.eq.${identifier},user_number.eq.${identifier},email.eq.${identifier}`)
-          .eq('status', 'active')
-          .then(({ data: users, error }) => {
-            if (error) {
-              console.warn('数据库查询失败，使用模拟用户:', error.message)
-              // 使用模拟用户进行验证
-              this.mockLogin(identifier, password).then(resolve)
-              return
-            }
+          .eq('id', user.role_id)
+          .single()
 
-            if (!users || users.length === 0) {
-              resolve({
-                success: false,
-                error: '用户不存在'
-              })
-              return
-            }
+        const userWithRole = {
+          ...user,
+          role: role || { role_name: 'unknown' }
+        }
 
-            const user = users[0]
-            
-            // 简化密码验证（适用于测试环境）
-            const validPasswords = [
-              '123456', // 默认密码
-              user.user_number?.slice(-6) || '', // 学号后6位
-              user.user_number || '', // 完整学号
-              '12345678' // 备用密码
-            ]
+        const token = this.generateToken(userWithRole)
+        
+        return {
+          success: true,
+          user: userWithRole as UserWithRole,
+          token
+        }
+      }
 
-            if (!validPasswords.includes(password)) {
-              resolve({
-                success: false,
-                error: '密码错误（尝试使用：123456）'
-              })
-              return
-            }
+      // 如果用户设置的密码不匹配，尝试默认密码和备用密码
+      const defaultPasswordHash = await hashPassword('123456')
+      const userNumberHash = await hashPassword(user.user_number?.slice(-6) || '')
+      const fullUserNumberHash = await hashPassword(user.user_number || '')
+      const backupPasswordHash = await hashPassword('12345678')
 
-            // 获取角色信息
-            supabase
-              .from('roles')
-              .select('*')
-              .eq('id', user.role_id)
-              .single()
-              .then(({ data: role }) => {
-                const userWithRole = {
-                  ...user,
-                  role: role || { role_name: 'unknown' }
-                }
+      const validHashes = [
+        defaultPasswordHash, // 默认密码 123456
+        userNumberHash, // 学号后6位
+        fullUserNumberHash, // 完整学号
+        backupPasswordHash // 备用密码 12345678
+      ]
 
-                const token = this.generateToken(userWithRole)
-                
-                resolve({
-                  success: true,
-                  user: userWithRole as UserWithRole,
-                  token
-                })
-              })
-              .catch(() => {
-                // 如果角色查询失败，使用默认角色
-                const userWithRole = {
-                  ...user,
-                  role: { role_name: 'unknown' }
-                }
+      if (validHashes.includes(inputPasswordHash)) {
+        console.log('密码验证成功（默认或备用密码）')
+        // 获取角色信息
+        const { data: role } = await supabase
+          .from('roles')
+          .select('*')
+          .eq('id', user.role_id)
+          .single()
 
-                const token = this.generateToken(userWithRole)
-                
-                resolve({
-                  success: true,
-                  user: userWithRole as UserWithRole,
-                  token
-                })
-              })
-          })
-      }, 500)
-    })
+        const userWithRole = {
+          ...user,
+          role: role || { role_name: 'unknown' }
+        }
+
+        const token = this.generateToken(userWithRole)
+        
+        return {
+          success: true,
+          user: userWithRole as UserWithRole,
+          token
+        }
+      }
+
+      return {
+        success: false,
+        error: '密码错误'
+      }
+      
+    } catch (error) {
+      console.error('简化登录过程出错:', error)
+      return {
+        success: false,
+        error: '登录验证失败'
+      }
+    }
   }
 
   // 模拟登录（用于测试）
-  private static mockLogin(identifier: string, password: string): AuthResponse {
+  private static async mockLogin(identifier: string, password: string): Promise<AuthResponse> {
     // 模拟网络延迟
     return new Promise((resolve) => {
-      setTimeout(() => {
+      setTimeout(async () => {
         // 查找匹配的用户
         const user = mockUsers.find(u => 
           u.username === identifier || 
@@ -281,7 +316,23 @@ export class AuthService {
           return
         }
 
-        // 简单密码验证
+        // 首先尝试验证用户设置的密码（如果有的话）
+        const inputPasswordHash = await hashPassword(password)
+        
+        // 检查是否为用户的自定义密码
+        if (user.password_hash && inputPasswordHash === user.password_hash) {
+          console.log('模拟登录：用户自定义密码验证成功')
+          const token = this.generateToken(user)
+          
+          resolve({
+            success: true,
+            user: user as UserWithRole,
+            token
+          })
+          return
+        }
+
+        // 简单密码验证（默认密码）
         if (password !== '123456') {
           resolve({
             success: false,

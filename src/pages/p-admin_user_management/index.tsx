@@ -17,6 +17,73 @@ interface UserFormData {
 
 const AdminUserManagement: React.FC = () => {
   const navigate = useNavigate();
+
+  // 格式化时间显示
+  const formatDateTime = (dateString: string) => {
+    if (!dateString) return '-';
+    
+    try {
+      let date: Date;
+      
+      // 处理各种时间格式
+      if (dateString.includes('T')) {
+        // ISO 格式：2024-01-01T12:00:00.000Z 或 2024-01-01T12:00:00+08:00
+        date = new Date(dateString);
+      } else if (dateString.includes(' ')) {
+        // 标准格式：2024-01-01 12:00:00
+        date = new Date(dateString);
+      } else {
+        // 尝试直接解析
+        date = new Date(dateString);
+      }
+      
+      // 检查日期是否有效
+      if (isNaN(date.getTime())) {
+        console.warn('无效的日期格式:', dateString);
+        return dateString; // 返回原始字符串而不是 '-'
+      }
+      
+      // 格式化为 YYYY-MM-DD HH:mm:ss
+      const year = date.getFullYear();
+      const month = String(date.getMonth() + 1).padStart(2, '0');
+      const day = String(date.getDate()).padStart(2, '0');
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      const seconds = String(date.getSeconds()).padStart(2, '0');
+      
+      return `${year}-${month}-${day} ${hours}:${minutes}:${seconds}`;
+    } catch (error) {
+      console.error('时间格式化错误:', error, '输入值:', dateString);
+      return dateString; // 返回原始字符串而不是 '-'
+    }
+  };
+
+  // 获取相对时间显示（可选功能）
+  const getRelativeTime = (dateString: string) => {
+    if (!dateString) return '-';
+    
+    try {
+      const date = new Date(dateString);
+      if (isNaN(date.getTime())) return dateString;
+      
+      const now = new Date();
+      const diffMs = now.getTime() - date.getTime();
+      const diffMinutes = Math.floor(diffMs / (1000 * 60));
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      if (diffMinutes < 1) return '刚刚';
+      if (diffMinutes < 60) return `${diffMinutes}分钟前`;
+      if (diffHours < 24) return `${diffHours}小时前`;
+      if (diffDays < 7) return `${diffDays}天前`;
+      
+      // 超过7天显示具体时间
+      return formatDateTime(dateString);
+    } catch (error) {
+      console.error('相对时间计算错误:', error);
+      return dateString;
+    }
+  };
   
   // 状态管理
   const [users, setUsers] = useState<UserWithRole[]>([]);
@@ -33,8 +100,22 @@ const AdminUserManagement: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('');
   const [showUserModal, setShowUserModal] = useState(false);
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showBatchPasswordModal, setShowBatchPasswordModal] = useState(false);
+  const [showResetPasswordModal, setShowResetPasswordModal] = useState(false);
   const [editingUser, setEditingUser] = useState<UserWithRole | null>(null);
+  const [resetPasswordUser, setResetPasswordUser] = useState<UserWithRole | null>(null);
   const [importFile, setImportFile] = useState<File | null>(null);
+  const [batchPasswordData, setBatchPasswordData] = useState({
+    newPassword: '',
+    confirmPassword: '',
+    resetMethod: 'set' as 'set' | 'random'
+  });
+  const [resetPasswordData, setResetPasswordData] = useState({
+    newPassword: '',
+    confirmPassword: '',
+    resetMethod: 'set' as 'set' | 'random'
+  });
+  const [saving, setSaving] = useState(false);
   
   // 表单数据
   const [formData, setFormData] = useState<UserFormData>({
@@ -142,13 +223,14 @@ const AdminUserManagement: React.FC = () => {
   const openUserModal = (user: UserWithRole | null = null) => {
     setEditingUser(user);
     if (user) {
+      console.log('编辑用户数据:', user); // 调试信息
       setFormData({
         username: user.username,
         role_id: user.role_id,
         user_number: user.user_number || '',
         full_name: user.full_name,
         email: user.email,
-        password: '',
+        password: '', // 编辑时默认不显示密码
         status: user.status === 'active' || user.status === 'inactive' ? user.status as 'active' | 'inactive' : 'active'
       });
     } else {
@@ -168,32 +250,136 @@ const AdminUserManagement: React.FC = () => {
   // 保存用户
   const saveUser = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // 表单验证
+    if (!formData.user_number.trim()) {
+      alert('请输入学号/工号');
+      return;
+    }
+    if (!formData.username.trim()) {
+      alert('请输入用户名');
+      return;
+    }
+    if (!formData.full_name.trim()) {
+      alert('请输入姓名');
+      return;
+    }
+    if (!formData.email.trim()) {
+      alert('请输入邮箱');
+      return;
+    }
+    if (!formData.role_id) {
+      alert('请选择角色');
+      return;
+    }
+    
+    // 邮箱格式验证
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(formData.email)) {
+      alert('请输入有效的邮箱地址');
+      return;
+    }
+    
+    setSaving(true);
+    
     try {
       if (editingUser) {
-        await UserService.updateUser(editingUser.id, formData);
-        alert('用户更新成功');
+        // 编辑用户：只更新允许修改的字段
+        const updateData: Partial<UserWithRole> = {
+          full_name: formData.full_name,
+          email: formData.email,
+          role_id: formData.role_id,
+          user_number: formData.user_number,
+          status: formData.status,
+          updated_at: new Date().toISOString()
+        };
+        
+        // 如果输入了新密码，则更新密码
+        if (formData.password && formData.password.trim()) {
+          updateData.password = formData.password;
+        }
+        
+        console.log('更新用户数据:', { userId: editingUser.id, updateData });
+        await UserService.updateUser(editingUser.id, updateData);
+        
+        // 立即更新本地状态，避免重新加载
+        setUsers(prevUsers => 
+          prevUsers.map(user => 
+            user.id === editingUser.id 
+              ? { 
+                  ...user, 
+                  ...updateData,
+                  // 如果有角色数据，更新角色名称
+                  role: formData.role_id !== user.role_id 
+                    ? roles.find(r => r.id === formData.role_id) || user.role
+                    : user.role
+                }
+              : user
+          )
+        );
+        
+        alert('用户信息更新成功！');
+        
       } else {
+        // 新增用户
         await UserService.createUser(formData);
-        alert('用户创建成功');
+        alert('用户创建成功！');
+        
+        // 重新加载用户列表以获取新用户
+        const searchParams: UserSearchParams = {
+          keyword: searchTerm,
+          role_id: roleFilter,
+          status: statusFilter,
+          page: 1, // 回到第一页显示新用户
+          limit: pageSize,
+          sort_by: sortField,
+          sort_order: sortOrder
+        };
+        const response: UserListResponse = await UserService.getUsers(searchParams);
+        setUsers(response.users);
+        setTotalUsers(response.total);
+        setCurrentPage(1);
       }
+      
+      // 关闭模态框并重置表单
       setShowUserModal(false);
       setEditingUser(null);
-      // 重新加载用户列表
-      const searchParams: UserSearchParams = {
-        keyword: searchTerm,
-        role_id: roleFilter,
-        status: statusFilter,
-        page: currentPage,
-        limit: pageSize,
-        sort_by: sortField,
-        sort_order: sortOrder
-      };
-      const response: UserListResponse = await UserService.getUsers(searchParams);
-      setUsers(response.users);
-      setTotalUsers(response.total);
-    } catch (error) {
+      setFormData({
+        username: '',
+        role_id: '',
+        user_number: '',
+        full_name: '',
+        email: '',
+        password: '',
+        status: 'active'
+      });
+      
+    } catch (error: any) {
       console.error('保存用户失败:', error);
-      alert('保存用户失败');
+      
+      // 根据错误类型提供更友好的错误信息
+      let errorMessage = '保存失败，请稍后重试';
+      if (error.message) {
+        if (error.message.includes('duplicate key') || error.message.includes('already exists')) {
+          if (error.message.includes('user_number')) {
+            errorMessage = '学号/工号已存在，请使用其他学号/工号';
+          } else if (error.message.includes('email')) {
+            errorMessage = '邮箱已被使用，请使用其他邮箱';
+          } else if (error.message.includes('username')) {
+            errorMessage = '用户名已存在，请使用其他用户名';
+          }
+        } else if (error.message.includes('permission')) {
+          errorMessage = '权限不足，无法执行此操作';
+        } else if (error.message.includes('network')) {
+          errorMessage = '网络连接失败，请检查网络后重试';
+        } else {
+          errorMessage = `保存失败：${error.message}`;
+        }
+      }
+      
+      alert(errorMessage);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -206,15 +392,107 @@ const AdminUserManagement: React.FC = () => {
   };
 
   // 重置密码
-  const resetPassword = async (userId: string) => {
-    if (confirm('确定要重置该用户的密码吗？')) {
-      try {
-        await UserService.batchResetPassword([userId]);
-        alert('密码重置成功，新密码已发送到用户邮箱');
-      } catch (error) {
-        console.error('重置密码失败:', error);
-        alert('重置密码失败');
+  const resetPassword = (userId: string) => {
+    const user = users.find(u => u.id === userId);
+    if (user) {
+      setResetPasswordUser(user);
+      setResetPasswordData({ newPassword: '', confirmPassword: '', resetMethod: 'set' });
+      setShowResetPasswordModal(true);
+    }
+  };
+
+  // 切换用户状态
+  const toggleUserStatus = async (userId: string, currentStatus: string) => {
+    try {
+      setSaving(true);
+      
+      const newStatus = currentStatus === 'active' ? 'inactive' : 'active';
+      await UserService.updateUser(userId, { status: newStatus });
+      
+      // 更新本地状态
+      setUsers(prevUsers => 
+        prevUsers.map(user => 
+          user.id === userId ? { ...user, status: newStatus } : user
+        )
+      );
+      
+      alert(`用户状态已${newStatus === 'active' ? '启用' : '停止'}`);
+    } catch (error) {
+      console.error('切换用户状态失败:', error);
+      alert(`切换用户状态失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 批量切换用户状态
+  const batchToggleUserStatus = async (targetStatus: 'active' | 'inactive') => {
+    if (selectedUsers.length === 0) {
+      alert('请先选择要操作的用户');
+      return;
+    }
+
+    try {
+      setSaving(true);
+      
+      // 批量更新用户状态
+      let successCount = 0;
+      for (const userId of selectedUsers) {
+        try {
+          await UserService.updateUser(userId, { status: targetStatus });
+          successCount++;
+        } catch (error) {
+          console.error(`更新用户 ${userId} 状态失败:`, error);
+        }
       }
+      
+      // 更新本地状态
+      setUsers(prevUsers => 
+        prevUsers.map(user => 
+          selectedUsers.has(user.id) ? { ...user, status: targetStatus } : user
+        )
+      );
+      
+      // 清空选中状态
+      setSelectedUsers(new Set());
+      
+      alert(`成功${targetStatus === 'active' ? '启用' : '停止'} ${successCount}/${selectedUsers.length} 个用户`);
+    } catch (error) {
+      console.error('批量切换用户状态失败:', error);
+      alert(`批量操作失败: ${error instanceof Error ? error.message : '未知错误'}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // 执行用户密码重置
+  const executeResetPassword = async () => {
+    if (!resetPasswordUser) return;
+    
+    try {
+      setSaving(true);
+      
+      // 验证密码（无论哪种模式都需要验证）
+      if (!resetPasswordData.newPassword) {
+        alert('请输入新密码');
+        return;
+      }
+      if (resetPasswordData.newPassword !== resetPasswordData.confirmPassword) {
+        alert('两次输入的密码不一致');
+        return;
+      }
+      
+      // 两种模式都使用batchSetPassword方法，确保前端显示的密码与后端设置的密码一致
+      await UserService.batchSetPassword([resetPasswordUser.id], resetPasswordData.newPassword);
+      
+      alert('密码重置成功，新密码已设置');
+      setShowResetPasswordModal(false);
+      setResetPasswordUser(null);
+    } catch (error) {
+      console.error('重置密码失败:', error);
+      alert('重置密码失败');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -249,22 +527,85 @@ const AdminUserManagement: React.FC = () => {
     }
   };
 
-  // 批量重置密码
+  // 批量修改密码
   const batchResetPassword = async () => {
     if (selectedUsers.size === 0) {
       alert('请选择要重置密码的用户');
       return;
     }
-    if (confirm(`确定要重置选中的 ${selectedUsers.size} 个用户的密码吗？`)) {
-      try {
-        await UserService.batchResetPassword(Array.from(selectedUsers));
-        alert('密码重置成功');
-        setSelectedUsers(new Set());
-      } catch (error) {
-        console.error('批量重置密码失败:', error);
-        alert('批量重置密码失败');
+    // 打开批量修改密码模态框
+    setShowBatchPasswordModal(true);
+  };
+
+  // 执行批量修改密码
+  const executeBatchPasswordChange = async () => {
+    const { newPassword, confirmPassword, resetMethod } = batchPasswordData;
+
+    // 验证输入
+    if (resetMethod === 'set') {
+      if (!newPassword.trim()) {
+        alert('请输入新密码');
+        return;
+      }
+      if (newPassword.length < 6) {
+        alert('密码长度不能少于6位');
+        return;
+      }
+      if (newPassword !== confirmPassword) {
+        alert('两次输入的密码不一致');
+        return;
       }
     }
+
+    if (!confirm(`确定要修改选中的 ${selectedUsers.size} 个用户的密码吗？`)) {
+      return;
+    }
+
+    try {
+      const selectedUserIds = Array.from(selectedUsers);
+      
+      if (resetMethod === 'set') {
+        // 设置统一密码
+        await UserService.batchSetPassword(selectedUserIds, newPassword);
+        alert(`成功为 ${selectedUserIds.length} 个用户设置新密码`);
+      } else {
+        // 生成随机密码
+        await UserService.batchResetPassword(selectedUserIds);
+        alert(`成功为 ${selectedUserIds.length} 个用户重置密码，新密码已发送到邮箱`);
+      }
+
+      setShowBatchPasswordModal(false);
+      setSelectedUsers(new Set());
+      setBatchPasswordData({ newPassword: '', confirmPassword: '', resetMethod: 'set' });
+      
+      // 重新加载用户列表
+      const searchParams: UserSearchParams = {
+        keyword: searchTerm,
+        role_id: roleFilter,
+        status: statusFilter,
+        page: currentPage,
+        limit: pageSize,
+        sort_by: sortField,
+        sort_order: sortOrder
+      };
+      const response: UserListResponse = await UserService.getUsers(searchParams);
+      setUsers(response.users);
+      setTotalUsers(response.total);
+      
+    } catch (error) {
+      console.error('批量修改密码失败:', error);
+      alert('批量修改密码失败');
+    }
+  };
+
+  // 生成随机密码
+  const generateRandomPassword = () => {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+    let password = '';
+    for (let i = 0; i < 8; i++) {
+      password += chars.charAt(Math.floor(Math.random() * chars.length));
+    }
+    setBatchPasswordData(prev => ({ ...prev, newPassword: password, confirmPassword: password }));
   };
 
   // 批量删除
@@ -304,17 +645,19 @@ const AdminUserManagement: React.FC = () => {
   const downloadTemplate = () => {
     // 创建Excel模板数据
     const templateData = [
-      ['用户名', '角色', '学号/工号', '姓名', '邮箱', '状态'],
-      ['teacher_zhang', 'teacher', 'T2024001', '张老师', 'zhang@example.com', 'active'],
-      ['student_li', 'student', '2021001', '李同学', 'li@example.com', 'active'],
-      ['admin_wang', 'super_admin', 'ADMIN001', '王管理员', 'wang@example.com', 'active'],
-      ['', '', '', '', '', ''],
-      ['说明：', '', '', '', '', ''],
-      ['1. 角色字段支持：super_admin(超级管理员), teacher(教师), student(学生)', '', '', '', '', ''],
-      ['2. 状态字段支持：active(启用), inactive(停用)', '', '', '', '', ''],
-      ['3. 用户名必须是唯一的', '', '', '', '', ''],
-      ['4. 邮箱格式必须正确', '', '', '', '', ''],
-      ['5. 学号/工号可以为空', '', '', '', '', '']
+      ['用户名', '角色', '学号/工号', '姓名', '邮箱', '密码', '状态'],
+      ['teacher_zhang', 'teacher', 'T2024001', '张老师', 'zhang@example.com', 'pwd123456', 'active'],
+      ['student_li', 'student', '2021001', '李同学', 'li@example.com', 'stud123', 'active'],
+      ['admin_wang', 'super_admin', 'ADMIN001', '王管理员', 'wang@example.com', 'admin888', 'active'],
+      ['', '', '', '', '', '', ''],
+      ['说明：', '', '', '', '', '', ''],
+      ['1. 角色字段支持：super_admin(超级管理员), teacher(教师), student(学生)', '', '', '', '', '', ''],
+      ['2. 状态字段支持：active(启用), inactive(停用)', '', '', '', '', '', ''],
+      ['3. 学号/工号必须是唯一的', '', '', '', '', '', ''],
+      ['4. 邮箱格式必须正确', '', '', '', '', '', ''],
+      ['5. 学号/工号不能为空，必须唯一', '', '', '', '', '', ''],
+      ['6. 密码可以为空，为空时使用默认密码123456', '', '', '', '', '', ''],
+      ['7. 建议设置6-20位密码，包含字母和数字', '', '', '', '', '', '']
     ];
 
     // 创建真正的Excel文件
@@ -329,6 +672,7 @@ const AdminUserManagement: React.FC = () => {
       {wch: 15}, // 学号/工号列
       {wch: 15}, // 姓名列
       {wch: 20}, // 邮箱列
+      {wch: 15}, // 密码列
       {wch: 10}  // 状态列
     ];
     worksheet['!cols'] = colWidths;
@@ -418,6 +762,10 @@ const AdminUserManagement: React.FC = () => {
                 console.log('Excel行数据处理:', row, '角色ID:', roleId);
                 
                 // 检查必填字段
+                if (!row['学号/工号']) {
+                  console.log('跳过：学号/工号为空', row);
+                  continue;
+                }
                 if (!row['用户名']) {
                   console.log('跳过：用户名为空', row);
                   continue;
@@ -431,7 +779,10 @@ const AdminUserManagement: React.FC = () => {
                   continue;
                 }
                 
-                if (roleId && row['用户名'] && row['姓名'] && row['邮箱']) {
+                if (roleId && row['学号/工号'] && row['用户名'] && row['姓名'] && row['邮箱']) {
+                  // 获取密码，如果为空则使用空字符串让UserService使用默认密码
+                  const password = row['密码'] ? String(row['密码']).trim() : '';
+                  
                   importData.push({
                     username: row['用户名'],
                     full_name: row['姓名'],
@@ -439,7 +790,7 @@ const AdminUserManagement: React.FC = () => {
                     user_number: row['学号/工号'] || '',
                     role_id: roleId,
                     status: row['状态'] === 'active' ? 'active' : 'inactive',
-                    password: '123456' // 默认密码，UserService会映射到password_hash
+                    password: password // 使用文件中设置的密码，如果为空则使用默认密码
                   });
                 } else {
                   console.log('跳过：角色匹配失败或必填字段缺失', row);
@@ -498,6 +849,10 @@ const AdminUserManagement: React.FC = () => {
                 console.log('CSV行数据处理:', row, '角色ID:', roleId);
                 
                 // 检查必填字段
+                if (!row['学号/工号']) {
+                  console.log('跳过：学号/工号为空', row);
+                  continue;
+                }
                 if (!row['用户名']) {
                   console.log('跳过：用户名为空', row);
                   continue;
@@ -511,7 +866,10 @@ const AdminUserManagement: React.FC = () => {
                   continue;
                 }
                 
-                if (roleId && row['用户名'] && row['姓名'] && row['邮箱']) {
+                if (roleId && row['学号/工号'] && row['用户名'] && row['姓名'] && row['邮箱']) {
+                  // 获取密码，如果为空则使用空字符串让UserService使用默认密码
+                  const password = row['密码'] ? String(row['密码']).trim() : '';
+                  
                   importData.push({
                     username: row['用户名'],
                     full_name: row['姓名'],
@@ -519,7 +877,7 @@ const AdminUserManagement: React.FC = () => {
                     user_number: row['学号/工号'] || '',
                     role_id: roleId,
                     status: row['状态'] === 'active' ? 'active' : 'inactive',
-                    password: '123456' // 默认密码，UserService会映射到password_hash
+                    password: password // 使用文件中设置的密码，如果为空则使用默认密码
                   });
                 } else {
                   console.log('跳过：角色匹配失败或必填字段缺失', row);
@@ -531,7 +889,7 @@ const AdminUserManagement: React.FC = () => {
           console.log('最终导入数据:', importData);
           
           if (importData.length === 0) {
-            alert('没有找到可导入的用户数据。请检查：\n1. 文件格式是否正确（支持.xlsx, .xls, .csv格式）\n2. 数据是否按照模板格式填写\n3. 角色名称是否正确（teacher/教师, student/学生, super_admin/超级管理员）\n4. 必填字段是否完整（用户名、姓名、邮箱）');
+            alert('没有找到可导入的用户数据。请检查：\n1. 文件格式是否正确（支持.xlsx, .xls, .csv格式）\n2. 数据是否按照最新模板格式填写（包含密码列）\n3. 角色名称是否正确（teacher/教师, student/学生, super_admin/超级管理员）\n4. 必填字段是否完整（学号/工号、用户名、姓名、邮箱）\n5. 学号/工号必须唯一且不能为空\n6. 密码字段可以为空，为空时使用默认密码123456');
             return;
           }
           
@@ -731,14 +1089,7 @@ const AdminUserManagement: React.FC = () => {
             <span className="font-medium">用户管理</span>
           </Link>
           
-          <Link 
-            to="/admin-role-permission" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
-          >
-            <i className="fas fa-user-shield text-lg"></i>
-            <span className="font-medium">角色权限管理</span>
-          </Link>
-          
+
           <Link 
             to="/admin-system-settings" 
             className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
@@ -789,7 +1140,7 @@ const AdminUserManagement: React.FC = () => {
               <div className="relative">
                 <input 
                   type="text" 
-                  placeholder="搜索用户名/学号/工号" 
+                  placeholder="搜索学号/工号/用户名/邮箱" 
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className={`w-80 px-4 py-2 pl-10 border border-border-light rounded-lg ${styles.formInputFocus}`}
@@ -838,7 +1189,19 @@ const AdminUserManagement: React.FC = () => {
                   onClick={batchResetPassword}
                   className="px-3 py-2 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  批量重置密码
+                  批量修改密码
+                </button>
+                <button 
+                  onClick={() => batchToggleUserStatus('inactive')}
+                  className="px-3 py-2 text-sm border border-red-300 text-red-600 rounded-lg hover:bg-red-50 transition-colors"
+                >
+                  批量停用
+                </button>
+                <button 
+                  onClick={() => batchToggleUserStatus('active')}
+                  className="px-3 py-2 text-sm border border-green-300 text-green-600 rounded-lg hover:bg-green-50 transition-colors"
+                >
+                  批量启用
                 </button>
                 <button 
                   onClick={batchDelete}
@@ -931,7 +1294,12 @@ const AdminUserManagement: React.FC = () => {
                         {getStatusText(user.status)}
                       </span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">{user.created_at}</td>
+                    <td 
+                      className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary font-mono cursor-help" 
+                      title={`原始时间: ${user.created_at}\n格式化时间: ${formatDateTime(user.created_at)}`}
+                    >
+                      {formatDateTime(user.created_at)}
+                    </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
                       <button 
                         onClick={() => editUser(user.id)}
@@ -944,6 +1312,12 @@ const AdminUserManagement: React.FC = () => {
                         className="text-orange-500 hover:text-orange-700 transition-colors"
                       >
                         <i className="fas fa-key"></i>
+                      </button>
+                      <button 
+                        onClick={() => toggleUserStatus(user.id, user.status)}
+                        className={`${user.status === 'active' ? 'text-red-500 hover:text-red-700' : 'text-green-500 hover:text-green-700'} transition-colors`}
+                      >
+                        {user.status === 'active' ? <i className="fas fa-ban"></i> : <i className="fas fa-play"></i>}
                       </button>
                       <button 
                         onClick={() => deleteUser(user.id)}
@@ -1023,18 +1397,18 @@ const AdminUserManagement: React.FC = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2">
                     <label htmlFor="form-username" className="block text-sm font-medium text-text-primary">
-                      用户名 *
+                      用户名
+                      {editingUser && <span className="text-text-secondary text-xs ml-2">(可修改)</span>}
                     </label>
-                    <input 
-                      type="text" 
-                      id="form-username" 
-                      value={formData.username}
-                      onChange={(e) => setFormData(prev => ({...prev, username: e.target.value}))}
-                      disabled={editingUser !== null}
-                      placeholder={editingUser ? '用户名不可修改' : ''}
-                      required
-                      className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
-                    />
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        id="form-username" 
+                        value={formData.username}
+                        onChange={(e) => setFormData(prev => ({...prev, username: e.target.value}))}
+                        className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
+                      />
+                    </div>
                   </div>
                   
                   <div className="space-y-2">
@@ -1060,15 +1434,24 @@ const AdminUserManagement: React.FC = () => {
                   <div className="space-y-2">
                     <label htmlFor="form-user-number" className="block text-sm font-medium text-text-primary">
                       学号/工号 *
+                      {editingUser && <span className="text-text-secondary text-xs ml-2">(不可修改)</span>}
                     </label>
-                    <input 
-                      type="text" 
-                      id="form-user-number" 
-                      value={formData.user_number}
-                      onChange={(e) => setFormData(prev => ({...prev, user_number: e.target.value}))}
-                      required
-                      className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
-                    />
+                    <div className="relative">
+                      <input 
+                        type="text" 
+                        id="form-user-number" 
+                        value={formData.user_number}
+                        onChange={(e) => setFormData(prev => ({...prev, user_number: e.target.value}))}
+                        disabled={editingUser !== null}
+                        required
+                        className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus} ${editingUser ? 'bg-gray-50 text-gray-500' : ''}`}
+                      />
+                      {editingUser && (
+                        <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none">
+                          <i className="fas fa-lock text-gray-400 text-sm"></i>
+                        </div>
+                      )}
+                    </div>
                   </div>
                   
                   <div className="space-y-2">
@@ -1102,15 +1485,19 @@ const AdminUserManagement: React.FC = () => {
                   <div className="space-y-2">
                     <label htmlFor="form-password" className="block text-sm font-medium text-text-primary">
                       密码
+                      {editingUser && <span className="text-text-secondary text-xs ml-2">(留空则不修改)</span>}
                     </label>
                     <input 
                       type="password" 
                       id="form-password" 
                       value={formData.password}
                       onChange={(e) => setFormData(prev => ({...prev, password: e.target.value}))}
-                      placeholder="不填则使用默认密码"
+                      placeholder={editingUser ? "留空则不修改当前密码" : "不填则使用默认密码123456"}
                       className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
                     />
+                    {formData.password && formData.password.length > 0 && formData.password.length < 6 && (
+                      <p className="text-xs text-red-500 mt-1">密码长度不能少于6位</p>
+                    )}
                   </div>
                   
                   <div className="space-y-2">
@@ -1142,9 +1529,17 @@ const AdminUserManagement: React.FC = () => {
                   </button>
                   <button 
                     type="submit" 
-                    className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
+                    disabled={saving}
+                    className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center space-x-2"
                   >
-                    保存
+                    {saving ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin"></i>
+                        <span>保存中...</span>
+                      </>
+                    ) : (
+                      <span>保存</span>
+                    )}
                   </button>
                 </div>
               </form>
@@ -1179,9 +1574,12 @@ const AdminUserManagement: React.FC = () => {
                       <i className="fas fa-info-circle mr-2"></i>使用说明
                     </h4>
                     <ul className="text-sm text-blue-700 space-y-1">
-                      <li>• 请下载Excel模板并按照格式填写用户信息</li>
+                      <li>• 请下载最新Excel模板并按照格式填写用户信息</li>
                       <li>• 支持批量导入教师和学生用户</li>
-                      <li>• 导入时会自动校验数据格式</li>
+                      <li>• 密码字段：可以为空，为空时使用默认密码123456</li>
+                      <li>• 建议设置6-20位个性化密码，包含字母和数字</li>
+                      <li>• 用户主要使用学号/工号登录，也可使用用户名登录</li>
+                      <li>• 导入时会自动校验数据格式和加密密码</li>
                     </ul>
                   </div>
                   
@@ -1248,6 +1646,339 @@ const AdminUserManagement: React.FC = () => {
                     className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
                   >
                     <i className="fas fa-upload mr-2"></i>开始导入
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 重置密码模态框 */}
+      {showResetPasswordModal && resetPasswordUser && (
+        <div className="fixed inset-0 z-50">
+          <div className={styles.modalOverlay}></div>
+          <div className="relative flex items-center justify-center min-h-screen p-4">
+            <div className={`${styles.modalContent} bg-white rounded-xl shadow-xl w-full max-w-2xl`}>
+              <div className="flex items-center justify-between p-6 border-b border-border-light">
+                <h3 className="text-lg font-semibold text-text-primary">
+                  重置用户密码 - {resetPasswordUser.full_name}
+                </h3>
+                <button 
+                  onClick={() => {
+                    setShowResetPasswordModal(false);
+                    setResetPasswordUser(null);
+                    setResetPasswordData({ newPassword: '', confirmPassword: '', resetMethod: 'set' });
+                  }}
+                  className="text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <i className="fas fa-times text-xl"></i>
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="space-y-4">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="font-medium text-blue-800 mb-2">
+                      <i className="fas fa-info-circle mr-2"></i>操作说明
+                    </h4>
+                    <div className="text-sm text-blue-700 space-y-1">
+                      <p>• 用户名: {resetPasswordUser.username}</p>
+                      <p>• 学号/工号: {resetPasswordUser.user_number}</p>
+                      <p>• 可以手动设置密码或生成随机密码</p>
+                      <p>• 修改后用户需要使用新密码登录</p>
+                    </div>
+                  </div>
+
+                  {/* 重置方式选择 */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-text-primary">重置方式</label>
+                    <div className="flex space-x-4">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="resetMethod" 
+                          value="set" 
+                          checked={resetPasswordData.resetMethod === 'set'} 
+                          onChange={(e) => setResetPasswordData(prev => ({ ...prev, resetMethod: 'set' }))} 
+                          className="rounded border-border-light" 
+                        />
+                        <span className="text-sm text-text-primary">手动设置密码</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="resetMethod" 
+                          value="random" 
+                          checked={resetPasswordData.resetMethod === 'random'} 
+                          onChange={(e) => {
+                            // 生成随机密码
+                            const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+                            let password = '';
+                            for (let i = 0; i < 8; i++) {
+                              password += chars.charAt(Math.floor(Math.random() * chars.length));
+                            }
+                            setResetPasswordData(prev => ({ 
+                              ...prev, 
+                              resetMethod: 'random',
+                              newPassword: password,
+                              confirmPassword: password
+                            }));
+                          }} 
+                          className="rounded border-border-light" 
+                        />
+                        <span className="text-sm text-text-primary">生成随机密码</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 手动设置密码 */}
+                  {resetPasswordData.resetMethod === 'set' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label htmlFor="reset-new-password" className="block text-sm font-medium text-text-primary">
+                          新密码 *
+                        </label>
+                        <input 
+                          type="password" 
+                          id="reset-new-password"
+                          value={resetPasswordData.newPassword}
+                          onChange={(e) => setResetPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                          placeholder="请输入新密码"
+                          className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label htmlFor="reset-confirm-password" className="block text-sm font-medium text-text-primary">
+                          确认密码 *
+                        </label>
+                        <input 
+                          type="password" 
+                          id="reset-confirm-password"
+                          value={resetPasswordData.confirmPassword}
+                          onChange={(e) => setResetPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                          placeholder="请再次输入新密码"
+                          className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <button 
+                    type="button"
+                    onClick={() => {
+                      const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+                      let password = '';
+                      for (let i = 0; i < 8; i++) {
+                        password += chars.charAt(Math.floor(Math.random() * chars.length));
+                      }
+                      setResetPasswordData(prev => ({ ...prev, newPassword: password, confirmPassword: password }));
+                    }}
+                    className="w-full px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors text-sm"
+                  >
+                    <i className="fas fa-dice mr-2"></i>生成随机密码
+                  </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 随机密码说明和显示 */}
+                  {resetPasswordData.resetMethod === 'random' && (
+                    <div className="space-y-4">
+                      <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                        <div className="text-sm text-yellow-800">
+                          <p className="font-medium mb-2">
+                            <i className="fas fa-exclamation-triangle mr-2"></i>随机密码说明
+                          </p>
+                          <p>• 系统将为用户生成8位随机密码</p>
+                          <p>• 新密码包含字母和数字的组合</p>
+                          <p>• 密码已显示在上方输入框中</p>
+                          <p>• 在生产环境中，密码将通过邮件发送给用户</p>
+                        </div>
+                      </div>
+                      
+                      {/* 显示生成的随机密码 */}
+                      <div className="p-3 bg-gray-50 border border-gray-200 rounded-lg">
+                        <p className="text-sm text-text-primary font-medium">生成的随机密码:</p>
+                        <p className="text-lg font-bold text-primary mt-1">{resetPasswordData.newPassword}</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex items-center justify-end space-x-3 pt-4 border-t border-border-light">
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setShowResetPasswordModal(false);
+                      setResetPasswordUser(null);
+                      setResetPasswordData({ newPassword: '', confirmPassword: '', resetMethod: 'set' });
+                    }}
+                    className="px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={executeResetPassword}
+                    disabled={saving}
+                    className={`px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors ${saving ? 'opacity-70 cursor-not-allowed' : ''}`}
+                  >
+                    {saving ? (
+                      <span className="flex items-center">
+                        <i className="fas fa-spinner fa-spin mr-2"></i>处理中...
+                      </span>
+                    ) : (
+                      '确定重置'
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 批量修改密码模态框 */}
+      {showBatchPasswordModal && (
+        <div className="fixed inset-0 z-50">
+          <div className={styles.modalOverlay}></div>
+          <div className="relative flex items-center justify-center min-h-screen p-4">
+            <div className={`${styles.modalContent} bg-white rounded-xl shadow-xl w-full max-w-2xl`}>
+              <div className="flex items-center justify-between p-6 border-b border-border-light">
+                <h3 className="text-lg font-semibold text-text-primary">
+                  批量修改密码
+                </h3>
+                <button 
+                  onClick={() => {
+                    setShowBatchPasswordModal(false);
+                    setBatchPasswordData({ newPassword: '', confirmPassword: '', resetMethod: 'set' });
+                  }}
+                  className="text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <i className="fas fa-times text-xl"></i>
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="space-y-4">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                    <h4 className="font-medium text-blue-800 mb-2">
+                      <i className="fas fa-info-circle mr-2"></i>操作说明
+                    </h4>
+                    <div className="text-sm text-blue-700 space-y-1">
+                      <p>• 已选择 <span className="font-bold">{selectedUsers.size}</span> 个用户进行密码修改</p>
+                      <p>• 可以设置统一密码或生成随机密码</p>
+                      <p>• 修改后用户需要使用新密码登录</p>
+                    </div>
+                  </div>
+
+                  {/* 重置方式选择 */}
+                  <div className="space-y-2">
+                    <label className="block text-sm font-medium text-text-primary">重置方式</label>
+                    <div className="flex space-x-4">
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="resetMethod"
+                          value="set"
+                          checked={batchPasswordData.resetMethod === 'set'}
+                          onChange={(e) => setBatchPasswordData(prev => ({ ...prev, resetMethod: 'set' }))}
+                          className="rounded border-border-light"
+                        />
+                        <span className="text-sm text-text-primary">设置统一密码</span>
+                      </label>
+                      <label className="flex items-center space-x-2 cursor-pointer">
+                        <input 
+                          type="radio" 
+                          name="resetMethod"
+                          value="random"
+                          checked={batchPasswordData.resetMethod === 'random'}
+                          onChange={(e) => setBatchPasswordData(prev => ({ ...prev, resetMethod: 'random' }))}
+                          className="rounded border-border-light"
+                        />
+                        <span className="text-sm text-text-primary">生成随机密码</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 统一密码设置 */}
+                  {batchPasswordData.resetMethod === 'set' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <label htmlFor="batch-new-password" className="block text-sm font-medium text-text-primary">
+                          新密码 *
+                        </label>
+                        <input 
+                          type="password" 
+                          id="batch-new-password"
+                          value={batchPasswordData.newPassword}
+                          onChange={(e) => setBatchPasswordData(prev => ({ ...prev, newPassword: e.target.value }))}
+                          placeholder="请输入新密码"
+                          className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
+                        />
+                      </div>
+                      
+                      <div className="space-y-2">
+                        <label htmlFor="batch-confirm-password" className="block text-sm font-medium text-text-primary">
+                          确认密码 *
+                        </label>
+                        <input 
+                          type="password" 
+                          id="batch-confirm-password"
+                          value={batchPasswordData.confirmPassword}
+                          onChange={(e) => setBatchPasswordData(prev => ({ ...prev, confirmPassword: e.target.value }))}
+                          placeholder="请再次输入新密码"
+                          className={`w-full px-4 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
+                        />
+                      </div>
+
+                      <div className="md:col-span-2">
+                        <button 
+                          type="button"
+                          onClick={generateRandomPassword}
+                          className="w-full px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors text-sm"
+                        >
+                          <i className="fas fa-dice mr-2"></i>生成随机密码
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 随机密码说明 */}
+                  {batchPasswordData.resetMethod === 'random' && (
+                    <div className="p-4 bg-yellow-50 border border-yellow-200 rounded-lg">
+                      <div className="text-sm text-yellow-800">
+                        <p className="font-medium mb-2">
+                          <i className="fas fa-exclamation-triangle mr-2"></i>随机密码说明
+                        </p>
+                        <p>• 系统将为每个用户生成8位随机密码</p>
+                        <p>• 新密码包含字母和数字的组合</p>
+                        <p>• 在开发环境中，密码将在操作完成后显示</p>
+                        <p>• 在生产环境中，密码将通过邮件发送给用户</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex items-center justify-end space-x-3 pt-4 border-t border-border-light">
+                  <button 
+                    type="button" 
+                    onClick={() => {
+                      setShowBatchPasswordModal(false);
+                      setBatchPasswordData({ newPassword: '', confirmPassword: '', resetMethod: 'set' });
+                    }}
+                    className="px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    type="button" 
+                    onClick={executeBatchPasswordChange}
+                    className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
+                  >
+                    <i className="fas fa-key mr-2"></i>
+                    {batchPasswordData.resetMethod === 'set' ? '确认设置' : '确认重置'}
                   </button>
                 </div>
               </div>

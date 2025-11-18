@@ -144,14 +144,7 @@ const AdminDashboard: React.FC = () => {
             <span className="font-medium">用户管理</span>
           </Link>
           
-          <Link 
-            to="/admin-role-permission" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
-          >
-            <i className="fas fa-user-shield text-lg"></i>
-            <span className="font-medium">角色权限管理</span>
-          </Link>
-          
+
           <Link 
             to="/admin-system-settings" 
             className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
@@ -276,21 +269,7 @@ const AdminDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* 角色权限配置 */}
-            <div 
-              onClick={() => handleQuickActionClick('/admin-role-permission')}
-              className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300 cursor-pointer`}
-            >
-              <div className="flex items-center space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-user-shield text-white text-xl"></i>
-                </div>
-                <div>
-                  <h4 className="font-medium text-text-primary">角色权限配置</h4>
-                  <p className="text-sm text-text-secondary">配置用户角色和权限</p>
-                </div>
-              </div>
-            </div>
+
 
             {/* 系统设置 */}
             <div 

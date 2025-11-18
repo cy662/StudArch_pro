@@ -232,6 +232,7 @@ const LoginPage: React.FC = () => {
           </div>
           <h1 className="text-3xl font-bold text-text-primary mb-2">学档通</h1>
           <p className="text-text-secondary">学生档案全生命周期管理平台</p>
+          <p className="text-text-secondary text-sm mt-1">支持学号/工号登录</p>
         </div>
 
         {/* 登录表单 */}
