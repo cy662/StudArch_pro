@@ -47,9 +47,7 @@ const StudentDashboard: React.FC = () => {
     navigate('/student-profile-edit');
   };
 
-  const handleNotificationClick = () => {
-    alert('您有2条新消息：\n1. 联系方式修改申请已提交\n2. 期末考试成绩已公布');
-  };
+
 
   const handleLogoutClick = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -80,16 +78,7 @@ const StudentDashboard: React.FC = () => {
           
           {/* 用户信息和操作 */}
           <div className="flex items-center space-x-4">
-            {/* 消息通知 */}
-            <button 
-              onClick={handleNotificationClick}
-              className="relative p-2 text-text-secondary hover:text-secondary transition-colors"
-            >
-              <i className="fas fa-bell text-lg"></i>
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">2</span>
-            </button>
-            
-              {/* 用户信息 */}
+            {/* 用户信息 */}
             <Link 
               to="/student-my-profile"
               className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
@@ -286,22 +275,7 @@ const StudentDashboard: React.FC = () => {
               </div>
             </div>
 
-            {/* 待办事项 */}
-            <div className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-text-secondary text-sm mb-1">待办事项</p>
-                  <p className="text-3xl font-bold text-orange-600">{profileLoading ? '0' : (isProfileComplete() ? '0' : '1')}</p>
-                  <p className="text-text-secondary text-sm mt-1">
-                    {profileLoading ? '加载中...' : 
-                     isProfileComplete() ? '无待办事项' : '完善个人信息'}
-                  </p>
-                </div>
-                <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-tasks text-white text-xl"></i>
-                </div>
-              </div>
-            </div>
+
 
             {/* 平均绩点 */}
             <div className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300`}>
@@ -454,40 +428,7 @@ const StudentDashboard: React.FC = () => {
           </div>
         </section>
 
-        {/* 重要通知 */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-text-primary">重要通知</h3>
-          </div>
-          
-          <div className="bg-white rounded-xl shadow-card p-6">
-            <div className="space-y-4">
-              {/* 通知项目1 */}
-              <div className="flex items-start space-x-4 p-4 rounded-lg bg-blue-50 border-l-4 border-blue-400">
-                <div className="w-8 h-8 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                  <i className="fas fa-bullhorn text-blue-600 text-sm"></i>
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-medium text-blue-900">关于2024届毕业生毕业去向填报的通知</h4>
-                  <p className="text-sm text-blue-700 mt-1">请各位毕业生于3月1日前完成毕业去向填报，具体要求详见附件...</p>
-                  <p className="text-xs text-blue-600 mt-2">发布时间：2024年1月10日</p>
-                </div>
-              </div>
 
-              {/* 通知项目2 */}
-              <div className="flex items-start space-x-4 p-4 rounded-lg bg-green-50 border-l-4 border-green-400">
-                <div className="w-8 h-8 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
-                  <i className="fas fa-info-circle text-green-600 text-sm"></i>
-                </div>
-                <div className="flex-1">
-                  <h4 className="font-medium text-green-900">期末考试成绩查询系统已开放</h4>
-                  <p className="text-sm text-green-700 mt-1">本学期期末考试成绩已全部录入，学生可登录系统查询...</p>
-                  <p className="text-xs text-green-600 mt-2">发布时间：2024年1月8日</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
       </main>
     </div>
   );

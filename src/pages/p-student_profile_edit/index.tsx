@@ -239,9 +239,6 @@ const StudentProfileEdit: React.FC = () => {
         throw new Error('用户信息获取失败，请重新登录');
       }
 
-      console.log('开始保存个人信息，用户ID:', currentUser.id);
-      console.log('表单数据:', profile);
-
       // 转换表单数据为数据库格式
       const profileData: StudentProfileDBFormData = {
         gender: profile.studentGender,
@@ -258,11 +255,8 @@ const StudentProfileEdit: React.FC = () => {
         student_type: '全日制'
       };
 
-      console.log('转换后的数据库数据:', profileData);
-
       // 保存到数据库
       const result = await StudentProfileService.createOrUpdateStudentProfile(currentUser.id, profileData);
-      console.log('保存成功，返回结果:', result);
       
       // 添加延迟确保数据库更新完成
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -273,7 +267,6 @@ const StudentProfileEdit: React.FC = () => {
       
       // 使用新的查询重新获取最新数据
       const latestProfile = await StudentProfileService.getStudentProfile(currentUser.id);
-      console.log('保存后最新数据:', latestProfile);
       
       // 检查数据是否真正同步
       if (latestProfile) {
@@ -291,7 +284,6 @@ const StudentProfileEdit: React.FC = () => {
         showSuccessMessage('个人信息保存成功！');
       }
     } catch (error) {
-      console.error('保存个人信息失败:', error);
       
       // 提供更详细的错误信息
       let errorMessage = '保存失败，请稍后重试';
@@ -399,12 +391,6 @@ const StudentProfileEdit: React.FC = () => {
           
           {/* 用户信息和操作 */}
           <div className="flex items-center space-x-4">
-            {/* 消息通知 */}
-            <button className="relative p-2 text-text-secondary hover:text-secondary transition-colors">
-              <i className="fas fa-bell text-lg"></i>
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">1</span>
-            </button>
-            
             {/* 用户信息 */}
             <div className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors">
               <img 
@@ -832,21 +818,6 @@ const StudentProfileEdit: React.FC = () => {
 
         {/* 操作按钮区域 */}
         <div className="flex justify-end space-x-4 pt-6">
-          {/* 调试按钮（仅开发环境显示） */}
-          {process.env.NODE_ENV === 'development' && (
-            <button 
-              type="button" 
-              onClick={() => {
-                console.log('当前表单数据:', profile);
-                console.log('当前用户信息:', currentUser);
-                console.log('学生个人信息:', studentProfile);
-                showSuccessMessage('调试信息已输出到控制台');
-              }}
-              className="px-4 py-2 border border-gray-300 text-gray-600 rounded-lg hover:bg-gray-50 transition-colors text-sm"
-            >
-              调试信息
-            </button>
-          )}
           
           <button 
             type="button" 
