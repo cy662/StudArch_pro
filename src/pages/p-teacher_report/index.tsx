@@ -13,16 +13,14 @@ declare global {
 
 const TeacherReportPage: React.FC = () => {
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = useState<'all' | 'grades' | 'graduation' | 'rewards'>('all');
+  const [activeTab, setActiveTab] = useState<'all' | 'graduation' | 'rewards'>('all');
   const [classFilter, setClassFilter] = useState('');
   const [timeRange, setTimeRange] = useState('current');
   const [statDimension, setStatDimension] = useState('all');
 
-  // Chart实例引用
-  const gradeDistributionChartRef = useRef<any>(null);
+
   const graduationDistributionChartRef = useRef<any>(null);
-  const courseGradesChartRef = useRef<any>(null);
-  const gpaTrendChartRef = useRef<any>(null);
+
   const destinationTypeChartRef = useRef<any>(null);
   const salaryDistributionChartRef = useRef<any>(null);
   const rewardsTypesChartRef = useRef<any>(null);
@@ -54,23 +52,12 @@ const TeacherReportPage: React.FC = () => {
     }
 
     return () => {
-      // 清理所有图表实例
-      if (gradeDistributionChartRef.current) {
-        gradeDistributionChartRef.current.destroy();
-        gradeDistributionChartRef.current = null;
-      }
+
       if (graduationDistributionChartRef.current) {
         graduationDistributionChartRef.current.destroy();
         graduationDistributionChartRef.current = null;
       }
-      if (courseGradesChartRef.current) {
-        courseGradesChartRef.current.destroy();
-        courseGradesChartRef.current = null;
-      }
-      if (gpaTrendChartRef.current) {
-        gpaTrendChartRef.current.destroy();
-        gpaTrendChartRef.current = null;
-      }
+
       if (destinationTypeChartRef.current) {
         destinationTypeChartRef.current.destroy();
         destinationTypeChartRef.current = null;
@@ -91,30 +78,6 @@ const TeacherReportPage: React.FC = () => {
   }, []);
 
   const initCharts = () => {
-    // 成绩等级分布饼图
-    const gradeCtx = document.querySelector('#grade-distribution-chart') as HTMLCanvasElement;
-    if (gradeCtx && !gradeDistributionChartRef.current) {
-      gradeDistributionChartRef.current = new window.Chart(gradeCtx, {
-        type: 'doughnut',
-        data: {
-          labels: ['优秀 (90-100)', '良好 (80-89)', '中等 (70-79)', '及格 (60-69)', '不及格 (<60)'],
-          datasets: [{
-            data: [25, 35, 20, 15, 5],
-            backgroundColor: ['#10b981', '#3b82f6', '#f59e0b', '#8b5cf6', '#ef4444'],
-            borderWidth: 0
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              position: 'bottom'
-            }
-          }
-        }
-      });
-    }
 
     // 毕业去向分布柱状图
     const graduationCtx = document.querySelector('#graduation-distribution-chart') as HTMLCanvasElement;
@@ -155,86 +118,7 @@ const TeacherReportPage: React.FC = () => {
       });
     }
 
-    // 课程成绩分布图表
-    const courseCtx = document.querySelector('#course-grades-chart') as HTMLCanvasElement;
-    if (courseCtx && !courseGradesChartRef.current) {
-      courseGradesChartRef.current = new window.Chart(courseCtx, {
-        type: 'radar',
-        data: {
-          labels: ['高等数学', '程序设计', '数据结构', '计算机网络', '数据库原理'],
-          datasets: [{
-            label: '平均分',
-            data: [85, 88, 82, 86, 84],
-            backgroundColor: 'rgba(116, 90, 184, 0.2)',
-            borderColor: '#745ab8',
-            borderWidth: 2
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          scales: {
-            r: {
-              angleLines: {
-                color: '#e5e7eb'
-              },
-              grid: {
-                color: '#e5e7eb'
-              },
-              pointLabels: {
-                color: '#374151'
-              },
-              ticks: {
-                backdropColor: 'transparent',
-                color: '#6b7280'
-              }
-            }
-          }
-        }
-      });
-    }
 
-    // 绩点趋势图
-    const gpaCtx = document.querySelector('#gpa-trend-chart') as HTMLCanvasElement;
-    if (gpaCtx && !gpaTrendChartRef.current) {
-      gpaTrendChartRef.current = new window.Chart(gpaCtx, {
-        type: 'line',
-        data: {
-          labels: ['大一上', '大一下', '大二上', '大二下', '大三上', '大三下'],
-          datasets: [{
-            label: '平均绩点',
-            data: [2.9, 3.1, 3.2, 3.3, 3.25, 3.24],
-            borderColor: '#745ab8',
-            backgroundColor: 'rgba(116, 90, 184, 0.1)',
-            borderWidth: 3,
-            fill: true,
-            tension: 0.4
-          }]
-        },
-        options: {
-          responsive: true,
-          maintainAspectRatio: false,
-          plugins: {
-            legend: {
-              display: false
-            }
-          },
-          scales: {
-            y: {
-              min: 2.5,
-              grid: {
-                color: '#e5e7eb'
-              }
-            },
-            x: {
-              grid: {
-                display: false
-              }
-            }
-          }
-        }
-      });
-    }
 
     // 毕业去向类型分布
     const destCtx = document.querySelector('#destination-type-chart') as HTMLCanvasElement;
@@ -370,7 +254,7 @@ const TeacherReportPage: React.FC = () => {
     }
   };
 
-  const handleTabChange = (tab: 'all' | 'grades' | 'graduation' | 'rewards') => {
+  const handleTabChange = (tab: 'all' | 'graduation' | 'rewards') => {
     setActiveTab(tab);
     setStatDimension(tab);
   };
@@ -378,7 +262,6 @@ const TeacherReportPage: React.FC = () => {
   const handleStatDimensionChange = (value: string) => {
     setStatDimension(value);
     if (value === 'all') setActiveTab('all');
-    else if (value === 'grades') setActiveTab('grades');
     else if (value === 'graduation') setActiveTab('graduation');
     else if (value === 'rewards') setActiveTab('rewards');
   };
@@ -539,7 +422,7 @@ const TeacherReportPage: React.FC = () => {
                     className="px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
                   >
                     <option value="all">综合统计</option>
-                    <option value="grades">成绩分析</option>
+
                     <option value="graduation">毕业去向</option>
                     <option value="rewards">奖惩情况</option>
                   </select>
@@ -569,14 +452,7 @@ const TeacherReportPage: React.FC = () => {
             >
               综合统计
             </button>
-            <button 
-              onClick={() => handleTabChange('grades')}
-              className={`px-4 py-2 text-sm font-medium rounded-lg focus:outline-none ${activeTab === 'grades' ? styles.tabActive : styles.tabInactive}`}
-              role="tab" 
-              aria-controls="grades-content"
-            >
-              成绩分析
-            </button>
+
             <button 
               onClick={() => handleTabChange('graduation')}
               className={`px-4 py-2 text-sm font-medium rounded-lg focus:outline-none ${activeTab === 'graduation' ? styles.tabActive : styles.tabInactive}`}
@@ -668,19 +544,19 @@ const TeacherReportPage: React.FC = () => {
 
             {/* 图表区域 */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              {/* 成绩分布饼图 */}
-              <div className="bg-white rounded-xl shadow-card p-6">
-                <h3 className="text-lg font-semibold text-text-primary mb-4">成绩等级分布</h3>
-                <div className={styles.chartContainer}>
-                  <canvas id="grade-distribution-chart"></canvas>
-                </div>
-              </div>
-
               {/* 毕业去向柱状图 */}
               <div className="bg-white rounded-xl shadow-card p-6">
                 <h3 className="text-lg font-semibold text-text-primary mb-4">毕业去向分布</h3>
                 <div className={styles.chartContainer}>
                   <canvas id="graduation-distribution-chart"></canvas>
+                </div>
+              </div>
+
+              {/* 奖惩类型分布 */}
+              <div className="bg-white rounded-xl shadow-card p-6">
+                <h3 className="text-lg font-semibold text-text-primary mb-4">奖惩类型分布</h3>
+                <div className={styles.chartContainer}>
+                  <canvas id="rewards-types-chart"></canvas>
                 </div>
               </div>
             </div>
@@ -730,75 +606,7 @@ const TeacherReportPage: React.FC = () => {
           </section>
         )}
 
-        {/* 成绩分析内容 */}
-        {activeTab === 'grades' && (
-          <section className="mb-8">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
-              {/* 课程成绩分布 */}
-              <div className="bg-white rounded-xl shadow-card p-6">
-                <h3 className="text-lg font-semibold text-text-primary mb-4">主要课程成绩分布</h3>
-                <div className={styles.chartContainer}>
-                  <canvas id="course-grades-chart"></canvas>
-                </div>
-              </div>
 
-              {/* 绩点趋势图 */}
-              <div className="bg-white rounded-xl shadow-card p-6">
-                <h3 className="text-lg font-semibold text-text-primary mb-4">绩点变化趋势</h3>
-                <div className={styles.chartContainer}>
-                  <canvas id="gpa-trend-chart"></canvas>
-                </div>
-              </div>
-            </div>
-
-            {/* 成绩排名表格 */}
-            <div className="bg-white rounded-xl shadow-card overflow-hidden">
-              <div className="px-6 py-4 border-b border-border-light">
-                <h3 className="font-medium text-text-primary">成绩排名</h3>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">排名</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">学号</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">姓名</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">班级</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">绩点</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">平均分</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-border-light">
-                    <tr className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary font-medium">1</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">2021001</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">李小明</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">计算机科学与技术1班</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">3.85</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">92.5</td>
-                    </tr>
-                    <tr className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary font-medium">2</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">2021002</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">王小红</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">软件工程2班</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">3.78</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">91.2</td>
-                    </tr>
-                    <tr className="hover:bg-gray-50 transition-colors">
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary font-medium">3</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">2021003</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">张大力</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">计算机科学与技术1班</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">3.72</td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">90.1</td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
-        )}
 
         {/* 毕业去向内容 */}
         {activeTab === 'graduation' && (

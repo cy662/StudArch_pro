@@ -2,30 +2,11 @@
 
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
+import { GraduationDestinationService, GraduationDestination, GraduationImportBatch } from '../../services/graduationDestinationService';
 import styles from './styles.module.css';
 
-interface GraduationRecord {
-  id: string;
-  studentId: string;
-  name: string;
-  className: string;
-  type: 'employment' | 'furtherstudy' | 'entrepreneurship' | 'abroad' | 'unemployed' | 'other';
-  typeText: string;
-  company?: string;
-  school?: string;
-  position?: string;
-  salary?: string;
-  location?: string;
-  major?: string;
-  degree?: string;
-  status: 'pending' | 'approved' | 'rejected';
-  statusText: string;
-  proofFiles: string[];
-  submitTime: string;
-  approvedTime?: string;
-  rejectedTime?: string;
-  rejectReason?: string;
-}
+
 
 const TeacherGraduationManagement: React.FC = () => {
   const navigate = useNavigate();
@@ -43,6 +24,7 @@ const TeacherGraduationManagement: React.FC = () => {
   const [showDetailModal, setShowDetailModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showReviewModal, setShowReviewModal] = useState(false);
+  const [showImportHistoryModal, setShowImportHistoryModal] = useState(false);
   
   // 当前操作的数据ID
   const [currentDetailId, setCurrentDetailId] = useState<string | null>(null);
@@ -54,102 +36,63 @@ const TeacherGraduationManagement: React.FC = () => {
   
   // 文件上传状态
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [importLoading, setImportLoading] = useState(false);
+  const [importBatches, setImportBatches] = useState<GraduationImportBatch[]>([]);
 
-  // 模拟数据
-  const [graduationData, setGraduationData] = useState<Record<string, GraduationRecord>>({
-    'grad001': {
-      id: 'grad001',
-      studentId: '2021001',
-      name: '李小明',
-      className: '计算机科学与技术1班',
-      type: 'employment',
-      typeText: '就业',
-      company: '阿里巴巴（中国）有限公司',
-      position: '前端开发工程师',
-      salary: '15000',
-      location: '杭州',
-      status: 'pending',
-      statusText: '待审核',
-      proofFiles: ['offer_letter.pdf', 'employment_contract.pdf'],
-      submitTime: '2024-01-14 10:30:00'
-    },
-    'grad002': {
-      id: 'grad002',
-      studentId: '2021002',
-      name: '王小红',
-      className: '软件工程2班',
-      type: 'furtherstudy',
-      typeText: '升学',
-      school: '清华大学计算机科学与技术系',
-      major: '计算机应用技术',
-      degree: '硕士研究生',
-      status: 'approved',
-      statusText: '已通过',
-      proofFiles: ['admission_letter.pdf', 'transcript.pdf'],
-      submitTime: '2024-01-13 15:20:00',
-      approvedTime: '2024-01-14 09:15:00'
-    },
-    'grad003': {
-      id: 'grad003',
-      studentId: '2021003',
-      name: '张大力',
-      className: '计算机科学与技术1班',
-      type: 'employment',
-      typeText: '就业',
-      company: '腾讯科技（深圳）有限公司',
-      position: '产品经理',
-      salary: '18000',
-      location: '深圳',
-      status: 'rejected',
-      statusText: '已驳回',
-      rejectReason: '证明材料不完整，缺少劳动合同',
-      proofFiles: ['offer_letter.pdf'],
-      submitTime: '2024-01-12 16:45:00',
-      rejectedTime: '2024-01-13 11:30:00'
-    },
-    'grad004': {
-      id: 'grad004',
-      studentId: '2021004',
-      name: '刘美丽',
-      className: '软件工程2班',
-      type: 'abroad',
-      typeText: '出国',
-      school: '美国斯坦福大学',
-      major: '人工智能',
-      degree: '博士研究生',
-      status: 'pending',
-      statusText: '待审核',
-      proofFiles: ['admission_letter.pdf', 'visa.pdf'],
-      submitTime: '2024-01-14 14:20:00'
-    },
-    'grad005': {
-      id: 'grad005',
-      studentId: '2021005',
-      name: '陈志强',
-      className: '计算机科学与技术3班',
-      type: 'entrepreneurship',
-      typeText: '创业',
-      company: '北京创新科技有限公司',
-      position: '创始人兼CEO',
-      status: 'approved',
-      statusText: '已通过',
-      proofFiles: ['business_license.pdf', 'business_plan.pdf'],
-      submitTime: '2024-01-11 09:30:00',
-      approvedTime: '2024-01-12 14:45:00'
+  // 毕业去向数据
+  const [graduationData, setGraduationData] = useState<GraduationDestination[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [total, setTotal] = useState(0);
+
+  // 加载数据
+  const loadGraduationData = async () => {
+    setLoading(true);
+    try {
+      const result = await GraduationDestinationService.getGraduationDestinations({
+        keyword: searchKeyword,
+        destination_type: typeFilter,
+        status: statusFilter,
+        class_name: classFilter,
+        page: 1,
+        limit: 100
+      });
+      setGraduationData(result.destinations);
+      setTotal(result.total);
+    } catch (error) {
+      console.error('加载毕业去向数据失败:', error);
+    } finally {
+      setLoading(false);
     }
-  });
+  };
 
-  // 设置页面标题
+  // 加载导入批次
+  const loadImportBatches = async () => {
+    try {
+      const result = await GraduationDestinationService.getImportBatches(1, 10);
+      setImportBatches(result.batches);
+    } catch (error) {
+      console.error('加载导入批次失败:', error);
+    }
+  };
+
+  // 设置页面标题和初始加载
   useEffect(() => {
     const originalTitle = document.title;
     document.title = '毕业去向管理 - 学档通';
+    loadGraduationData();
+    loadImportBatches();
     return () => { document.title = originalTitle; };
   }, []);
+
+  // 筛选条件变化时重新加载数据
+  useEffect(() => {
+    loadGraduationData();
+  }, [searchKeyword, classFilter, typeFilter, statusFilter]);
 
   // 全选功能
   useEffect(() => {
     if (isSelectAll) {
-      const allIds = Object.keys(graduationData);
+      const allIds = graduationData.map(item => item.id);
       setSelectedItems(new Set(allIds));
     } else {
       setSelectedItems(new Set());
@@ -198,7 +141,7 @@ const TeacherGraduationManagement: React.FC = () => {
       newSelectedItems.add(id);
     }
     setSelectedItems(newSelectedItems);
-    setIsSelectAll(newSelectedItems.size === Object.keys(graduationData).length && newSelectedItems.size > 0);
+    setIsSelectAll(newSelectedItems.size === graduationData.length && newSelectedItems.size > 0);
   };
 
   // 批量导入相关
@@ -207,7 +150,63 @@ const TeacherGraduationManagement: React.FC = () => {
   };
 
   const handleDownloadTemplate = () => {
-    console.log('下载毕业去向导入模板');
+    // 创建Excel模板数据
+    const templateData = [
+      ['学号', '去向类型', '单位名称', '职位', '薪资', '工作地点', '学校名称', '专业', '学历层次', '留学国家', '创业公司名称', '创业角色', '其他去向描述'],
+      ['2021001', 'employment', '阿里巴巴（中国）有限公司', '前端开发工程师', '15000', '杭州', '', '', '', '', '', '', ''],
+      ['2021002', 'furtherstudy', '', '', '', '清华大学', '计算机应用技术', '硕士研究生', '', '', '', ''],
+      ['2021003', 'abroad', '', '', '', '美国斯坦福大学', '人工智能', '博士研究生', '美国', '', '', ''],
+      ['2021004', 'entrepreneurship', '', '', '', '', '', '', '', '北京创新科技有限公司', '创始人兼CEO', ''],
+      ['2021005', 'other', '', '', '', '', '', '', '', '', '', '自由职业']
+    ];
+
+    // 添加说明数据
+    const instructions = [
+      ['说明', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['去向类型可选值：', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['employment - 就业', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['furtherstudy - 国内升学', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['abroad - 出国留学', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['entrepreneurship - 创业', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['unemployed - 待业', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['other - 其他', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ['示例数据（请按格式填写）：', '', '', '', '', '', '', '', '', '', '', '', ''],
+      ...templateData
+    ];
+
+    // 创建真正的Excel文件
+    const worksheet = XLSX.utils.aoa_to_sheet(instructions);
+    const workbook = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(workbook, worksheet, '毕业去向导入模板');
+    
+    // 设置列宽
+    const colWidths = [
+      {wch: 15}, // 学号
+      {wch: 15}, // 去向类型
+      {wch: 25}, // 单位名称
+      {wch: 20}, // 职位
+      {wch: 10}, // 薪资
+      {wch: 15}, // 工作地点
+      {wch: 20}, // 学校名称
+      {wch: 15}, // 专业
+      {wch: 10}, // 学历层次
+      {wch: 15}, // 留学国家
+      {wch: 20}, // 创业公司名称
+      {wch: 15}, // 创业角色
+      {wch: 20}  // 其他去向描述
+    ];
+    worksheet['!cols'] = colWidths;
+
+    // 生成Excel文件
+    const excelBuffer = XLSX.write(workbook, { bookType: 'xlsx', type: 'array' });
+    const blob = new Blob([excelBuffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = '毕业去向导入模板.xlsx';
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const handleFileSelect = () => {
@@ -221,14 +220,86 @@ const TeacherGraduationManagement: React.FC = () => {
     }
   };
 
-  const handleConfirmImport = () => {
+  const handleConfirmImport = async () => {
     if (!selectedFile) {
       alert('请先选择要导入的文件');
       return;
     }
-    console.log('开始批量导入毕业去向数据');
-    setShowBatchImportModal(false);
-    setSelectedFile(null);
+
+    setImportLoading(true);
+    try {
+      // 读取Excel文件
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try {
+          const data = new Uint8Array(e.target?.result as ArrayBuffer);
+          const workbook = XLSX.read(data, { type: 'array' });
+          const sheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[sheetName];
+          const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+          // 处理数据，跳过说明行
+          const importData: any[] = [];
+          for (let i = 0; i < jsonData.length; i++) {
+            const row = jsonData[i] as any[];
+            // 跳过说明行和空行
+            if (i < 10 || !row[0] || row[0] === '说明' || row[0] === '去向类型可选值：') {
+              continue;
+            }
+            
+            // 解析数据行
+            if (row[0] && row[0] !== '示例数据（请按格式填写）：') {
+              importData.push({
+                student_number: row[0],
+                destination_type: row[1],
+                company_name: row[2] || '',
+                position: row[3] || '',
+                salary: row[4] || '',
+                work_location: row[5] || '',
+                school_name: row[6] || '',
+                major: row[7] || '',
+                degree: row[8] || '',
+                abroad_country: row[9] || '',
+                startup_name: row[10] || '',
+                startup_role: row[11] || '',
+                other_description: row[12] || ''
+              });
+            }
+          }
+
+          if (importData.length === 0) {
+            alert('Excel文件中没有找到有效的导入数据');
+            setImportLoading(false);
+            return;
+          }
+
+          // 执行批量导入
+          const batchName = `毕业去向导入_${new Date().toLocaleString('zh-CN')}`;
+          const result = await GraduationDestinationService.batchImportGraduationDestinations(
+            batchName,
+            selectedFile.name,
+            importData
+          );
+
+          alert(`导入完成！成功 ${result.success_count} 条，失败 ${result.failed_count} 条`);
+          setShowBatchImportModal(false);
+          setSelectedFile(null);
+          loadGraduationData();
+          loadImportBatches();
+        } catch (error) {
+          console.error('处理Excel文件失败:', error);
+          alert('处理Excel文件失败，请检查文件格式是否正确');
+        } finally {
+          setImportLoading(false);
+        }
+      };
+
+      reader.readAsArrayBuffer(selectedFile);
+    } catch (error) {
+      console.error('批量导入失败:', error);
+      alert('批量导入失败，请检查文件格式和网络连接');
+      setImportLoading(false);
+    }
   };
 
   // 查看详情
@@ -270,22 +341,14 @@ const TeacherGraduationManagement: React.FC = () => {
   };
 
   // 更新毕业去向状态
-  const updateGraduationStatus = (id: string, status: 'approved' | 'rejected', reason?: string) => {
-    setGraduationData(prevData => {
-      const updatedData = { ...prevData };
-      if (updatedData[id]) {
-        updatedData[id].status = status;
-        updatedData[id].statusText = status === 'approved' ? '已通过' : '已驳回';
-        
-        if (status === 'approved') {
-          updatedData[id].approvedTime = new Date().toLocaleString('zh-CN');
-        } else if (status === 'rejected') {
-          updatedData[id].rejectedTime = new Date().toLocaleString('zh-CN');
-          updatedData[id].rejectReason = reason;
-        }
-      }
-      return updatedData;
-    });
+  const updateGraduationStatus = async (id: string, status: 'approved' | 'rejected', reason?: string) => {
+    try {
+      await GraduationDestinationService.reviewGraduationDestination(id, status, reason);
+      loadGraduationData();
+    } catch (error) {
+      console.error('更新毕业去向状态失败:', error);
+      alert('更新状态失败，请重试');
+    }
   };
 
   // 编辑表单提交
@@ -296,9 +359,32 @@ const TeacherGraduationManagement: React.FC = () => {
     setCurrentEditId(null);
   };
 
+  // 获取去向类型文本
+  const getDestinationTypeText = (type: string) => {
+    const typeMap: Record<string, string> = {
+      'employment': '就业',
+      'furtherstudy': '升学',
+      'abroad': '出国',
+      'entrepreneurship': '创业',
+      'unemployed': '待业',
+      'other': '其他'
+    };
+    return typeMap[type] || type;
+  };
+
+  // 获取状态文本
+  const getStatusText = (status: string) => {
+    const statusMap: Record<string, string> = {
+      'pending': '待审核',
+      'approved': '已通过',
+      'rejected': '已驳回'
+    };
+    return statusMap[status] || status;
+  };
+
   // 渲染详情内容
   const renderDetailContent = () => {
-    const data = currentDetailId ? graduationData[currentDetailId] : null;
+    const data = graduationData.find(item => item.id === currentDetailId);
     if (!data) return null;
 
     return (
@@ -309,26 +395,26 @@ const TeacherGraduationManagement: React.FC = () => {
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-text-secondary">学号：</span>
-                <span className="text-text-primary">{data.studentId}</span>
+                <span className="text-text-primary">{data.student?.student_number}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">姓名：</span>
-                <span className="text-text-primary">{data.name}</span>
+                <span className="text-text-primary">{data.student?.full_name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">班级：</span>
-                <span className="text-text-primary">{data.className}</span>
+                <span className="text-text-primary">{data.student?.class_name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">去向类型：</span>
-                <span className={`px-2 py-1 text-xs font-medium ${styles[`type${data.type.charAt(0).toUpperCase() + data.type.slice(1)}`]} rounded-full`}>
-                  {data.typeText}
+                <span className={`px-2 py-1 text-xs font-medium ${styles[`type${data.destination_type.charAt(0).toUpperCase() + data.destination_type.slice(1)}`]} rounded-full`}>
+                  {getDestinationTypeText(data.destination_type)}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">审核状态：</span>
                 <span className={`px-2 py-1 text-xs font-medium ${styles[`status${data.status.charAt(0).toUpperCase() + data.status.slice(1)}`]} rounded-full`}>
-                  {data.statusText}
+                  {getStatusText(data.status)}
                 </span>
               </div>
             </div>
@@ -336,11 +422,11 @@ const TeacherGraduationManagement: React.FC = () => {
           <div>
             <h4 className="font-medium text-text-primary mb-3">详细信息</h4>
             <div className="space-y-2">
-              {data.type === 'employment' && (
+              {data.destination_type === 'employment' && (
                 <>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">单位名称：</span>
-                    <span className="text-text-primary">{data.company}</span>
+                    <span className="text-text-primary">{data.company_name}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">职位：</span>
@@ -348,19 +434,19 @@ const TeacherGraduationManagement: React.FC = () => {
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">薪资：</span>
-                    <span className="text-text-primary">{data.salary}元/月</span>
+                    <span className="text-text-primary">{data.salary ? `${data.salary}元/月` : '未填写'}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">工作地点：</span>
-                    <span className="text-text-primary">{data.location}</span>
+                    <span className="text-text-primary">{data.work_location}</span>
                   </div>
                 </>
               )}
-              {(data.type === 'furtherstudy' || data.type === 'abroad') && (
+              {(data.destination_type === 'furtherstudy' || data.destination_type === 'abroad') && (
                 <>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">学校名称：</span>
-                    <span className="text-text-primary">{data.school}</span>
+                    <span className="text-text-primary">{data.school_name}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">专业：</span>
@@ -386,23 +472,23 @@ const TeacherGraduationManagement: React.FC = () => {
               )}
               <div className="flex justify-between">
                 <span className="text-text-secondary">提交时间：</span>
-                <span className="text-text-primary">{data.submitTime}</span>
+                <span className="text-text-primary">{data.submit_time ? new Date(data.submit_time).toLocaleString('zh-CN') : ''}</span>
               </div>
               {data.status === 'approved' && (
                 <div className="flex justify-between">
                   <span className="text-text-secondary">审核通过时间：</span>
-                  <span className="text-text-primary">{data.approvedTime}</span>
+                  <span className="text-text-primary">{data.reviewed_at ? new Date(data.reviewed_at).toLocaleString('zh-CN') : ''}</span>
                 </div>
               )}
               {data.status === 'rejected' && (
                 <>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">驳回时间：</span>
-                    <span className="text-text-primary">{data.rejectedTime}</span>
+                    <span className="text-text-primary">{data.reviewed_at ? new Date(data.reviewed_at).toLocaleString('zh-CN') : ''}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">驳回原因：</span>
-                    <span className="text-red-600">{data.rejectReason}</span>
+                    <span className="text-red-600">{data.review_comment}</span>
                   </div>
                 </>
               )}
@@ -412,14 +498,20 @@ const TeacherGraduationManagement: React.FC = () => {
         <div className="border-t pt-4">
           <h4 className="font-medium text-text-primary mb-3">证明材料</h4>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-            {data.proofFiles.map((file, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <span className="text-text-primary">{file}</span>
-                <button className="text-secondary hover:text-accent transition-colors">
-                  <i className="fas fa-download"></i>
-                </button>
+            {data.proof_files && data.proof_files.length > 0 ? (
+              data.proof_files.map((file, index) => (
+                <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-text-primary">{file}</span>
+                  <button className="text-secondary hover:text-accent transition-colors">
+                    <i className="fas fa-download"></i>
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="col-span-2 text-center text-gray-500 py-4">
+                暂无证明材料
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
@@ -428,10 +520,10 @@ const TeacherGraduationManagement: React.FC = () => {
 
   // 渲染编辑表单
   const renderEditForm = () => {
-    const data = currentEditId ? graduationData[currentEditId] : null;
+    const data = graduationData.find(item => item.id === currentEditId);
     if (!data) return null;
 
-    const [editType, setEditType] = useState(data.type);
+    const [editType, setEditType] = useState(data.destination_type);
 
     const renderEditDetails = () => {
       switch(editType) {
@@ -440,7 +532,7 @@ const TeacherGraduationManagement: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">单位名称 *</label>
-                <input type="text" defaultValue={data.company || ''} required className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
+                <input type="text" defaultValue={data.company_name || ''} required className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">职位</label>
@@ -452,7 +544,7 @@ const TeacherGraduationManagement: React.FC = () => {
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">工作地点</label>
-                <input type="text" defaultValue={data.location || ''} className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
+                <input type="text" defaultValue={data.work_location || ''} className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
               </div>
             </div>
           );
@@ -462,7 +554,7 @@ const TeacherGraduationManagement: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">学校名称 *</label>
-                <input type="text" defaultValue={data.school || ''} required className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
+                <input type="text" defaultValue={data.school_name || ''} required className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">专业</label>
@@ -483,11 +575,11 @@ const TeacherGraduationManagement: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-2">公司名称 *</label>
-                <input type="text" defaultValue={data.company || ''} required className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
+                <input type="text" defaultValue={data.startup_name || ''} required className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
               </div>
               <div>
-                <label className="block text-sm font-medium text-text-primary mb-2">职位</label>
-                <input type="text" defaultValue={data.position || ''} className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
+                <label className="block text-sm font-medium text-text-primary mb-2">创业角色</label>
+                <input type="text" defaultValue={data.startup_role || ''} className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary" />
               </div>
             </div>
           );
@@ -537,64 +629,62 @@ const TeacherGraduationManagement: React.FC = () => {
 
   // 渲染审核内容
   const renderReviewContent = () => {
-    const data = currentReviewId ? graduationData[currentReviewId] : null;
+    const data = graduationData.find(item => item.id === currentReviewId);
     if (!data) return null;
 
     return (
       <div className="space-y-4">
         <div className="flex justify-between">
           <span className="text-text-secondary">学号：</span>
-          <span className="text-text-primary">{data.studentId}</span>
+          <span className="text-text-primary">{data.student?.student_number}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-text-secondary">姓名：</span>
-          <span className="text-text-primary">{data.name}</span>
+          <span className="text-text-primary">{data.student?.full_name}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-text-secondary">班级：</span>
-          <span className="text-text-primary">{data.className}</span>
+          <span className="text-text-primary">{data.student?.class_name}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-text-secondary">去向类型：</span>
-          <span className={`px-2 py-1 text-xs font-medium ${styles[`type${data.type.charAt(0).toUpperCase() + data.type.slice(1)}`]} rounded-full`}>
-            {data.typeText}
+          <span className={`px-2 py-1 text-xs font-medium ${styles[`type${data.destination_type.charAt(0).toUpperCase() + data.destination_type.slice(1)}`]} rounded-full`}>
+            {getDestinationTypeText(data.destination_type)}
           </span>
         </div>
         <div className="flex justify-between">
           <span className="text-text-secondary">单位/学校：</span>
-          <span className="text-text-primary">{data.company || data.school}</span>
+          <span className="text-text-primary">{data.company_name || data.school_name || data.startup_name || '-'}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-text-secondary">提交时间：</span>
-          <span className="text-text-primary">{data.submitTime}</span>
+          <span className="text-text-primary">{data.submit_time ? new Date(data.submit_time).toLocaleString('zh-CN') : ''}</span>
         </div>
         <div className="border-t pt-4">
           <h5 className="font-medium text-text-primary mb-2">证明材料</h5>
           <div className="space-y-1">
-            {data.proofFiles.map((file, index) => (
-              <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
-                <span className="text-sm text-text-primary">{file}</span>
-                <button className="text-secondary hover:text-accent transition-colors text-sm">
-                  <i className="fas fa-download mr-1"></i>下载
-                </button>
+            {data.proof_files && data.proof_files.length > 0 ? (
+              data.proof_files.map((file, index) => (
+                <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
+                  <span className="text-sm text-text-primary">{file}</span>
+                  <button className="text-secondary hover:text-accent transition-colors text-sm">
+                    <i className="fas fa-download mr-1"></i>下载
+                  </button>
+                </div>
+              ))
+            ) : (
+              <div className="text-center text-gray-500 py-2">
+                暂无证明材料
               </div>
-            ))}
+            )}
           </div>
         </div>
       </div>
     );
   };
 
-  // 过滤数据
-  const filteredData = Object.values(graduationData).filter(record => {
-    const matchesSearch = record.studentId.toLowerCase().includes(searchKeyword.toLowerCase()) ||
-                         record.name.toLowerCase().includes(searchKeyword.toLowerCase());
-    const matchesClass = !classFilter || record.className.includes(classFilter);
-    const matchesType = !typeFilter || record.type === typeFilter;
-    const matchesStatus = !statusFilter || record.status === statusFilter;
-    
-    return matchesSearch && matchesClass && matchesType && matchesStatus;
-  });
+  // 表格显示的数据已经通过API过滤，直接使用
+  const displayData = graduationData;
 
   return (
     <div className={styles.pageWrapper}>
@@ -678,6 +768,9 @@ const TeacherGraduationManagement: React.FC = () => {
             <div className="flex space-x-3">
               <button onClick={handleBatchImport} className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors">
                 <i className="fas fa-upload mr-2"></i>批量导入去向
+              </button>
+              <button onClick={() => setShowImportHistoryModal(true)} className="px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors">
+                <i className="fas fa-history mr-2"></i>导入历史
               </button>
             </div>
           </div>
@@ -785,8 +878,23 @@ const TeacherGraduationManagement: React.FC = () => {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-border-light">
-                {filteredData.map((record) => (
-                  <tr key={record.id} className="hover:bg-gray-50 transition-colors">
+                {loading ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-text-secondary">
+                      <i className="fas fa-spinner fa-spin text-2xl mb-2"></i>
+                      <div>加载中...</div>
+                    </td>
+                  </tr>
+                ) : displayData.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="px-6 py-12 text-center text-text-secondary">
+                      <i className="fas fa-inbox text-2xl mb-2"></i>
+                      <div>暂无毕业去向数据</div>
+                    </td>
+                  </tr>
+                ) : (
+                  displayData.map((record) => (
+                    <tr key={record.id} className="hover:bg-gray-50 transition-colors">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <input 
                         type="checkbox" 
@@ -795,32 +903,29 @@ const TeacherGraduationManagement: React.FC = () => {
                         className="rounded border-border-light"
                       />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.studentId}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.student?.student_number}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex items-center">
                         <img 
                           className="h-8 w-8 rounded-full mr-3" 
-                          src={`https://s.coze.cn/image/${record.id === 'grad001' ? 'dEU_pR4LeL0/' : 
-                                            record.id === 'grad002' ? 'UJJnT1_cLCM/' :
-                                            record.id === 'grad003' ? 'h1telHGafwM/' :
-                                            record.id === 'grad004' ? 'PWq4u0K2VtU/' : '4-gBXRuBVyc/'}`}
+                          src={`https://s.coze.cn/image/default_avatar/`}
                           alt="学生头像"
                         />
-                        <span className="font-medium text-text-primary">{record.name}</span>
+                        <span className="font-medium text-text-primary">{record.student?.full_name}</span>
                       </div>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.className}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.student?.class_name}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <span className={`px-2 py-1 text-xs font-medium ${styles[`type${record.type.charAt(0).toUpperCase() + record.type.slice(1)}`]} rounded-full`}>
-                        {record.typeText}
+                      <span className={`px-2 py-1 text-xs font-medium ${styles[`type${record.destination_type.charAt(0).toUpperCase() + record.destination_type.slice(1)}`]} rounded-full`}>
+                        {getDestinationTypeText(record.destination_type)}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                      {record.company || record.school}
+                      {record.company_name || record.school_name || record.startup_name || '-'}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-medium ${styles[`status${record.status.charAt(0).toUpperCase() + record.status.slice(1)}`]} rounded-full`}>
-                        {record.statusText}
+                        {getStatusText(record.status)}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
@@ -850,7 +955,7 @@ const TeacherGraduationManagement: React.FC = () => {
                       )}
                     </td>
                   </tr>
-                ))}
+                )))}
               </tbody>
             </table>
           </div>
@@ -858,7 +963,7 @@ const TeacherGraduationManagement: React.FC = () => {
           {/* 分页 */}
           <div className="px-6 py-4 border-t border-border-light flex items-center justify-between">
             <div className="text-sm text-text-secondary">
-              显示 1-{filteredData.length} 条，共 89 条记录
+              显示 1-{displayData.length} 条，共 {total} 条记录
             </div>
             <div className="flex space-x-2">
               <button className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors">
@@ -898,27 +1003,75 @@ const TeacherGraduationManagement: React.FC = () => {
                   <div>
                     <label className="block text-sm font-medium text-text-primary mb-2">上传文件</label>
                     <div className="border-2 border-dashed border-border-light rounded-lg p-6 text-center">
-                      <i className="fas fa-cloud-upload-alt text-3xl text-text-secondary mb-2"></i>
-                      <p className="text-sm text-text-secondary mb-2">拖拽文件到此处或点击选择文件</p>
-                      <input 
-                        type="file" 
-                        id="file-upload"
-                        accept=".xlsx,.xls" 
-                        onChange={handleFileChange}
-                        className="hidden"
-                      />
-                      <button onClick={handleFileSelect} className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors">
-                        选择文件
-                      </button>
+                      {selectedFile ? (
+                        <div className="space-y-2">
+                          <i className="fas fa-file-excel text-3xl text-green-500"></i>
+                          <p className="text-sm text-text-primary font-medium">{selectedFile.name}</p>
+                          <p className="text-xs text-text-secondary">{(selectedFile.size / 1024).toFixed(2)} KB</p>
+                          <button 
+                            onClick={() => setSelectedFile(null)}
+                            className="text-red-500 hover:text-red-700 text-sm"
+                          >
+                            <i className="fas fa-times mr-1"></i>移除文件
+                          </button>
+                        </div>
+                      ) : (
+                        <>
+                          <i className="fas fa-cloud-upload-alt text-3xl text-text-secondary mb-2"></i>
+                          <p className="text-sm text-text-secondary mb-2">拖拽文件到此处或点击选择文件</p>
+                          <input 
+                            type="file" 
+                            id="file-upload"
+                            accept=".xlsx,.xls" 
+                            onChange={handleFileChange}
+                            className="hidden"
+                          />
+                          <button onClick={handleFileSelect} className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors">
+                            选择文件
+                          </button>
+                        </>
+                      )}
                     </div>
                   </div>
+                  
+                  {importBatches.length > 0 && (
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-2">最近导入记录</label>
+                      <div className="space-y-2 max-h-32 overflow-y-auto">
+                        {importBatches.slice(0, 3).map(batch => (
+                          <div key={batch.id} className="flex items-center justify-between p-2 bg-gray-50 rounded text-sm">
+                            <div className="flex-1">
+                              <div className="text-text-primary font-medium">{batch.batch_name}</div>
+                              <div className="text-text-secondary text-xs">
+                                {batch.success_count}成功 {batch.failed_count}失败
+                              </div>
+                            </div>
+                            <div className="text-text-secondary text-xs">
+                              {new Date(batch.created_at).toLocaleDateString()}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div className="flex space-x-3 mt-6">
                   <button onClick={() => setShowBatchImportModal(false)} className="flex-1 px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors">
                     取消
                   </button>
-                  <button onClick={handleConfirmImport} className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors">
-                    导入
+                  <button 
+                    onClick={handleConfirmImport} 
+                    disabled={!selectedFile || importLoading}
+                    className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {importLoading ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        导入中...
+                      </>
+                    ) : (
+                      '导入'
+                    )}
                   </button>
                 </div>
               </div>
@@ -1008,6 +1161,76 @@ const TeacherGraduationManagement: React.FC = () => {
                       通过
                     </button>
                   </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 导入历史弹窗 */}
+      {showImportHistoryModal && (
+        <div className="fixed inset-0 z-50">
+          <div className={styles.modalOverlay} onClick={() => setShowImportHistoryModal(false)}></div>
+          <div className="relative flex items-center justify-center min-h-screen p-4">
+            <div className={`${styles.modalContent} bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[80vh] overflow-hidden`}>
+              <div className="p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-text-primary">导入历史记录</h3>
+                  <button onClick={() => setShowImportHistoryModal(false)} className="text-text-secondary hover:text-text-primary">
+                    <i className="fas fa-times"></i>
+                  </button>
+                </div>
+                <div className="space-y-4 max-h-[60vh] overflow-y-auto">
+                  {importBatches.length > 0 ? (
+                    importBatches.map(batch => (
+                      <div key={batch.id} className="border border-border-light rounded-lg p-4">
+                        <div className="flex items-start justify-between mb-3">
+                          <div>
+                            <h4 className="font-medium text-text-primary">{batch.batch_name}</h4>
+                            <p className="text-sm text-text-secondary">
+                              导入时间：{new Date(batch.created_at).toLocaleString('zh-CN')}
+                            </p>
+                            <p className="text-sm text-text-secondary">
+                              文件名：{batch.filename || '无'}
+                            </p>
+                          </div>
+                          <div className={`px-3 py-1 text-xs font-medium rounded-full ${
+                            batch.status === 'completed' ? 'bg-green-100 text-green-800' :
+                            batch.status === 'failed' ? 'bg-red-100 text-red-800' :
+                            'bg-yellow-100 text-yellow-800'
+                          }`}>
+                            {batch.status === 'completed' ? '已完成' :
+                             batch.status === 'failed' ? '失败' : '处理中'}
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-4 text-sm">
+                          <div className="text-center p-3 bg-blue-50 rounded">
+                            <div className="text-2xl font-bold text-blue-600">{batch.total_count}</div>
+                            <div className="text-text-secondary">总记录数</div>
+                          </div>
+                          <div className="text-center p-3 bg-green-50 rounded">
+                            <div className="text-2xl font-bold text-green-600">{batch.success_count}</div>
+                            <div className="text-text-secondary">成功导入</div>
+                          </div>
+                          <div className="text-center p-3 bg-red-50 rounded">
+                            <div className="text-2xl font-bold text-red-600">{batch.failed_count}</div>
+                            <div className="text-text-secondary">导入失败</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-8 text-text-secondary">
+                      <i className="fas fa-history text-4xl mb-3"></i>
+                      <div>暂无导入记录</div>
+                    </div>
+                  )}
+                </div>
+                <div className="flex justify-end mt-6">
+                  <button onClick={() => setShowImportHistoryModal(false)} className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors">
+                    关闭
+                  </button>
                 </div>
               </div>
             </div>
