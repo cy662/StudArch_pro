@@ -291,7 +291,15 @@ export class StudentProfileService {
           profile_status: 'pending' as const,
           edit_count: 1,
           created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
+          updated_at: new Date().toISOString(),
+          // 添加学籍信息字段
+          major: profileData.major || undefined,
+          academic_system: profileData.academic_system || undefined,
+          academic_status: profileData.academic_status || undefined,
+          department: profileData.department || undefined,
+          class_info: profileData.class_info || undefined,
+          enrollment_year: profileData.enrollment_year || undefined,
+          profile_photo: profileData.profile_photo || undefined
         }
         
         // 检查是否为模拟模式
@@ -402,7 +410,11 @@ export class StudentProfileService {
             result = insertData
           }
           
-          console.log('成功创建/更新记录:', result)
+          console.log('成功创建/更新student_profiles记录:', result)
+          
+          // 同时更新users表中的基本信息和student_profiles的扩展信息
+          await this.updateCompleteUserInfo(validUserId, profileData)
+          
           return result
         } catch (error) {
           console.error('创建个人信息异常:', error)
@@ -442,7 +454,15 @@ export class StudentProfileService {
         admission_date: profileData.admission_date,
         graduation_date: profileData.graduation_date,
         student_type: profileData.student_type,
-        profile_status: 'pending'
+        profile_status: 'pending',
+        // 添加学籍信息字段
+        major: profileData.major,
+        academic_system: profileData.academic_system,
+        academic_status: profileData.academic_status,
+        department: profileData.department,
+        class_info: profileData.class_info,
+        enrollment_year: profileData.enrollment_year,
+        profile_photo: profileData.profile_photo
       })
       
       console.log('更新成功:', updatedProfile)
@@ -450,6 +470,122 @@ export class StudentProfileService {
     } catch (error) {
       console.error('创建或更新个人信息失败:', error)
       throw error
+    }
+  }
+
+  // 完整更新用户信息（包括users表和student_profiles表）
+  private static async updateCompleteUserInfo(userId: string, profileData: StudentProfileFormData) {
+    try {
+      console.log('开始完整更新用户信息，用户ID:', userId);
+
+      // 第一步：更新users表的基本信息
+      const userUpdateData = {
+        full_name: profileData.full_name,
+        id_card: profileData.id_card,
+        gender: profileData.gender,
+        birth_date: profileData.birth_date,
+        nationality: profileData.nationality,
+        phone: profileData.phone,
+        department: profileData.department,
+        major: profileData.major,
+        class_name: profileData.class_name,
+        admission_year: profileData.admission_year,
+        study_duration: profileData.study_duration || 4,
+        academic_status: profileData.academic_status || '在读',
+        profile_completed: true,
+        profile_completed_at: new Date().toISOString(),
+        is_first_login: false,
+        updated_at: new Date().toISOString()
+      };
+
+      // 如果有用户编号，也更新
+      if (profileData.user_number) {
+        userUpdateData.user_number = profileData.user_number;
+      }
+
+      if (profileData.email) {
+        userUpdateData.email = profileData.email;
+      }
+
+      const { error: userError } = await supabase
+        .from('users')
+        .update(userUpdateData)
+        .eq('id', userId);
+
+      if (userError) {
+        console.warn('更新users表失败:', userError);
+        // 继续执行student_profiles表的更新
+      } else {
+        console.log('✅ 成功更新users表基本信息');
+      }
+
+      // 第二步：更新student_profiles表的扩展信息
+      const profileUpdateData = {
+        gender: profileData.gender,
+        birth_date: profileData.birth_date,
+        id_card: profileData.id_card,
+        nationality: profileData.nationality,
+        political_status: profileData.political_status,
+        phone: profileData.phone,
+        emergency_contact: profileData.emergency_contact, // 紧急联系人
+        emergency_phone: profileData.emergency_phone,   // 紧急联系人电话
+        home_address: profileData.home_address,          // 家庭地址
+        admission_date: profileData.admission_date,
+        graduation_date: profileData.graduation_date,
+        student_type: profileData.student_type || '全日制',
+        class_name: profileData.class_name,
+        profile_status: 'pending',
+        updated_at: new Date().toISOString()
+      };
+
+      // 先查询是否已有student_profiles记录
+      const { data: existingProfile } = await supabase
+        .from('student_profiles')
+        .select('id')
+        .eq('user_id', userId)
+        .single();
+
+      let profileError;
+      
+      if (existingProfile) {
+        // 更新现有记录
+        const { error } = await supabase
+          .from('student_profiles')
+          .update({
+            ...profileUpdateData,
+            edit_count: supabase.sql`edit_count + 1`
+          })
+          .eq('id', existingProfile.id);
+        profileError = error;
+      } else {
+        // 插入新记录
+        const { error } = await supabase
+          .from('student_profiles')
+          .insert({
+            ...profileUpdateData,
+            user_id: userId,
+            edit_count: 1,
+            created_at: new Date().toISOString()
+          });
+        profileError = error;
+      }
+
+      if (profileError) {
+        console.warn('更新student_profiles表失败:', profileError);
+      } else {
+        console.log('✅ 成功更新student_profiles表扩展信息，包括紧急联系人');
+      }
+
+      // 检查整体更新状态
+      if (!userError && !profileError) {
+        console.log('✅ 用户完整信息更新成功');
+      } else {
+        console.warn('⚠️ 部分更新失败，请检查具体错误');
+      }
+
+    } catch (error) {
+      console.error('完整更新用户信息异常:', error);
+      // 不抛出错误，允许主要流程继续
     }
   }
 
@@ -722,7 +858,15 @@ export class StudentProfileService {
         student_type: profileData.student_type || '全日制',
         profile_status: 'pending' as const,
         edit_count: supabase.sql`edit_count + 1`,
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        // 添加学籍信息字段
+        major: profileData.major || undefined,
+        academic_system: profileData.academic_system || undefined,
+        academic_status: profileData.academic_status || undefined,
+        department: profileData.department || undefined,
+        class_info: profileData.class_info || undefined,
+        enrollment_year: profileData.enrollment_year || undefined,
+        profile_photo: profileData.profile_photo || undefined
       }
 
       // 更新记录
@@ -738,7 +882,11 @@ export class StudentProfileService {
         throw error
       }
 
-      console.log('成功更新现有记录:', data)
+      console.log('成功更新student_profiles现有记录:', data)
+      
+      // 同时更新users表中的基本信息
+      await this.updateCompleteUserInfo(userId, profileData)
+      
       return data
     } catch (error) {
       console.error('更新现有个人资料失败:', error)

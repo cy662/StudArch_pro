@@ -82,12 +82,20 @@ export interface StudentProfile {
   phone?: string
   emergency_contact?: string
   emergency_phone?: string
+  emergency_contacts_json?: string
   home_address?: string
   admission_date?: string
   graduation_date?: string
   student_type?: string
   class_id?: string
   class_name?: string
+  profile_photo?: string
+  major?: string
+  academic_system?: string
+  academic_status?: string
+  department?: string
+  class_info?: string
+  enrollment_year?: string
   profile_status: 'incomplete' | 'pending' | 'approved' | 'rejected'
   edit_count: number
   last_edit_at?: string
@@ -160,6 +168,7 @@ export interface StudentCompleteInfo {
   student_type?: string
   class_id?: string
   profile_class_name?: string
+  profile_photo?: string
   profile_status: 'incomplete' | 'pending' | 'approved' | 'rejected'
   edit_count: number
   last_edit_at?: string
@@ -174,6 +183,9 @@ export interface StudentCompleteInfo {
 }
 
 export interface StudentProfileFormData {
+  full_name?: string
+  user_number?: string
+  email?: string
   gender?: 'male' | 'female' | 'other'
   birth_date?: string
   id_card?: string
@@ -182,11 +194,23 @@ export interface StudentProfileFormData {
   phone?: string
   emergency_contact?: string
   emergency_phone?: string
+  emergency_contacts_json?: string
   home_address?: string
   admission_date?: string
   graduation_date?: string
   student_type?: string
   class_id?: string
+  class_name?: string
+  profile_photo?: string
+  major?: string
+  academic_system?: string
+  academic_status?: string
+  department?: string
+  class_info?: string
+  enrollment_year?: string
+  admission_year?: number
+  study_duration?: number
+  photo_url?: string
   edit_reason?: string
 }
 

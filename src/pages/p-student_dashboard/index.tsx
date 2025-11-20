@@ -55,9 +55,7 @@ const StudentDashboard: React.FC = () => {
     }
   };
 
-  const handleActivityClick = () => {
-    navigate('/student-profile-edit');
-  };
+
 
   const handleQuickActionClick = (path: string) => {
     navigate(path);
@@ -84,9 +82,9 @@ const StudentDashboard: React.FC = () => {
               className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
             >
               <img 
-                src="https://s.coze.cn/image/DQIklNDlQyw/" 
+                src={profile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/DQIklNDlQyw/"} 
                 alt="学生头像" 
-                className="w-8 h-8 rounded-full" 
+                className="w-8 h-8 rounded-full object-cover" 
               />
               <div className="text-sm">
                 <div className="font-medium text-text-primary">
@@ -277,86 +275,11 @@ const StudentDashboard: React.FC = () => {
 
 
 
-            {/* 平均绩点 */}
-            <div className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-text-secondary text-sm mb-1">平均绩点</p>
-                  <p className="text-3xl font-bold text-secondary">3.75</p>
-                  <p className="text-text-secondary text-sm mt-1">排名：前15%</p>
-                </div>
-                <div className="w-12 h-12 bg-gradient-to-br from-secondary to-accent rounded-lg flex items-center justify-center">
-                  <i className="fas fa-star text-white text-xl"></i>
-                </div>
-              </div>
-            </div>
+
           </div>
         </section>
 
-        {/* 最新动态 */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-text-primary">最新动态</h3>
-            <Link 
-              to="/student-my-profile" 
-              className="text-secondary hover:text-accent font-medium transition-colors"
-            >
-              查看全部 <i className="fas fa-arrow-right ml-1"></i>
-            </Link>
-          </div>
-          
-          <div className="bg-white rounded-xl shadow-card p-6">
-            <div className="space-y-4">
-              {/* 动态项目1 */}
-              <div 
-                onClick={handleActivityClick}
-                className="flex items-start space-x-4 p-4 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer"
-              >
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <i className="fas fa-edit text-green-600"></i>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-text-primary">联系方式修改申请</h4>
-                    <span className="text-sm text-orange-600">待审核</span>
-                  </div>
-                  <p className="text-sm text-text-secondary mt-1">您于2024年1月14日提交了手机号码修改申请，正在等待辅导员审核</p>
-                  <p className="text-xs text-text-secondary mt-2">2小时前</p>
-                </div>
-              </div>
 
-              {/* 动态项目2 */}
-              <div className="flex items-start space-x-4 p-4 rounded-lg hover:bg-gray-50 transition-colors">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <i className="fas fa-graduation-cap text-blue-600"></i>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-text-primary">期末考试成绩公布</h4>
-                    <span className="text-sm text-green-600">已完成</span>
-                  </div>
-                  <p className="text-sm text-text-secondary mt-1">《数据结构》课程成绩已公布，您的成绩为85分，绩点3.5</p>
-                  <p className="text-xs text-text-secondary mt-2">1天前</p>
-                </div>
-              </div>
-
-              {/* 动态项目3 */}
-              <div className="flex items-start space-x-4 p-4 rounded-lg hover:bg-gray-50 transition-colors">
-                <div className="w-10 h-10 bg-purple-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <i className="fas fa-certificate text-purple-600"></i>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center justify-between">
-                    <h4 className="font-medium text-text-primary">获得校级奖学金</h4>
-                    <span className="text-sm text-green-600">已完成</span>
-                  </div>
-                  <p className="text-sm text-text-secondary mt-1">恭喜您获得2023-2024学年校级二等奖学金</p>
-                  <p className="text-xs text-text-secondary mt-2">3天前</p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
 
         {/* 快捷操作区 */}
         <section className="mb-8">

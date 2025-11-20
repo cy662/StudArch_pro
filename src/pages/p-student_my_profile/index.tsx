@@ -92,9 +92,9 @@ const StudentMyProfile: React.FC = () => {
               className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
             >
               <img 
-                src="https://s.coze.cn/image/sFgjeSbTJRw/" 
+                src={studentProfile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/sFgjeSbTJRw/"} 
                 alt="学生头像" 
-                className="w-8 h-8 rounded-full" 
+                className="w-8 h-8 rounded-full object-cover" 
               />
               <div className="text-sm">
                 <div className="font-medium text-text-primary">
@@ -199,9 +199,9 @@ const StudentMyProfile: React.FC = () => {
           <div className="bg-white rounded-xl shadow-card p-6">
             <div className="flex items-center space-x-6">
               <img 
-                src={currentUser?.avatar || "https://s.coze.cn/image/hAFUsHRaPGI/"} 
+                src={studentProfile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/hAFUsHRaPGI/"} 
                 alt={loading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '用户') + "头像"} 
-                className="w-20 h-20 rounded-full" 
+                className="w-20 h-20 rounded-full object-cover" 
               />
               <div className="flex-1">
                 <div className="flex items-center justify-between mb-2">
@@ -240,8 +240,16 @@ const StudentMyProfile: React.FC = () => {
                   </div>
                   <div>
                     <span className="text-text-secondary">学籍状态：</span>
-                    <span className="text-green-600 font-medium">
-                      {loading ? '加载中...' : (currentUser?.status === 'active' ? '在读' : '其他')}
+                    <span className={`font-medium ${
+                      loading ? 'text-gray-400' :
+                      studentProfile?.academic_status === '在读' ? 'text-green-600' :
+                      studentProfile?.academic_status === '休学' ? 'text-orange-600' :
+                      studentProfile?.academic_status === '复学' ? 'text-blue-600' :
+                      studentProfile?.academic_status === '毕业' ? 'text-purple-600' :
+                      studentProfile?.academic_status === '退学' || studentProfile?.academic_status === '结业' || studentProfile?.academic_status === '肄业' ? 'text-red-600' :
+                      'text-gray-600'
+                    }`}>
+                      {loading ? '加载中...' : (studentProfile?.academic_status || '未知')}
                     </span>
                   </div>
                   <div>
@@ -278,6 +286,42 @@ const StudentMyProfile: React.FC = () => {
           {/* 基本信息 */}
           <div className={`${styles.tabContent} ${activeTab !== 'basic' ? styles.tabContentHidden : ''} bg-white rounded-xl shadow-card p-6`}>
             <h4 className="text-lg font-semibold text-text-primary mb-4">基本信息</h4>
+            
+            {/* 证件照显示 */}
+            <div className="mb-6 flex items-center space-x-6 p-4 bg-gray-50 rounded-lg">
+              <div className="w-24 h-32 border-2 border-gray-200 rounded-lg overflow-hidden bg-white">
+                {studentProfile?.profile_photo ? (
+                  <img 
+                    src={studentProfile.profile_photo} 
+                    alt="证件照" 
+                    className="w-full h-full object-cover"
+                  />
+                ) : (
+                  <div className="w-full h-full flex items-center justify-center">
+                    <div className="text-center">
+                      <i className="fas fa-camera text-gray-400 text-2xl mb-2"></i>
+                      <p className="text-xs text-gray-500">未上传证件照</p>
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="flex-1">
+                <h5 className="font-medium text-text-primary mb-2">证件照</h5>
+                <p className="text-sm text-gray-600 mb-2">
+                  用于身份识别和各类证明材料
+                </p>
+                {!studentProfile?.profile_photo && (
+                  <button 
+                    onClick={handleEditProfileClick}
+                    className="text-sm text-secondary hover:text-accent transition-colors"
+                  >
+                    <i className="fas fa-plus-circle mr-1"></i>
+                    上传证件照
+                  </button>
+                )}
+              </div>
+            </div>
+            
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <div className="flex justify-between">
@@ -377,63 +421,71 @@ const StudentMyProfile: React.FC = () => {
                 <div className="flex justify-between">
                   <span className="text-text-secondary">院系：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.department || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.department || currentUser?.department || '未知')}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-secondary">专业：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.major || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.major || '未知')}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-secondary">班级：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.class_name || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.class_info || currentUser?.class_name || '未知')}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-secondary">入学年份：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.enrollment_year || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.enrollment_year || '未知')}
                   </span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-text-secondary">学制：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.study_duration || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.academic_system || '未知')}
                   </span>
                 </div>
               </div>
               <div className="space-y-4">
                 <div className="flex justify-between">
                   <span className="text-text-secondary">学籍状态：</span>
-                  <span className="text-green-600 font-medium">
-                    {loading ? '加载中...' : (currentUser?.status === 'active' ? '在读' : currentUser?.status || '未知')}
+                  <span className={`font-medium ${
+                    loading ? 'text-gray-400' :
+                    studentProfile?.academic_status === '在读' ? 'text-green-600' :
+                    studentProfile?.academic_status === '休学' ? 'text-orange-600' :
+                    studentProfile?.academic_status === '复学' ? 'text-blue-600' :
+                    studentProfile?.academic_status === '毕业' ? 'text-purple-600' :
+                    studentProfile?.academic_status === '退学' || studentProfile?.academic_status === '结业' || studentProfile?.academic_status === '肄业' ? 'text-red-600' :
+                    'text-gray-600'
+                  }`}>
+                    {loading ? '加载中...' : (studentProfile?.academic_status || '未知')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary">辅导员：</span>
+                  <span className="text-text-secondary">学生类型：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.counselor || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.student_type || '未知')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary">入学方式：</span>
+                  <span className="text-text-secondary">入学日期：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.admission_type || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.admission_date || '未知')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary">生源地：</span>
+                  <span className="text-text-secondary">预计毕业日期：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.hometown || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.graduation_date || '未知')}
                   </span>
                 </div>
                 <div className="flex justify-between">
-                  <span className="text-text-secondary">高考成绩：</span>
+                  <span className="text-text-secondary">编辑次数：</span>
                   <span className="text-text-primary font-medium">
-                    {loading ? '加载中...' : (currentUser?.gaokao_score || '未知')}
+                    {loading ? '加载中...' : (studentProfile?.edit_count || 0)}
                   </span>
                 </div>
               </div>

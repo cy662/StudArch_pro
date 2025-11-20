@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
+import { useAuth } from '../../hooks/useAuth';
+import useStudentProfile from '../../hooks/useStudentProfile';
 
 interface Document {
   id: string;
@@ -16,6 +18,8 @@ interface Document {
 
 const StudentDocumentView: React.FC = () => {
   const navigate = useNavigate();
+  const { user: currentUser, loading: authLoading } = useAuth();
+  const { profile: studentProfile } = useStudentProfile(currentUser?.id || '');
   
   // 模拟文件数据
   const mockDocuments: Document[] = [
@@ -432,13 +436,17 @@ const StudentDocumentView: React.FC = () => {
             {/* 用户信息 */}
             <div className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors">
               <img 
-                src="https://s.coze.cn/image/qnzJjWCibKY/" 
+                src={studentProfile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/qnzJjWCibKY/"} 
                 alt="学生头像" 
-                className="w-8 h-8 rounded-full" 
+                className="w-8 h-8 rounded-full object-cover" 
               />
               <div className="text-sm">
-                <div className="font-medium text-text-primary">李小明</div>
-                <div className="text-text-secondary">计算机科学与技术1班</div>
+                <div className="font-medium text-text-primary">
+                  {authLoading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '未知用户')}
+                </div>
+                <div className="text-text-secondary">
+                  {authLoading ? '加载中...' : (currentUser?.class_name || '未知班级')}
+                </div>
               </div>
               <i className="fas fa-chevron-down text-xs text-text-secondary"></i>
             </div>

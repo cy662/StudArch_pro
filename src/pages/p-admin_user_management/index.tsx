@@ -193,6 +193,55 @@ const AdminUserManagement: React.FC = () => {
   const totalPages = Math.ceil(totalUsers / pageSize);
   const startIndex = (currentPage - 1) * pageSize + 1;
   const endIndex = Math.min(startIndex + pageSize - 1, totalUsers);
+  
+  // 处理批量导出功能
+  const handleBatchExport = async () => {
+    try {
+      // 如果有选中的用户，只导出选中的用户；否则导出当前页面的所有用户
+      const usersToExport = selectedUsers.size > 0 
+        ? users.filter(user => selectedUsers.has(user.id))
+        : users;
+      
+      if (usersToExport.length === 0) {
+        alert('没有可导出的用户数据');
+        return;
+      }
+      
+      // 格式化导出数据
+      const exportData = usersToExport.map(user => {
+        const role = roles.find(r => r.id === user.role_id);
+        return {
+          '用户ID': user.id,
+          '用户名': user.username,
+          '学号/工号': user.user_number,
+          '姓名': user.full_name,
+          '邮箱': user.email,
+          '角色': role ? role.role_description : '-',
+          '状态': getStatusText(user.status),
+          '创建时间': formatDateTime(user.created_at),
+          '最后登录时间': user.last_login_at ? formatDateTime(user.last_login_at) : '-',
+          '密码修改时间': user.password_changed_at ? formatDateTime(user.password_changed_at) : '-'
+        };
+      });
+      
+      // 创建工作簿和工作表
+      const worksheet = XLSX.utils.json_to_sheet(exportData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, '用户数据');
+      
+      // 生成文件名
+      const fileName = `用户数据_${new Date().toISOString().slice(0, 10)}_${new Date().getTime()}.xlsx`;
+      
+      // 导出文件
+      XLSX.writeFile(workbook, fileName);
+      
+      // 显示成功提示
+      alert(`成功导出 ${usersToExport.length} 条用户数据`);
+    } catch (error) {
+      console.error('导出用户数据失败:', error);
+      alert('导出用户数据失败，请重试');
+    }
+  };
 
   // 处理全选
   const handleSelectAll = (checked: boolean) => {
@@ -1121,6 +1170,12 @@ const AdminUserManagement: React.FC = () => {
                 className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
               >
                 <i className="fas fa-upload mr-2"></i>批量导入
+              </button>
+              <button 
+                onClick={handleBatchExport}
+                className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors"
+              >
+                <i className="fas fa-download mr-2"></i>批量导出
               </button>
               <button 
                 onClick={() => openUserModal()}

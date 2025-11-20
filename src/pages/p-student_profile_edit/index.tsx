@@ -4,6 +4,7 @@ import { useAuth } from '../../hooks/useAuth';
 import StudentProfileService from '../../services/studentProfileService';
 import useStudentProfile from '../../hooks/useStudentProfile';
 import { StudentProfile, StudentProfileFormData as StudentProfileDBFormData, UserWithRole } from '../../types/user';
+import { supabase } from '../../lib/supabase';
 
 // 样式类名常量
 const STYLES = {
@@ -17,6 +18,11 @@ const STYLES = {
   formInputFocus: 'focus:outline-none focus:border-purple-500 focus:ring-2 focus:ring-purple-200'
 };
 
+interface EmergencyContact {
+  name: string;
+  phone: string;
+}
+
 interface StudentProfileFormData {
   studentId: string;
   studentName: string;
@@ -28,23 +34,17 @@ interface StudentProfileFormData {
   contactPhone: string;
   email: string;
   homeAddress: string;
-  emergencyContactName: string;
-  emergencyContactPhone: string;
+  emergencyContacts: EmergencyContact[];
   department: string;
   major: string;
   class: string;
   enrollmentYear: string;
   academicSystem: string;
   academicStatus: string;
+  profilePhoto?: string;
 }
 
-interface ChangeApplication {
-  fieldName: string;
-  fieldId: string;
-  currentValue: string;
-  newValue: string;
-  reason: string;
-}
+
 
 const StudentProfileEdit: React.FC = () => {
   const navigate = useNavigate();
@@ -66,6 +66,8 @@ const StudentProfileEdit: React.FC = () => {
     
     // 当用户信息和个人信息加载完成后，更新表单
     if (!authLoading && currentUser) {
+      console.log('studentProfile.profile_photo:', studentProfile?.profile_photo);
+      
       // 从学生个人信息中获取数据，如果没有则使用默认值
       const profileData = {
         studentId: currentUser?.user_number || currentUser?.username || '',
@@ -78,16 +80,22 @@ const StudentProfileEdit: React.FC = () => {
         contactPhone: studentProfile?.phone || '',
         email: currentUser?.email || '',
         homeAddress: studentProfile?.home_address || '',
-        emergencyContactName: studentProfile?.emergency_contact || '',
-        emergencyContactPhone: studentProfile?.emergency_phone || '',
-        department: currentUser?.department || '',
-        major: '',
-        class: currentUser?.class_name || '',
-        enrollmentYear: currentUser?.grade || '',
-        academicSystem: '',
-        academicStatus: studentProfile?.profile_status === 'approved' ? '在读' : '未完成'
+        emergencyContacts: [
+          { 
+            name: studentProfile?.emergency_contact || '', 
+            phone: studentProfile?.emergency_phone || '' 
+          }
+        ],
+        department: studentProfile?.department || currentUser?.department || '',
+        major: studentProfile?.major || '',
+        class: studentProfile?.class_info || currentUser?.class_name || '',
+        enrollmentYear: studentProfile?.enrollment_year || currentUser?.grade || '',
+        academicSystem: studentProfile?.academic_system || '',
+        academicStatus: studentProfile?.academic_status || '未完成',
+        profilePhoto: studentProfile?.profile_photo || ''
       };
       
+      console.log('即将设置到表单的数据:', profileData);
       setProfile(profileData);
       setLoading(false);
     }
@@ -107,25 +115,19 @@ const StudentProfileEdit: React.FC = () => {
     contactPhone: '',
     email: '',
     homeAddress: '',
-    emergencyContactName: '',
-    emergencyContactPhone: '',
+    emergencyContacts: [
+      { name: '', phone: '' }
+    ],
     department: '',
     major: '',
     class: '',
     enrollmentYear: '',
     academicSystem: '',
-    academicStatus: '未完成'
+    academicStatus: '未完成',
+    profilePhoto: ''
   });
 
-  // 弹窗状态
-  const [showChangeModal, setShowChangeModal] = useState(false);
-  const [changeApplication, setChangeApplication] = useState<ChangeApplication>({
-    fieldName: '',
-    fieldId: '',
-    currentValue: '',
-    newValue: '',
-    reason: ''
-  });
+
 
   // 成功提示状态
   const [showSuccessToast, setShowSuccessToast] = useState(false);
@@ -134,6 +136,9 @@ const StudentProfileEdit: React.FC = () => {
   // 错误提示状态
   const [showErrorToast, setShowErrorToast] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+
+
+
 
   // 处理表单输入变化
   const handleInputChange = (field: keyof StudentProfileFormData, value: string) => {
@@ -151,6 +156,32 @@ const StudentProfileEdit: React.FC = () => {
     }));
   };
 
+  // 处理证件照上传
+  const handleProfilePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // 验证文件类型
+    if (!file.type.startsWith('image/')) {
+      showErrorMessage('请选择图片文件');
+      return;
+    }
+
+    // 验证文件大小（2MB）
+    if (file.size > 2 * 1024 * 1024) {
+      showErrorMessage('图片文件大小不能超过2MB');
+      return;
+    }
+
+    // 转换为Base64或上传到服务器
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result as string;
+      handleInputChange('profilePhoto', result);
+    };
+    reader.readAsDataURL(file);
+  };
+
   // 获取性别显示文本
   const getGenderDisplayText = (gender: 'male' | 'female' | 'other') => {
     switch (gender) {
@@ -161,59 +192,51 @@ const StudentProfileEdit: React.FC = () => {
     }
   };
 
-  // 打开修改申请弹窗
-  const openChangeModal = (fieldName: string, fieldId: keyof StudentProfileFormData) => {
-    setChangeApplication({
-      fieldName,
-      fieldId: fieldId,
-      currentValue: profile[fieldId],
-      newValue: '',
-      reason: ''
-    });
-    setShowChangeModal(true);
-  };
-
-  // 关闭弹窗
-  const closeChangeModal = () => {
-    setShowChangeModal(false);
-    setChangeApplication({
-      fieldName: '',
-      fieldId: '',
-      currentValue: '',
-      newValue: '',
-      reason: ''
-    });
-  };
-
-  // 提交修改申请
-  const submitChangeApplication = () => {
-    const { newValue, reason } = changeApplication;
-    
-    if (!newValue.trim()) {
-      showErrorMessage('请输入新值');
-      return;
-    }
-    
-    if (!reason.trim()) {
-      showErrorMessage('请说明修改原因');
-      return;
-    }
-    
-    // 模拟提交申请
-    closeChangeModal();
-    showSuccessMessage('修改申请已提交，请等待辅导员审核');
+  // 更新紧急联系人信息
+  const handleEmergencyContactChange = (field: 'name' | 'phone', value: string) => {
+    setProfile(prev => ({
+      ...prev,
+      emergencyContacts: [
+        { ...prev.emergencyContacts[0], [field]: value }
+      ]
+    }));
   };
 
   // 保存修改到数据库
   const handleSave = async () => {
-    // 表单验证
-    if (!profile.contactPhone.trim()) {
-      showErrorMessage('请填写联系电话');
+    // 必填字段验证
+    if (!profile.studentName.trim()) {
+      showErrorMessage('请填写姓名');
       return;
     }
     
-    if (!profile.email.trim()) {
-      showErrorMessage('请填写电子邮箱');
+    if (!profile.idCard.trim()) {
+      showErrorMessage('请填写身份证号码');
+      return;
+    }
+    
+    if (!/^\d{17}[\dX]$|^\d{15}$/.test(profile.idCard.replace(/\s/g, ''))) {
+      showErrorMessage('请输入正确的身份证号码格式');
+      return;
+    }
+    
+    if (!profile.ethnicity.trim()) {
+      showErrorMessage('请填写民族');
+      return;
+    }
+    
+    if (!profile.birthDate) {
+      showErrorMessage('请选择出生日期');
+      return;
+    }
+    
+    if (!profile.profilePhoto) {
+      showErrorMessage('请上传证件照');
+      return;
+    }
+    
+    if (!profile.contactPhone.trim()) {
+      showErrorMessage('请填写联系电话');
       return;
     }
     
@@ -222,13 +245,59 @@ const StudentProfileEdit: React.FC = () => {
       return;
     }
     
+    if (!profile.email.trim()) {
+      showErrorMessage('请填写电子邮箱');
+      return;
+    }
+    
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(profile.email)) {
       showErrorMessage('请输入正确的邮箱格式');
       return;
     }
     
-    if (!profile.emergencyContactPhone.trim() || !/^1[3-9]\d{9}$/.test(profile.emergencyContactPhone)) {
+    // 验证紧急联系人
+    const contact = profile.emergencyContacts[0];
+    if (!contact.name.trim()) {
+      showErrorMessage('请填写紧急联系人姓名');
+      return;
+    }
+    if (!contact.phone.trim() || !/^1[3-9]\d{9}$/.test(contact.phone)) {
       showErrorMessage('请输入正确的紧急联系人手机号码');
+      return;
+    }
+    
+    if (!profile.department.trim()) {
+      showErrorMessage('请填写院系');
+      return;
+    }
+    
+    if (!profile.major.trim()) {
+      showErrorMessage('请填写专业');
+      return;
+    }
+    
+    if (!profile.class.trim()) {
+      showErrorMessage('请填写班级');
+      return;
+    }
+    
+    if (!profile.enrollmentYear.trim()) {
+      showErrorMessage('请填写入学年份');
+      return;
+    }
+    
+    if (!/^\d{4}$/.test(profile.enrollmentYear)) {
+      showErrorMessage('请输入正确的入学年份格式（如：2023）');
+      return;
+    }
+    
+    if (!profile.academicSystem) {
+      showErrorMessage('请选择学制');
+      return;
+    }
+    
+    if (!profile.academicStatus) {
+      showErrorMessage('请选择学籍状态');
       return;
     }
 
@@ -239,6 +308,26 @@ const StudentProfileEdit: React.FC = () => {
         throw new Error('用户信息获取失败，请重新登录');
       }
 
+      // 首先更新用户表的基本信息字段
+      try {
+        const { error: userUpdateError } = await supabase
+          .from('users')
+          .update({ 
+            full_name: profile.studentName,
+            department: profile.department,
+            class_name: profile.class,
+            grade: profile.enrollmentYear,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', currentUser.id);
+        
+        if (userUpdateError) {
+          console.warn('更新用户基本信息失败:', userUpdateError);
+        }
+      } catch (error) {
+        console.warn('更新用户基本信息异常:', error);
+      }
+
       // 转换表单数据为数据库格式
       const profileData: StudentProfileDBFormData = {
         gender: profile.studentGender,
@@ -247,16 +336,25 @@ const StudentProfileEdit: React.FC = () => {
         nationality: profile.ethnicity || undefined,
         political_status: profile.politicalStatus || undefined,
         phone: profile.contactPhone,
-        emergency_contact: profile.emergencyContactName || undefined,
-        emergency_phone: profile.emergencyContactPhone,
+        emergency_contact: profile.emergencyContacts[0]?.name || undefined,
+        emergency_phone: profile.emergencyContacts[0]?.phone,
         home_address: profile.homeAddress || undefined,
         admission_date: profile.enrollmentYear ? `${profile.enrollmentYear}-09-01` : undefined,
         graduation_date: profile.enrollmentYear ? `${parseInt(profile.enrollmentYear) + 4}-06-30` : undefined,
-        student_type: '全日制'
+        student_type: '全日制',
+        profile_photo: profile.profilePhoto,
+        major: profile.major || undefined,
+        academic_system: profile.academicSystem || undefined,
+        academic_status: profile.academicStatus || undefined,
+        department: profile.department || undefined,
+        class_info: profile.class || undefined,
+        enrollment_year: profile.enrollmentYear || undefined
       };
 
       // 保存到数据库
+      
       const result = await StudentProfileService.createOrUpdateStudentProfile(currentUser.id, profileData);
+      console.log('保存结果:', result);
       
       // 添加延迟确保数据库更新完成
       await new Promise(resolve => setTimeout(resolve, 800));
@@ -265,18 +363,36 @@ const StudentProfileEdit: React.FC = () => {
       await refreshStudentProfile();
       await refreshProfile();
       
-      // 使用新的查询重新获取最新数据
+      // 重新获取最新的个人资料数据
       const latestProfile = await StudentProfileService.getStudentProfile(currentUser.id);
+      console.log('重新获取的最新数据:', latestProfile);
+      
+      if (latestProfile) {
+        // 强制更新表单数据
+        const updatedFormData = {
+          department: latestProfile.department || profile.department,
+          major: latestProfile.major || profile.major,
+          class: latestProfile.class_info || profile.class,
+          enrollmentYear: latestProfile.enrollment_year || profile.enrollmentYear,
+          academicSystem: latestProfile.academic_system || profile.academicSystem,
+          academicStatus: latestProfile.academic_status || profile.academicStatus,
+          profilePhoto: latestProfile.profile_photo || profile.profilePhoto
+        };
+        
+        console.log('强制更新表单数据:', updatedFormData);
+        setProfile(prev => ({ ...prev, ...updatedFormData }));
+      }
       
       // 检查数据是否真正同步
       if (latestProfile) {
         const isSynced = 
           latestProfile.phone === profileData.phone &&
           latestProfile.emergency_phone === profileData.emergency_phone &&
-          latestProfile.home_address === profileData.home_address;
+          latestProfile.home_address === profileData.home_address &&
+          latestProfile.id_card === profileData.id_card;
         
         if (isSynced) {
-          showSuccessMessage('个人信息保存成功！数据已实时同步到档案中。');
+          showSuccessMessage('个人信息保存成功！您的姓名、身份证号和所有信息已更新。');
         } else {
           showSuccessMessage('个人信息保存成功！数据正在同步中，请稍后刷新页面查看。');
         }
@@ -319,14 +435,19 @@ const StudentProfileEdit: React.FC = () => {
         contactPhone: studentProfile?.phone || '',
         email: currentUser?.email || '',
         homeAddress: studentProfile?.home_address || '',
-        emergencyContactName: studentProfile?.emergency_contact || '',
-        emergencyContactPhone: studentProfile?.emergency_phone || '',
-        department: currentUser?.department || '',
-        major: '',
-        class: currentUser?.class_name || '',
-        enrollmentYear: currentUser?.grade || '',
-        academicSystem: '',
-        academicStatus: studentProfile?.profile_status === 'approved' ? '在读' : '未完成'
+        emergencyContacts: [
+          { 
+            name: studentProfile?.emergency_contact || '', 
+            phone: studentProfile?.emergency_phone || '' 
+          }
+        ],
+        department: studentProfile?.department || currentUser?.department || '',
+        major: studentProfile?.major || '',
+        class: studentProfile?.class_info || currentUser?.class_name || '',
+        enrollmentYear: studentProfile?.enrollment_year || currentUser?.grade || '',
+        academicSystem: studentProfile?.academic_system || '',
+        academicStatus: studentProfile?.academic_status || '未完成',
+        profilePhoto: studentProfile?.profile_photo || ''
       });
     }
   };
@@ -358,12 +479,9 @@ const StudentProfileEdit: React.FC = () => {
     }
   };
 
-  // 点击弹窗背景关闭
-  const handleModalBackgroundClick = (e: React.MouseEvent) => {
-    if (e.target === e.currentTarget) {
-      closeChangeModal();
-    }
-  };
+
+
+
 
   if (loading || authLoading) {
     return (
@@ -394,9 +512,9 @@ const StudentProfileEdit: React.FC = () => {
             {/* 用户信息 */}
             <div className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors">
               <img 
-                src={currentUser?.avatar || "https://s.coze.cn/image/K2rLqrUfOSs/"} 
+                src={studentProfile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/K2rLqrUfOSs/"} 
                 alt={loading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '用户') + "头像"} 
-                className="w-8 h-8 rounded-full" 
+                className="w-8 h-8 rounded-full object-cover" 
               />
               <div className="text-sm">
                 <div className="font-medium text-text-primary">
@@ -475,6 +593,26 @@ const StudentProfileEdit: React.FC = () => {
 
       {/* 主内容区 */}
       <main className="ml-64 mt-16 p-6 min-h-screen">
+        {/* 首次登录提示 */}
+        {(!studentProfile || studentProfile.profile_status === 'incomplete') && (
+          <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-100 border-l-4 border-blue-500 p-6 rounded-lg">
+            <div className="flex items-center space-x-4">
+              <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
+                <i className="fas fa-info-circle text-blue-600 text-xl"></i>
+              </div>
+              <div className="flex-1">
+                <h3 className="text-lg font-semibold text-blue-900">首次登录提示</h3>
+                <p className="text-blue-700 mt-1">
+                  请您填写以下基本信息以完成学籍注册。标有 <span className="text-red-500 font-bold">*</span> 的字段为必填项。
+                </p>
+                <p className="text-sm text-blue-600 mt-2">
+                  填写完整信息后，您将能够使用系统的完整功能，包括成绩查询、证明下载等。
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 页面头部 */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
@@ -499,6 +637,7 @@ const StudentProfileEdit: React.FC = () => {
                    studentProfile.profile_status === 'pending' ? '待审核' : '未完善'}
                 </span>
               )}
+              
             </div>
           </div>
         </div>
@@ -511,6 +650,55 @@ const StudentProfileEdit: React.FC = () => {
               <i className="fas fa-user-circle text-secondary mr-2"></i>
               基本信息
             </h3>
+            
+            {/* 证件照上传 */}
+            <div className="mb-6">
+              <label className="block text-sm font-medium text-text-primary mb-3">
+                证件照 <span className="text-red-500">*</span>
+              </label>
+              <div className="flex items-center space-x-6">
+                <div className="w-32 h-40 border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer relative overflow-hidden">
+                  {profile.profilePhoto ? (
+                    <img 
+                      src={profile.profilePhoto} 
+                      alt="证件照" 
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <div className="text-center">
+                      <i className="fas fa-camera text-gray-400 text-2xl mb-2"></i>
+                      <p className="text-sm text-gray-500">点击上传证件照</p>
+                    </div>
+                  )}
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                    onChange={handleProfilePhotoUpload}
+                  />
+                </div>
+                <div className="flex-1">
+                  <h4 className="font-medium text-text-primary mb-2">证件照要求</h4>
+                  <ul className="text-sm text-gray-600 space-y-1">
+                    <li>• 近期正面免冠照片</li>
+                    <li>• 白底或蓝底背景</li>
+                    <li>• 清晰显示五官</li>
+                    <li>• 文件大小不超过2MB</li>
+                    <li>• 支持JPG、PNG格式</li>
+                  </ul>
+                  {profile.profilePhoto && (
+                    <button 
+                      type="button"
+                      onClick={() => handleInputChange('profilePhoto', '')}
+                      className="mt-3 text-sm text-red-600 hover:text-red-700 transition-colors"
+                    >
+                      <i className="fas fa-trash mr-1"></i>
+                      删除照片
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* 学号（不可修改） */}
@@ -526,26 +714,20 @@ const StudentProfileEdit: React.FC = () => {
                 <p className="text-xs text-text-secondary">学号为系统分配，不可修改</p>
               </div>
 
-              {/* 姓名（需申请修改） */}
+              {/* 姓名（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="student-name" className="block text-sm font-medium text-text-primary">姓名</label>
-                <div className="flex space-x-2">
-                  <input 
-                    type="text" 
-                    id="student-name" 
-                    className={`flex-1 px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
-                    value={profile.studentName} 
-                    readOnly 
-                  />
-                  <button 
-                    type="button" 
-                    onClick={() => openChangeModal('姓名', 'studentName')}
-                    className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors text-sm"
-                  >
-                    申请修改
-                  </button>
-                </div>
-                <p className="text-xs text-text-secondary">姓名修改需辅导员审核</p>
+                <label htmlFor="student-name" className="block text-sm font-medium text-text-primary">
+                  姓名 <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  id="student-name" 
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
+                  placeholder="请输入真实姓名"
+                  value={profile.studentName}
+                  onChange={(e) => handleInputChange('studentName', e.target.value)}
+                />
+                <p className="text-xs text-text-secondary">请输入您的真实姓名</p>
               </div>
 
               {/* 性别（可直接修改） */}
@@ -568,31 +750,27 @@ const StudentProfileEdit: React.FC = () => {
                 <p className="text-xs text-text-secondary">请选择性别</p>
               </div>
 
-              {/* 身份证号（需申请修改） */}
+              {/* 身份证号（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="id-card" className="block text-sm font-medium text-text-primary">身份证号</label>
-                <div className="flex space-x-2">
-                  <input 
-                    type="text" 
-                    id="id-card" 
-                    className={`flex-1 px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
-                    value={profile.idCard} 
-                    readOnly 
-                  />
-                  <button 
-                    type="button" 
-                    onClick={() => openChangeModal('身份证号', 'idCard')}
-                    className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors text-sm"
-                  >
-                    申请修改
-                  </button>
-                </div>
-                <p className="text-xs text-text-secondary">身份证号修改需辅导员审核</p>
+                <label htmlFor="id-card" className="block text-sm font-medium text-text-primary">
+                  身份证号 <span className="text-red-500">*</span>
+                </label>
+                <input 
+                  type="text" 
+                  id="id-card" 
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
+                  placeholder="请输入18位身份证号码"
+                  value={profile.idCard}
+                  onChange={(e) => handleInputChange('idCard', e.target.value)}
+                />
+                <p className="text-xs text-text-secondary">请输入18位身份证号码（最后一位可以是X）</p>
               </div>
 
               {/* 民族（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="ethnicity" className="block text-sm font-medium text-text-primary">民族</label>
+                <label htmlFor="ethnicity" className="block text-sm font-medium text-text-primary">
+                  民族 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   id="ethnicity" 
@@ -606,7 +784,9 @@ const StudentProfileEdit: React.FC = () => {
 
               {/* 出生日期（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="birth-date" className="block text-sm font-medium text-text-primary">出生日期</label>
+                <label htmlFor="birth-date" className="block text-sm font-medium text-text-primary">
+                  出生日期 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="date" 
                   id="birth-date" 
@@ -648,7 +828,9 @@ const StudentProfileEdit: React.FC = () => {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* 联系电话（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="contact-phone" className="block text-sm font-medium text-text-primary">联系电话</label>
+                <label htmlFor="contact-phone" className="block text-sm font-medium text-text-primary">
+                  联系电话 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="tel" 
                   id="contact-phone" 
@@ -662,7 +844,9 @@ const StudentProfileEdit: React.FC = () => {
 
               {/* 电子邮箱（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="email" className="block text-sm font-medium text-text-primary">电子邮箱</label>
+                <label htmlFor="email" className="block text-sm font-medium text-text-primary">
+                  电子邮箱 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="email" 
                   id="email" 
@@ -698,30 +882,30 @@ const StudentProfileEdit: React.FC = () => {
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* 紧急联系人姓名（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="emergency-contact-name" className="block text-sm font-medium text-text-primary">联系人姓名</label>
+                <label className="block text-sm font-medium text-text-primary">
+                  联系人姓名 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="text" 
-                  id="emergency-contact-name" 
                   className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   placeholder="请输入联系人姓名"
-                  value={profile.emergencyContactName}
-                  onChange={(e) => handleInputChange('emergencyContactName', e.target.value)}
+                  value={profile.emergencyContacts[0].name}
+                  onChange={(e) => handleEmergencyContactChange('name', e.target.value)}
                 />
                 <p className="text-xs text-text-secondary">建议填写直系亲属</p>
               </div>
 
-              {/* 紧急联系人电话（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="emergency-contact-phone" className="block text-sm font-medium text-text-primary">联系人电话</label>
+                <label className="block text-sm font-medium text-text-primary">
+                  联系人电话 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="tel" 
-                  id="emergency-contact-phone" 
                   className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
                   placeholder="请输入联系人手机号码"
-                  value={profile.emergencyContactPhone}
-                  onChange={(e) => handleInputChange('emergencyContactPhone', e.target.value)}
+                  value={profile.emergencyContacts[0].phone}
+                  onChange={(e) => handleEmergencyContactChange('phone', e.target.value)}
                 />
                 <p className="text-xs text-text-secondary">确保24小时畅通</p>
               </div>
@@ -736,82 +920,112 @@ const StudentProfileEdit: React.FC = () => {
             </h3>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* 院系（不可修改） */}
+              {/* 院系（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="department" className="block text-sm font-medium text-text-primary">院系</label>
+                <label htmlFor="department" className="block text-sm font-medium text-text-primary">
+                  院系 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   id="department" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
-                  value={profile.department} 
-                  readOnly 
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
+                  placeholder="请输入院系"
+                  value={profile.department}
+                  onChange={(e) => handleInputChange('department', e.target.value)}
                 />
-                <p className="text-xs text-text-secondary">院系信息不可修改</p>
+                <p className="text-xs text-text-secondary">请输入您所在的院系</p>
               </div>
 
-              {/* 专业（不可修改） */}
+              {/* 专业（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="major" className="block text-sm font-medium text-text-primary">专业</label>
+                <label htmlFor="major" className="block text-sm font-medium text-text-primary">
+                  专业 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   id="major" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
-                  value={profile.major} 
-                  readOnly 
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
+                  placeholder="请输入专业"
+                  value={profile.major}
+                  onChange={(e) => handleInputChange('major', e.target.value)}
                 />
-                <p className="text-xs text-text-secondary">专业信息不可修改</p>
+                <p className="text-xs text-text-secondary">请输入您的专业名称</p>
               </div>
 
-              {/* 班级（不可修改） */}
+              {/* 班级（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="class" className="block text-sm font-medium text-text-primary">班级</label>
+                <label htmlFor="class" className="block text-sm font-medium text-text-primary">
+                  班级 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   id="class" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
-                  value={profile.class} 
-                  readOnly 
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
+                  placeholder="请输入班级"
+                  value={profile.class}
+                  onChange={(e) => handleInputChange('class', e.target.value)}
                 />
-                <p className="text-xs text-text-secondary">班级信息不可修改</p>
+                <p className="text-xs text-text-secondary">请输入您的班级</p>
               </div>
 
-              {/* 入学年份（不可修改） */}
+              {/* 入学年份（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="enrollment-year" className="block text-sm font-medium text-text-primary">入学年份</label>
+                <label htmlFor="enrollment-year" className="block text-sm font-medium text-text-primary">
+                  入学年份 <span className="text-red-500">*</span>
+                </label>
                 <input 
                   type="text" 
                   id="enrollment-year" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
-                  value={profile.enrollmentYear} 
-                  readOnly 
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
+                  placeholder="请输入入学年份（如：2023）"
+                  value={profile.enrollmentYear}
+                  onChange={(e) => handleInputChange('enrollmentYear', e.target.value)}
                 />
-                <p className="text-xs text-text-secondary">入学年份不可修改</p>
+                <p className="text-xs text-text-secondary">请输入您的入学年份</p>
               </div>
 
-              {/* 学制（不可修改） */}
+              {/* 学制（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="academic-system" className="block text-sm font-medium text-text-primary">学制</label>
-                <input 
-                  type="text" 
+                <label htmlFor="academic-system" className="block text-sm font-medium text-text-primary">
+                  学制 <span className="text-red-500">*</span>
+                </label>
+                <select 
                   id="academic-system" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
-                  value={profile.academicSystem} 
-                  readOnly 
-                />
-                <p className="text-xs text-text-secondary">学制信息不可修改</p>
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
+                  value={profile.academicSystem}
+                  onChange={(e) => handleInputChange('academicSystem', e.target.value)}
+                >
+                  <option value="">请选择学制</option>
+                  <option value="1">一年制</option>
+                  <option value="2">二年制</option>
+                  <option value="3">三年制</option>
+                  <option value="4">四年制</option>
+                  <option value="5">五年制</option>
+                </select>
+                <p className="text-xs text-text-secondary">请选择您的学制</p>
               </div>
 
-              {/* 学籍状态（不可修改） */}
+              {/* 学籍状态（可直接修改） */}
               <div className="space-y-2">
-                <label htmlFor="academic-status" className="block text-sm font-medium text-text-primary">学籍状态</label>
-                <input 
-                  type="text" 
+                <label htmlFor="academic-status" className="block text-sm font-medium text-text-primary">
+                  学籍状态 <span className="text-red-500">*</span>
+                </label>
+                <select 
                   id="academic-status" 
-                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.readonlyField}`}
-                  value={profile.academicStatus} 
-                  readOnly 
-                />
-                <p className="text-xs text-text-secondary">学籍状态由学校统一管理</p>
+                  className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.editableField} ${STYLES.formInputFocus}`}
+                  value={profile.academicStatus}
+                  onChange={(e) => handleInputChange('academicStatus', e.target.value)}
+                >
+                  <option value="">请选择学籍状态</option>
+                  <option value="在读">在读</option>
+                  <option value="休学">休学</option>
+                  <option value="复学">复学</option>
+                  <option value="退学">退学</option>
+                  <option value="毕业">毕业</option>
+                  <option value="结业">结业</option>
+                  <option value="肄业">肄业</option>
+                </select>
+                <p className="text-xs text-text-secondary">请选择您的学籍状态</p>
               </div>
             </div>
           </section>
@@ -849,93 +1063,7 @@ const StudentProfileEdit: React.FC = () => {
         </div>
       </main>
 
-      {/* 申请修改弹窗 */}
-      {showChangeModal && (
-        <div 
-          className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center"
-          onClick={handleModalBackgroundClick}
-        >
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4">
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-lg font-semibold text-text-primary">申请信息修改</h3>
-                <button 
-                  type="button" 
-                  onClick={closeChangeModal}
-                  className="text-text-secondary hover:text-text-primary"
-                >
-                  <i className="fas fa-times"></i>
-                </button>
-              </div>
-              
-              <div className="space-y-4">
-                <div>
-                  <label htmlFor="change-field" className="block text-sm font-medium text-text-primary mb-2">修改字段</label>
-                  <input 
-                    type="text" 
-                    id="change-field" 
-                    className="w-full px-4 py-2 border border-border-light rounded-lg" 
-                    value={changeApplication.fieldName}
-                    readOnly 
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="current-value" className="block text-sm font-medium text-text-primary mb-2">当前值</label>
-                  <input 
-                    type="text" 
-                    id="current-value" 
-                    className="w-full px-4 py-2 border border-border-light rounded-lg" 
-                    value={changeApplication.currentValue}
-                    readOnly 
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="new-value" className="block text-sm font-medium text-text-primary mb-2">新值</label>
-                  <input 
-                    type="text" 
-                    id="new-value" 
-                    className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.formInputFocus}`}
-                    placeholder="请输入新值"
-                    value={changeApplication.newValue}
-                    onChange={(e) => setChangeApplication(prev => ({ ...prev, newValue: e.target.value }))}
-                  />
-                </div>
-                
-                <div>
-                  <label htmlFor="change-reason" className="block text-sm font-medium text-text-primary mb-2">修改原因</label>
-                  <textarea 
-                    id="change-reason" 
-                    rows={3}
-                    className={`w-full px-4 py-2 border border-border-light rounded-lg ${STYLES.formInputFocus} resize-none`}
-                    placeholder="请说明修改原因"
-                    value={changeApplication.reason}
-                    onChange={(e) => setChangeApplication(prev => ({ ...prev, reason: e.target.value }))}
-                  />
-                </div>
-              </div>
-              
-              <div className="flex justify-end space-x-3 mt-6">
-                <button 
-                  type="button" 
-                  onClick={closeChangeModal}
-                  className="px-4 py-2 border border-border-light text-text-secondary rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  取消
-                </button>
-                <button 
-                  type="button" 
-                  onClick={submitChangeApplication}
-                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
-                >
-                  提交申请
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* 成功提示 */}
       <div className={`fixed top-20 right-4 bg-green-500 text-white px-6 py-3 rounded-lg shadow-lg transform transition-transform duration-300 z-50 ${showSuccessToast ? 'translate-x-0' : 'translate-x-full'}`}>

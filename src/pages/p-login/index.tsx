@@ -145,6 +145,24 @@ const LoginPage: React.FC = () => {
       localStorage.setItem('auth_token', result.token || '');
       localStorage.setItem('user_info', JSON.stringify(result.user));
       
+      // 检查是否为学生且需要完善个人信息
+      if (result.user.role?.role_name === 'student') {
+        try {
+          // 导入StudentProfileService进行动态检查
+          const { default: StudentProfileService } = await import('../../services/studentProfileService');
+          const profileCheck = await StudentProfileService.checkProfileCompletion(result.user.id);
+          
+          // 如果是首次登录或个人信息不完整，强制跳转到个人信息填写页面
+          if (profileCheck.needsCompletion) {
+            navigate('/student-profile-edit');
+            setIsLoading(false);
+            return;
+          }
+        } catch (error) {
+          console.warn('检查个人信息完成状态失败，直接跳转到学生主页:', error);
+        }
+      }
+      
       // 根据角色跳转到不同页面
       const redirectPath = AuthService.getRedirectPath(result.user.role.role_name);
       navigate(redirectPath);
