@@ -5,140 +5,22 @@ import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { useAuth } from '../../hooks/useAuth';
 import useStudentProfile from '../../hooks/useStudentProfile';
-
-interface Document {
-  id: string;
-  name: string;
-  type: string;
-  typeName: string;
-  date: string;
-  size: string;
-  icon: string;
-}
+import DocumentService, { Document } from '../../services/documentService';
 
 const StudentDocumentView: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser, loading: authLoading } = useAuth();
   const { profile: studentProfile } = useStudentProfile(currentUser?.id || '');
   
-  // 模拟文件数据
-  const mockDocuments: Document[] = [
-    {
-      id: 'doc1',
-      name: '2023-2024学年第一学期成绩单',
-      type: 'transcript',
-      typeName: '成绩单',
-      date: '2024-01-10',
-      size: '2.3 MB',
-      icon: 'fas fa-file-alt'
-    },
-    {
-      id: 'doc2',
-      name: '在校证明',
-      type: 'certificate',
-      typeName: '在校证明',
-      date: '2024-01-08',
-      size: '1.8 MB',
-      icon: 'fas fa-certificate'
-    },
-    {
-      id: 'doc3',
-      name: '优秀学生奖学金证书',
-      type: 'award',
-      typeName: '获奖证明',
-      date: '2024-01-05',
-      size: '3.1 MB',
-      icon: 'fas fa-trophy'
-    },
-    {
-      id: 'doc4',
-      name: '2022-2023学年第二学期成绩单',
-      type: 'transcript',
-      typeName: '成绩单',
-      date: '2023-07-15',
-      size: '2.1 MB',
-      icon: 'fas fa-file-alt'
-    },
-    {
-      id: 'doc5',
-      name: '英语四级证书',
-      type: 'other',
-      typeName: '其他',
-      date: '2023-06-20',
-      size: '2.7 MB',
-      icon: 'fas fa-certificate'
-    },
-    {
-      id: 'doc6',
-      name: '计算机二级证书',
-      type: 'other',
-      typeName: '其他',
-      date: '2023-05-18',
-      size: '2.4 MB',
-      icon: 'fas fa-certificate'
-    },
-    {
-      id: 'doc7',
-      name: '2022-2023学年第一学期成绩单',
-      type: 'transcript',
-      typeName: '成绩单',
-      date: '2023-01-12',
-      size: '2.2 MB',
-      icon: 'fas fa-file-alt'
-    },
-    {
-      id: 'doc8',
-      name: '社会实践证明',
-      type: 'certificate',
-      typeName: '在校证明',
-      date: '2022-12-25',
-      size: '1.9 MB',
-      icon: 'fas fa-certificate'
-    },
-    {
-      id: 'doc9',
-      name: '入党积极分子培训证书',
-      type: 'award',
-      typeName: '获奖证明',
-      date: '2022-11-30',
-      size: '2.5 MB',
-      icon: 'fas fa-trophy'
-    },
-    {
-      id: 'doc10',
-      name: '2021-2022学年第二学期成绩单',
-      type: 'transcript',
-      typeName: '成绩单',
-      date: '2022-07-18',
-      size: '2.0 MB',
-      icon: 'fas fa-file-alt'
-    },
-    {
-      id: 'doc11',
-      name: '军训优秀学员证书',
-      type: 'award',
-      typeName: '获奖证明',
-      date: '2021-09-30',
-      size: '2.8 MB',
-      icon: 'fas fa-trophy'
-    },
-    {
-      id: 'doc12',
-      name: '入学登记表',
-      type: 'other',
-      typeName: '其他',
-      date: '2021-09-01',
-      size: '3.2 MB',
-      icon: 'fas fa-file-alt'
-    }
-  ];
-
-  const [currentDocuments, setCurrentDocuments] = useState<Document[]>([...mockDocuments]);
+  // 数据和状态管理
+  const [documents, setDocuments] = useState<Document[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [total, setTotal] = useState(0);
+  const [currentDocuments, setCurrentDocuments] = useState<Document[]>([]);
   const [currentPage, setCurrentPage] = useState(1);
   const [fileTypeFilter, setFileTypeFilter] = useState('');
   const [timeRangeFilter, setTimeRangeFilter] = useState('');
-  const [sortField, setSortField] = useState('');
-  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
   
@@ -147,9 +29,73 @@ const StudentDocumentView: React.FC = () => {
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
   const [isUploading, setIsUploading] = useState(false);
-  const [uploadedDocuments, setUploadedDocuments] = useState<Document[]>([]);
+  const [isExporting, setIsExporting] = useState(false);
+
 
   const pageSize = 10;
+
+  // 加载文档数据
+  const loadDocuments = async () => {
+    if (!currentUser?.id) return;
+    
+    setLoading(true);
+    setError(null);
+    
+    try {
+      const params = {
+        document_type: fileTypeFilter || undefined,
+        keyword: '',
+        date_from: getDateRangeFilter(timeRangeFilter)?.from,
+        date_to: getDateRangeFilter(timeRangeFilter)?.to,
+        page: currentPage,
+        limit: pageSize
+      };
+
+      const response = await DocumentService.getUserDocuments(currentUser.id, params);
+      setDocuments(response.documents);
+      setTotal(response.total);
+      setCurrentDocuments(response.documents);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '加载文档失败');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // 获取日期范围筛选
+  const getDateRangeFilter = (timeRange: string) => {
+    if (!timeRange) return null;
+    
+    const now = new Date();
+    let startDate: Date | null = null;
+    
+    switch (timeRange) {
+      case 'today':
+        startDate = new Date(now.setHours(0, 0, 0, 0));
+        break;
+      case 'week':
+        startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+        break;
+      case 'month':
+        startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+        break;
+      case 'quarter':
+        startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+        break;
+      case 'year':
+        startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
+        break;
+    }
+    
+    if (startDate) {
+      return {
+        from: startDate.toISOString().split('T')[0],
+        to: now.toISOString().split('T')[0]
+      };
+    }
+    
+    return null;
+  };
 
   // 设置页面标题
   useEffect(() => {
@@ -158,103 +104,35 @@ const StudentDocumentView: React.FC = () => {
     return () => { document.title = originalTitle; };
   }, []);
 
-  // 应用筛选和排序
+  // 初始加载数据
+  useEffect(() => {
+    loadDocuments();
+  }, [currentUser?.id]);
+
+  // 当筛选条件变化时重新加载数据
+  useEffect(() => {
+    if (currentUser?.id) {
+      setCurrentPage(1);
+      loadDocuments();
+    }
+  }, [fileTypeFilter, timeRangeFilter, currentUser?.id]);
+
+  // 当分页变化时重新加载数据
+  useEffect(() => {
+    if (currentUser?.id) {
+      loadDocuments();
+    }
+  }, [currentPage, currentUser?.id]);
+
+  // 应用筛选
   const applyFilters = () => {
     setCurrentPage(1);
-    
-    let filteredDocuments = mockDocuments.filter(doc => {
-      // 文件类型筛选
-      if (fileTypeFilter && doc.type !== fileTypeFilter) {
-        return false;
-      }
-
-      // 时间范围筛选
-      if (timeRangeFilter) {
-        const docDate = new Date(doc.date);
-        const now = new Date();
-        let startDate: Date | null = null;
-
-        switch (timeRangeFilter) {
-          case 'today':
-            startDate = new Date(now.setHours(0, 0, 0, 0));
-            break;
-          case 'week':
-            startDate = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-            break;
-          case 'month':
-            startDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
-            break;
-          case 'quarter':
-            startDate = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
-            break;
-          case 'year':
-            startDate = new Date(now.getTime() - 365 * 24 * 60 * 60 * 1000);
-            break;
-        }
-
-        if (startDate && docDate < startDate) {
-          return false;
-        }
-      }
-
-      return true;
-    });
-
-    // 应用排序
-    if (sortField) {
-      filteredDocuments.sort((a, b) => {
-        let aValue = a[sortField as keyof Document];
-        let bValue = b[sortField as keyof Document];
-
-        if (sortField === 'date') {
-          aValue = new Date(a.date).getTime() as any;
-          bValue = new Date(b.date).getTime() as any;
-        }
-
-        if (sortDirection === 'asc') {
-          return aValue > bValue ? 1 : -1;
-        } else {
-          return aValue < bValue ? 1 : -1;
-        }
-      });
-    }
-
-    setCurrentDocuments(filteredDocuments);
-  };
-
-  // 当筛选条件变化时应用筛选
-  useEffect(() => {
-    applyFilters();
-  }, [fileTypeFilter, timeRangeFilter, sortField, sortDirection]);
-
-  // 处理排序
-  const handleSort = (field: string) => {
-    if (sortField === field) {
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      setSortField(field);
-      setSortDirection('asc');
-    }
+    loadDocuments();
   };
 
   // 处理分页
   const handlePageChange = (page: number) => {
     setCurrentPage(page);
-  };
-
-  // 获取当前页的文件
-  const getCurrentPageDocuments = () => {
-    const startIndex = (currentPage - 1) * pageSize;
-    const endIndex = startIndex + pageSize;
-    return currentDocuments.slice(startIndex, endIndex);
-  };
-
-  // 获取排序图标
-  const getSortIcon = (field: string) => {
-    if (sortField !== field) {
-      return 'fas fa-sort ml-1';
-    }
-    return `fas fa-sort-${sortDirection === 'asc' ? 'up' : 'down'} ml-1`;
   };
 
   // 获取文件类型颜色
@@ -275,11 +153,18 @@ const StudentDocumentView: React.FC = () => {
   };
 
   // 显示文件预览模态框
-  const showDocumentPreview = (docId: string) => {
-    const doc = mockDocuments.find(d => d.id === docId);
-    if (doc) {
-      setSelectedDocument(doc);
-      setShowDocumentModal(true);
+  const showDocumentPreview = async (docId: string) => {
+    if (!currentUser?.id) return;
+    
+    try {
+      const doc = documents.find(d => d.id === docId);
+      if (doc) {
+        setSelectedDocument(doc);
+        setShowDocumentModal(true);
+      }
+    } catch (error) {
+      console.error('获取文档详情失败:', error);
+      alert('获取文档详情失败');
     }
   };
 
@@ -290,21 +175,26 @@ const StudentDocumentView: React.FC = () => {
   };
 
   // 下载文件
-  const downloadDocument = (docId: string) => {
-    const doc = mockDocuments.find(d => d.id === docId);
-    if (!doc) return;
-
-    // 模拟文件下载
-    console.log(`下载文件: ${doc.name}`);
+  const downloadDocument = async (docId: string) => {
+    if (!currentUser?.id) return;
     
-    // 显示下载提示
-    const link = document.createElement('a');
-    link.href = '#';
-    link.download = doc.name + '.pdf';
-    link.click();
-
-    // 显示成功提示
-    alert(`文件 "${doc.name}" 下载成功！`);
+    try {
+      const result = await DocumentService.downloadDocument(docId, currentUser.id);
+      
+      // 创建临时链接下载文件
+      const link = document.createElement('a');
+      link.href = result.url;
+      link.download = result.fileName;
+      link.target = '_blank';
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      
+      console.log(`下载文件: ${result.fileName}`);
+    } catch (error) {
+      console.error('下载失败:', error);
+      alert(error instanceof Error ? error.message : '下载失败');
+    }
   };
 
   // 文件上传相关函数
@@ -318,51 +208,59 @@ const StudentDocumentView: React.FC = () => {
   };
 
   const uploadFilesToServer = async () => {
-    if (uploadFiles.length === 0) return;
+    if (uploadFiles.length === 0 || !currentUser?.id) return;
     
     setIsUploading(true);
-    const newProgress: {[key: string]: number} = {};
-    const newDocs: Document[] = [];
+    let successCount = 0;
+    let failedCount = 0;
     
     try {
       for (let i = 0; i < uploadFiles.length; i++) {
         const file = uploadFiles[i];
         const fileId = `upload_${Date.now()}_${i}`;
-        newProgress[fileId] = 0;
-        setUploadProgress({...newProgress});
         
-        // 模拟上传进度
-        for (let progress = 0; progress <= 100; progress += 10) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-          newProgress[fileId] = progress;
-          setUploadProgress({...newProgress});
+        // 设置初始进度
+        setUploadProgress(prev => ({ ...prev, [fileId]: 10 }));
+        
+        // 使用DocumentService上传文件
+        const documentType = DocumentService.getDocumentTypeFromFile(file);
+        const title = file.name.replace(/\.[^/.]+$/, "");
+        
+        setUploadProgress(prev => ({ ...prev, [fileId]: 50 }));
+        
+        const result = await DocumentService.uploadDocument(
+          currentUser.id,
+          file,
+          title,
+          '',
+          documentType,
+          []
+        );
+        
+        setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
+        
+        if (result.success) {
+          successCount++;
+        } else {
+          failedCount++;
+          console.error(`文件 ${file.name} 上传失败:`, result.error);
         }
-        
-        // 创建新的文档对象
-        const newDocument: Document = {
-          id: fileId,
-          name: file.name.replace(/\.[^/.]+$/, ""), // 移除文件扩展名
-          type: getFileType(file),
-          typeName: getFileTypeName(file),
-          date: new Date().toISOString().split('T')[0],
-          size: formatFileSize(file.size),
-          icon: getFileIcon(file)
-        };
-        
-        newDocs.push(newDocument);
       }
       
-      // 合并到当前文档列表
-      setCurrentDocuments(prev => [...newDocs, ...prev]);
-      setUploadedDocuments(prev => [...newDocs, ...prev]);
+      // 重新加载文档列表
+      await loadDocuments();
       
       // 重置上传状态
       setUploadFiles([]);
       setUploadProgress({});
       setShowUploadModal(false);
       
-      // 显示成功提示
-      alert(`成功上传 ${uploadFiles.length} 个文件！`);
+      // 显示结果提示
+      if (failedCount === 0) {
+        alert(`成功上传 ${successCount} 个文件！`);
+      } else {
+        alert(`上传完成：成功 ${successCount} 个，失败 ${failedCount} 个`);
+      }
       
     } catch (error) {
       console.error('文件上传失败:', error);
@@ -372,39 +270,79 @@ const StudentDocumentView: React.FC = () => {
     }
   };
 
+  // 批量导出原始文件
+  const handleBatchExport = async () => {
+    if (!currentUser?.id) return;
+    
+    if (documents.length === 0) {
+      alert('没有可导出的文档！');
+      return;
+    }
+
+    // 确认导出
+    const confirmed = window.confirm(`确定要导出所有 ${documents.length} 个原始文件吗？
+文件将保持原始格式和内容，尝试打包为ZIP或逐个下载。`);
+    if (!confirmed) return;
+
+    setIsExporting(true);
+    
+    try {
+      // 先尝试 ZIP 打包下载
+      const zipResult = await DocumentService.createZipExport(currentUser.id);
+      
+      if (zipResult.success && zipResult.zipBlob) {
+        // ZIP 下载成功
+        const url = URL.createObjectURL(zipResult.zipBlob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = `文档导出_${new Date().toISOString().split('T')[0]}.zip`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+        
+        alert(`成功导出 ${documents.length} 个文件为ZIP包！`);
+      } else {
+        // ZIP 失败，使用单独下载
+        console.log('ZIP下载失败，使用单独下载模式');
+        const result = await DocumentService.batchExportOriginalFiles(currentUser.id);
+        
+        if (result.success) {
+          let message = `成功导出 ${result.downloadedCount} 个文件！`;
+          if (result.error) {
+            message += `
+${result.error}`;
+          }
+          alert(message);
+        } else {
+          alert(`导出失败：${result.error}`);
+        }
+      }
+    } catch (error) {
+      console.error('批量导出失败:', error);
+      alert('导出失败，请稍后重试！');
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   const getFileType = (file: File): string => {
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    if (['pdf'].includes(extension || '')) return 'certificate';
-    if (['doc', 'docx'].includes(extension || '')) return 'transcript';
-    if (['jpg', 'jpeg', 'png', 'gif'].includes(extension || '')) return 'award';
-    return 'other';
+    return DocumentService.getDocumentTypeFromFile(file);
   };
 
   const getFileTypeName = (file: File): string => {
-    const type = getFileType(file);
-    const typeNames: { [key: string]: string } = {
-      transcript: '成绩单',
-      certificate: '在校证明',
-      award: '获奖证明',
-      other: '其他'
-    };
-    return typeNames[type] || '其他';
+    const type = DocumentService.getDocumentTypeFromFile(file);
+    return DocumentService.getDocumentTypeName(type);
   };
 
   const getFileIcon = (file: File): string => {
-    const extension = file.name.split('.').pop()?.toLowerCase();
-    if (['pdf'].includes(extension || '')) return 'fas fa-file-pdf';
-    if (['doc', 'docx'].includes(extension || '')) return 'fas fa-file-word';
-    if (['jpg', 'jpeg', 'png', 'gif'].includes(extension || '')) return 'fas fa-file-image';
-    return 'fas fa-file-alt';
+    const documentType = DocumentService.getDocumentTypeFromFile(file);
+    const fileType = file.type.split('/')[1] || 'unknown';
+    return DocumentService.getFileIcon(fileType, documentType);
   };
 
   const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+    return DocumentService.formatFileSize(bytes);
   };
 
   // 退出登录
@@ -581,6 +519,14 @@ const StudentDocumentView: React.FC = () => {
                   <i className="fas fa-upload mr-2"></i>上传文件
                 </button>
                 <button 
+                  onClick={handleBatchExport}
+                  disabled={isExporting || documents.length === 0}
+                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <i className={`fas fa-download mr-2 ${isExporting ? 'fa-spin' : ''}`}></i>
+                  {isExporting ? '导出中...' : '批量导出'}
+                </button>
+                <button 
                   onClick={applyFilters}
                   className="px-4 py-2 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
                 >
@@ -609,23 +555,14 @@ const StudentDocumentView: React.FC = () => {
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
-                    <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer hover:text-secondary"
-                      onClick={() => handleSort('name')}
-                    >
-                      文件名称 <i className={getSortIcon('name')}></i>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                      文件名称
                     </th>
-                    <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer hover:text-secondary"
-                      onClick={() => handleSort('type')}
-                    >
-                      类型 <i className={getSortIcon('type')}></i>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                      类型
                     </th>
-                    <th 
-                      className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider cursor-pointer hover:text-secondary"
-                      onClick={() => handleSort('date')}
-                    >
-                      生成日期 <i className={getSortIcon('date')}></i>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                      上传日期
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
                       操作
@@ -633,38 +570,59 @@ const StudentDocumentView: React.FC = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-border-light">
-                  {getCurrentPageDocuments().map(doc => (
-                    <tr key={doc.id} className={`${styles.tableRow} transition-colors`}>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                        <div className="flex items-center">
-                          <i className={`${doc.icon} text-secondary mr-3`}></i>
-                          {doc.name}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span className={`px-2 py-1 text-xs font-medium ${getTypeColor(doc.type)} rounded-full`}>
-                          {doc.typeName}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">
-                        {formatDate(doc.date)}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                        <button 
-                          onClick={() => showDocumentPreview(doc.id)}
-                          className="text-secondary hover:text-accent transition-colors"
-                        >
-                          <i className="fas fa-eye"></i>
-                        </button>
-                        <button 
-                          onClick={() => downloadDocument(doc.id)}
-                          className="text-text-secondary hover:text-secondary transition-colors"
-                        >
-                          <i className="fas fa-download"></i>
-                        </button>
+                  {loading ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-text-secondary">
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        加载中...
                       </td>
                     </tr>
-                  ))}
+                  ) : error ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-red-600">
+                        加载失败: {error}
+                      </td>
+                    </tr>
+                  ) : currentDocuments.length === 0 ? (
+                    <tr>
+                      <td colSpan={4} className="px-6 py-8 text-center text-text-secondary">
+                        暂无文档
+                      </td>
+                    </tr>
+                  ) : (
+                    currentDocuments.map(doc => (
+                      <tr key={doc.id} className={`${styles.tableRow} transition-colors`}>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                          <div className="flex items-center">
+                            <i className={`${DocumentService.getFileIcon(doc.file_type, doc.document_type)} text-secondary mr-3`}></i>
+                            {doc.title}
+                          </div>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap">
+                          <span className={`px-2 py-1 text-xs font-medium ${getTypeColor(doc.document_type)} rounded-full`}>
+                            {DocumentService.getDocumentTypeName(doc.document_type)}
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">
+                          {formatDate(doc.created_at)}
+                        </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                          <button 
+                            onClick={() => showDocumentPreview(doc.id)}
+                            className="text-secondary hover:text-accent transition-colors"
+                          >
+                            <i className="fas fa-eye"></i>
+                          </button>
+                          <button 
+                            onClick={() => downloadDocument(doc.id)}
+                            className="text-text-secondary hover:text-secondary transition-colors"
+                          >
+                            <i className="fas fa-download"></i>
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
                 </tbody>
               </table>
             </div>
@@ -672,7 +630,7 @@ const StudentDocumentView: React.FC = () => {
             {/* 分页 */}
             <div className="px-6 py-4 border-t border-border-light flex items-center justify-between">
               <div className="text-sm text-text-secondary">
-                显示 <span>{startIndex}</span>-<span>{endIndex}</span> 条，共 <span>{currentDocuments.length}</span> 条记录
+                显示 <span>{startIndex}</span>-<span>{endIndex}</span> 条，共 <span>{total}</span> 条记录
               </div>
               <div className="flex space-x-2">
                 <button 
@@ -850,7 +808,7 @@ const StudentDocumentView: React.FC = () => {
             <div className={`bg-white rounded-xl shadow-xl max-w-4xl w-full max-h-[80vh] overflow-hidden ${styles.modalEnter}`}>
               {/* 模态框头部 */}
               <div className="px-6 py-4 border-b border-border-light flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-text-primary">文件预览 - {selectedDocument.name}</h3>
+                <h3 className="text-lg font-semibold text-text-primary">文件预览 - {selectedDocument.title}</h3>
                 <button 
                   onClick={closeModal}
                   className="text-text-secondary hover:text-text-primary transition-colors"
@@ -865,12 +823,13 @@ const StudentDocumentView: React.FC = () => {
                   {/* 文件信息 */}
                   <div className="flex items-center space-x-4 p-4 bg-gray-50 rounded-lg">
                     <div className="w-12 h-12 bg-gradient-to-br from-secondary to-accent rounded-lg flex items-center justify-center">
-                      <i className={`${selectedDocument.icon} text-white text-xl`}></i>
+                      <i className={`${DocumentService.getFileIcon(selectedDocument.file_type, selectedDocument.document_type)} text-white text-xl`}></i>
                     </div>
                     <div>
-                      <h4 className="font-medium text-text-primary">{selectedDocument.name}</h4>
-                      <p className="text-sm text-text-secondary">{selectedDocument.typeName} · {selectedDocument.size}</p>
-                      <p className="text-sm text-text-secondary">生成时间：{formatDate(selectedDocument.date)}</p>
+                      <h4 className="font-medium text-text-primary">{selectedDocument.title}</h4>
+                      <p className="text-sm text-text-secondary">{DocumentService.getDocumentTypeName(selectedDocument.document_type)} · {formatFileSize(selectedDocument.file_size)}</p>
+                      <p className="text-sm text-text-secondary">上传时间：{formatDate(selectedDocument.created_at)}</p>
+                      <p className="text-sm text-text-secondary">下载次数：{selectedDocument.download_count}</p>
                     </div>
                   </div>
                   

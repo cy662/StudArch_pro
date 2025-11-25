@@ -1,34 +1,43 @@
-// 简单的数据库连接测试脚本
-const supabaseUrl = "https://jvwvkmttplienptcpgpx.supabase.co";
-const supabaseKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imp2d3ZrbXR0cGxpZW5wdGNwZ3B4Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjI5MTgyNzQsImV4cCI6MjA3ODQ5NDI3NH0.qPsgmmnHNKb6pMhbhfkkS6hL3J00frGXL_5AYscb6Wc";
+// 测试 Supabase 数据库连接
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+dotenv.config();
 
-console.log("测试Supabase数据库连接...");
-console.log("URL:", supabaseUrl);
-console.log("Key:", supabaseKey.substring(0, 20) + "...");
+// Supabase配置
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
 
-// 简单的测试：检查是否包含项目ref
-const isDemoMode = supabaseUrl.includes('your-project-ref') || 
-                  supabaseUrl.includes('demo.supabase.co');
+console.log('Supabase URL:', supabaseUrl);
+console.log('Service Key exists:', !!supabaseServiceKey);
 
-console.log("\n检测结果:");
-console.log("是否为模拟模式:", isDemoMode ? "是" : "否");
-console.log("项目Ref:", supabaseUrl.split('.')[0].replace('https://', ''));
-
-if (isDemoMode) {
-  console.log("\n⚠️ 当前处于模拟模式，数据不会保存到真实数据库");
-} else {
-  console.log("\n✅ 当前使用真实数据库连接，数据将保存到 student_profiles 表");
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('请确保在.env文件中设置了VITE_SUPABASE_URL和VITE_SUPABASE_SERVICE_ROLE_KEY');
+  process.exit(1);
 }
 
-// 检查当前项目的模式
-console.log("\n当前项目检测模式:");
-const urlPatterns = [
-  'your-project-ref',
-  'demo.supabase.co',
-  'jvwvkmttplienptcpgpx'
-];
+// 创建Supabase客户端（使用服务角色密钥以获得完整访问权限）
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-urlPatterns.forEach(pattern => {
-  const contains = supabaseUrl.includes(pattern);
-  console.log(`  - 包含 "${pattern}": ${contains ? "是" : "否"}`);
-});
+async function testConnection() {
+  try {
+    console.log('正在测试数据库连接...');
+    
+    // 尝试获取一个简单的表列表
+    const { data, error } = await supabase
+      .from('users')
+      .select('count')
+      .limit(1);
+
+    if (error) {
+      console.log('连接测试结果 - 错误:', error.message);
+      console.log('错误详情:', error);
+    } else {
+      console.log('连接测试成功!');
+      console.log('可以正常访问数据库');
+    }
+  } catch (err) {
+    console.error('连接测试异常:', err.message);
+  }
+}
+
+testConnection();
