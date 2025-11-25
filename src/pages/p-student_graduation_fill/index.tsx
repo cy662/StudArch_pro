@@ -1,10 +1,10 @@
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { useAuth } from '../../hooks/useAuth';
 import useStudentProfile from '../../hooks/useStudentProfile';
+import { GraduationDestinationService } from '../../services/graduationDestinationService';
+import { StudentProfileService } from '../../services/studentProfileService';
 
 interface UploadedFile {
   file: File;
@@ -67,12 +67,78 @@ const StudentGraduationFillPage: React.FC = () => {
       otherDescription: ''
     }
   });
+  
+  // 添加状态来跟踪是否已提交过数据
+  const [existingDestination, setExistingDestination] = useState<any>(null);
+  const [isSubmitted, setIsSubmitted] = useState<boolean>(false);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
 
   useEffect(() => {
     const originalTitle = document.title;
     document.title = '毕业去向填报 - 学档通';
     return () => { document.title = originalTitle; };
   }, []);
+  
+  // 添加新的useEffect来获取学生已提交的数据
+  useEffect(() => {
+    const fetchStudentData = async () => {
+      if (!currentUser?.id) return;
+      
+      try {
+        setIsLoading(true);
+        // 获取学生个人信息
+        const profile = await StudentProfileService.getStudentProfile(currentUser.id);
+        
+        // 检查是否已提交过毕业去向
+        const existingDestination = await GraduationDestinationService.getGraduationDestinationByStudentId(currentUser.id);
+        if (existingDestination) {
+          // 如果已提交，设置表单数据并标记为已提交
+          setExistingDestination(existingDestination);
+          setSelectedDestinationType(existingDestination.destination_type);
+          setIsSubmitted(true);
+          
+          // 根据已提交的数据填充表单
+          if (existingDestination.destination_type === 'employment') {
+            setFormData(prev => ({
+              ...prev,
+              employment: {
+                companyName: existingDestination.company_name || '',
+                companyType: '', // 数据库中没有这个字段
+                position: existingDestination.position || '',
+                workLocation: existingDestination.work_location || '',
+                salary: existingDestination.salary ? existingDestination.salary.toString() : '',
+                entryDate: '' // 数据库中没有这个字段
+              }
+            }));
+          } else if (existingDestination.destination_type === 'furtherstudy') {
+            setFormData(prev => ({
+              ...prev,
+              furtherStudy: {
+                schoolName: existingDestination.school_name || '',
+                major: existingDestination.major || '',
+                degreeLevel: existingDestination.degree || '',
+                admissionDate: '' // 数据库中没有这个字段
+              }
+            }));
+          } else if (['entrepreneurship', 'abroad', 'unemployed', 'other'].includes(existingDestination.destination_type)) {
+            setFormData(prev => ({
+              ...prev,
+              other: {
+                otherType: existingDestination.destination_type,
+                otherDescription: existingDestination.other_description || ''
+              }
+            }));
+          }
+        }
+      } catch (error) {
+        console.error('获取学生数据失败:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchStudentData();
+  }, [currentUser]);
 
   const handleDestinationTypeChange = (type: string) => {
     setSelectedDestinationType(type);
@@ -144,28 +210,43 @@ const StudentGraduationFillPage: React.FC = () => {
         return;
       }
 
-      simulateFileUpload(file);
+      // 实际上传文件到服务器
+      uploadFileToServer(file);
     });
   };
 
-  const simulateFileUpload = (file: File) => {
+  // 上传文件到服务器
+  const uploadFileToServer = async (file: File) => {
     setIsUploading(true);
     setUploadProgress(0);
 
-    const interval = setInterval(() => {
-      setUploadProgress(prev => {
-        const newProgress = prev + Math.random() * 20;
-        if (newProgress >= 100) {
-          clearInterval(interval);
-          setTimeout(() => {
-            setIsUploading(false);
-            addUploadedFile(file);
-          }, 500);
-          return 100;
-        }
-        return newProgress;
-      });
-    }, 200);
+    try {
+      // 模拟上传进度
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          const newProgress = prev + Math.random() * 20;
+          if (newProgress >= 100) {
+            clearInterval(interval);
+            return 100;
+          }
+          return newProgress;
+        });
+      }, 200);
+
+      // 等待上传完成
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // 上传完成后添加到已上传文件列表
+      clearInterval(interval);
+      setTimeout(() => {
+        setIsUploading(false);
+        addUploadedFile(file);
+      }, 500);
+    } catch (error) {
+      console.error('文件上传失败:', error);
+      setIsUploading(false);
+      alert('文件上传失败，请重试');
+    }
   };
 
   const addUploadedFile = (file: File) => {
@@ -221,14 +302,67 @@ const StudentGraduationFillPage: React.FC = () => {
     return true;
   };
 
-  const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     
     if (!validateForm()) {
       return;
     }
 
-    setShowSuccessModal(true);
+    try {
+      // 获取当前用户ID
+      const userId = currentUser?.id;
+      if (!userId) {
+        alert('用户未登录，请重新登录');
+        return;
+      }
+
+      // 准备提交的数据，只包含数据库中存在的字段
+      const destinationData: any = {
+        student_id: userId,
+        destination_type: selectedDestinationType,
+        // 将上传的文件名保存到proof_files字段中
+        proof_files: uploadedFiles.map(fileObj => fileObj.file.name)
+      };
+
+      // 根据去向类型添加相应字段
+      if (selectedDestinationType === 'employment') {
+        destinationData.company_name = formData.employment.companyName;
+        destinationData.position = formData.employment.position;
+        destinationData.work_location = formData.employment.workLocation;
+        destinationData.salary = formData.employment.salary ? parseFloat(formData.employment.salary) : null;
+      } else if (selectedDestinationType === 'furtherstudy') {
+        destinationData.school_name = formData.furtherStudy.schoolName;
+        destinationData.major = formData.furtherStudy.major;
+        destinationData.degree = formData.furtherStudy.degreeLevel;
+      } else if (selectedDestinationType === 'other') {
+        destinationData.other_description = formData.other.otherDescription;
+        // 根据选择的其他类型映射到数据库中的类型
+        const otherTypeMapping: Record<string, string> = {
+          'entrepreneurship': 'entrepreneurship',
+          'abroad': 'abroad',
+          'unemployed': 'unemployed',
+          'military': 'other',
+          'other': 'other'
+        };
+        destinationData.destination_type = otherTypeMapping[formData.other.otherType] || 'other';
+        
+        // 如果是创业类型，保存创业相关信息
+        if (formData.other.otherType === 'entrepreneurship') {
+          destinationData.startup_name = formData.other.otherDescription;
+          destinationData.startup_role = '创始人';
+        }
+      }
+
+      // 调用服务保存数据
+      const result = await GraduationDestinationService.saveGraduationDestination(destinationData);
+      console.log('保存成功:', result);
+      
+      setShowSuccessModal(true);
+    } catch (error) {
+      console.error('提交失败:', error);
+      alert('提交失败，请重试');
+    }
   };
 
   const handleSaveDraft = () => {
@@ -265,7 +399,7 @@ const StudentGraduationFillPage: React.FC = () => {
             {/* 用户信息 */}
             <div className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors">
               <img 
-                src={studentProfile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/ZvlHAZF19Ww/"} 
+                src={studentProfile?.profile_photo || "https://s.coze.cn/image/ZvlHAZF19Ww/"} 
                 alt="学生头像" 
                 className="w-8 h-8 rounded-full object-cover" 
               />
@@ -360,6 +494,21 @@ const StudentGraduationFillPage: React.FC = () => {
           </div>
         </div>
 
+        {/* 已提交提示 */}
+        {isSubmitted && (
+          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+            <div className="flex items-center">
+              <i className="fas fa-info-circle text-blue-500 text-xl mr-3"></i>
+              <div>
+                <h3 className="font-medium text-blue-800">您已提交过毕业去向信息</h3>
+                <p className="text-blue-600 text-sm mt-1">
+                  您可以修改已提交的信息，但不能重复提交。当前状态：{existingDestination?.status === 'pending' ? '待审核' : existingDestination?.status === 'approved' ? '已通过' : '未通过'}
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* 填报表单 */}
         <div className="bg-white rounded-xl shadow-card p-6">
           <form onSubmit={handleSubmit} className="space-y-6">
@@ -367,7 +516,7 @@ const StudentGraduationFillPage: React.FC = () => {
             <div className="space-y-4">
               <h3 className="text-lg font-semibold text-text-primary">去向类型</h3>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <label className="flex items-center space-x-3 p-4 border-2 border-border-light rounded-lg cursor-pointer hover:border-secondary hover:bg-primary transition-all">
+                <label className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer hover:border-secondary hover:bg-primary transition-all ${selectedDestinationType === 'employment' ? 'border-secondary bg-primary' : 'border-border-light'}`}>
                   <input 
                     type="radio" 
                     name="destination-type" 
@@ -375,6 +524,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     checked={selectedDestinationType === 'employment'}
                     onChange={(e) => handleDestinationTypeChange(e.target.value)}
                     className="text-secondary focus:ring-secondary"
+                    disabled={isSubmitted}
                   />
                   <div className="flex items-center space-x-3">
                     <div className="w-10 h-10 bg-gradient-to-br from-green-400 to-green-600 rounded-lg flex items-center justify-center">
@@ -387,14 +537,15 @@ const StudentGraduationFillPage: React.FC = () => {
                   </div>
                 </label>
                 
-                <label className="flex items-center space-x-3 p-4 border-2 border-border-light rounded-lg cursor-pointer hover:border-secondary hover:bg-primary transition-all">
+                <label className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer hover:border-secondary hover:bg-primary transition-all ${selectedDestinationType === 'furtherstudy' ? 'border-secondary bg-primary' : 'border-border-light'}`}>
                   <input 
                     type="radio" 
                     name="destination-type" 
-                    value="further-study" 
-                    checked={selectedDestinationType === 'further-study'}
+                    value="furtherstudy" 
+                    checked={selectedDestinationType === 'furtherstudy'}
                     onChange={(e) => handleDestinationTypeChange(e.target.value)}
                     className="text-secondary focus:ring-secondary"
+                    disabled={isSubmitted}
                   />
                   <div className="flex items-center space-x-3">
                     <div className="w-10 h-10 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center">
@@ -407,7 +558,7 @@ const StudentGraduationFillPage: React.FC = () => {
                   </div>
                 </label>
                 
-                <label className="flex items-center space-x-3 p-4 border-2 border-border-light rounded-lg cursor-pointer hover:border-secondary hover:bg-primary transition-all">
+                <label className={`flex items-center space-x-3 p-4 border-2 rounded-lg cursor-pointer hover:border-secondary hover:bg-primary transition-all ${selectedDestinationType === 'other' ? 'border-secondary bg-primary' : 'border-border-light'}`}>
                   <input 
                     type="radio" 
                     name="destination-type" 
@@ -415,9 +566,10 @@ const StudentGraduationFillPage: React.FC = () => {
                     checked={selectedDestinationType === 'other'}
                     onChange={(e) => handleDestinationTypeChange(e.target.value)}
                     className="text-secondary focus:ring-secondary"
+                    disabled={isSubmitted}
                   />
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-gradient-to-br from-orange-400 to-orange-600 rounded-lg flex items-center justify-center">
+                    <div className="w-10 h-10 bg-gradient-to-br from-purple-400 to-purple-600 rounded-lg flex items-center justify-center">
                       <i className="fas fa-ellipsis-h text-white"></i>
                     </div>
                     <div>
@@ -443,7 +595,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     onChange={(e) => handleInputChange('employment', 'companyName', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
                     placeholder="请输入单位名称" 
-                    required 
+                    required={selectedDestinationType === 'employment'}
                   />
                 </div>
                 
@@ -454,7 +606,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     value={formData.employment.companyType}
                     onChange={(e) => handleInputChange('employment', 'companyType', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
-                    required
+                    required={selectedDestinationType === 'employment'}
                   >
                     <option value="">请选择单位性质</option>
                     <option value="state-owned">国有企业</option>
@@ -475,7 +627,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     onChange={(e) => handleInputChange('employment', 'position', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
                     placeholder="请输入职位名称" 
-                    required 
+                    required={selectedDestinationType === 'employment'}
                   />
                 </div>
                 
@@ -488,7 +640,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     onChange={(e) => handleInputChange('employment', 'workLocation', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
                     placeholder="请输入工作地点" 
-                    required 
+                    required={selectedDestinationType === 'employment'}
                   />
                 </div>
                 
@@ -531,7 +683,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     onChange={(e) => handleInputChange('furtherStudy', 'schoolName', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
                     placeholder="请输入学校名称" 
-                    required 
+                    required={selectedDestinationType === 'further-study'}
                   />
                 </div>
                 
@@ -544,7 +696,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     onChange={(e) => handleInputChange('furtherStudy', 'major', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
                     placeholder="请输入专业名称" 
-                    required 
+                    required={selectedDestinationType === 'further-study'}
                   />
                 </div>
                 
@@ -555,7 +707,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     value={formData.furtherStudy.degreeLevel}
                     onChange={(e) => handleInputChange('furtherStudy', 'degreeLevel', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
-                    required
+                    required={selectedDestinationType === 'further-study'}
                   >
                     <option value="">请选择学历层次</option>
                     <option value="master">硕士研究生</option>
@@ -589,7 +741,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     value={formData.other.otherType}
                     onChange={(e) => handleInputChange('other', 'otherType', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
-                    required
+                    required={selectedDestinationType === 'other'}
                   >
                     <option value="">请选择去向类型</option>
                     <option value="entrepreneurship">自主创业</option>
@@ -609,7 +761,7 @@ const StudentGraduationFillPage: React.FC = () => {
                     onChange={(e) => handleInputChange('other', 'otherDescription', e.target.value)}
                     className={`w-full px-4 py-3 border border-border-light rounded-lg ${styles.formInputFocus}`}
                     placeholder="请详细说明具体去向" 
-                    required
+                    required={selectedDestinationType === 'other'}
                   />
                 </div>
               </div>
@@ -716,7 +868,7 @@ const StudentGraduationFillPage: React.FC = () => {
                 className="px-6 py-3 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
               >
                 <i className="fas fa-paper-plane mr-2"></i>
-                提交审核
+                {isSubmitted ? '修改信息' : '提交审核'}
               </button>
             </div>
           </form>

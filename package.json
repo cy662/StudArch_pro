@@ -8,13 +8,17 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "export-db": "node export_supabase_data.js",
+    "check-db": "node check_supabase_tables.js",
+    "test-db": "node test_db_connection.js"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.4.0",
     "@supabase/supabase-js": "^2.49.1",
     "chart.js": "^4.5.0",
     "dotenv": "^17.2.3",
+    "jszip": "^3.10.1",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-router-dom": "^7.6.3",

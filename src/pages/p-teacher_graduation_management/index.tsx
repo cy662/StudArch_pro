@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
@@ -56,6 +54,7 @@ const TeacherGraduationManagement: React.FC = () => {
         page: 1,
         limit: 100
       });
+      
       setGraduationData(result.destinations);
       setTotal(result.total);
     } catch (error) {
@@ -440,10 +439,23 @@ const TeacherGraduationManagement: React.FC = () => {
 
       reader.readAsArrayBuffer(selectedFile);
     } catch (error) {
-      console.error('批量导入失败:', error);
-      alert('批量导入失败，请检查文件格式和网络连接');
+      console.error('导入过程出错:', error);
+      alert('导入过程出错，请重试');
       setImportLoading(false);
     }
+  };
+
+  // 下载证明材料文件
+  const handleDownloadProofFile = (fileName: string) => {
+    // 这里应该实现实际的文件下载逻辑
+    // 由于目前没有真实的文件存储系统，我们只是模拟下载
+    alert(`模拟下载文件: ${fileName}\n在实际应用中，这里会下载真实的证明材料文件。`);
+    
+    // 创建一个模拟的下载链接
+    const link = document.createElement('a');
+    link.href = '#';
+    link.download = fileName;
+    link.click();
   };
 
   // 查看详情
@@ -602,15 +614,15 @@ const TeacherGraduationManagement: React.FC = () => {
                   </div>
                 </>
               )}
-              {data.type === 'entrepreneurship' && (
+              {data.destination_type === 'entrepreneurship' && (
                 <>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">公司名称：</span>
-                    <span className="text-text-primary">{data.company}</span>
+                    <span className="text-text-primary">{data.startup_name}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-text-secondary">职位：</span>
-                    <span className="text-text-primary">{data.position}</span>
+                    <span className="text-text-primary">{data.startup_role}</span>
                   </div>
                 </>
               )}
@@ -646,7 +658,10 @@ const TeacherGraduationManagement: React.FC = () => {
               data.proof_files.map((file, index) => (
                 <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                   <span className="text-text-primary">{file}</span>
-                  <button className="text-secondary hover:text-accent transition-colors">
+                  <button 
+                    onClick={() => handleDownloadProofFile(file)}
+                    className="text-secondary hover:text-accent transition-colors"
+                  >
                     <i className="fas fa-download"></i>
                   </button>
                 </div>
@@ -741,15 +756,15 @@ const TeacherGraduationManagement: React.FC = () => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">学号</label>
-            <input type="text" value={data.studentId} readOnly className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50" />
+            <input type="text" value={data.student?.student_number || ''} readOnly className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50" />
           </div>
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">姓名</label>
-            <input type="text" value={data.name} readOnly className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50" />
+            <input type="text" value={data.student?.full_name || ''} readOnly className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50" />
           </div>
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">班级</label>
-            <input type="text" value={data.className} readOnly className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50" />
+            <input type="text" value={data.student?.class_name || ''} readOnly className="w-full px-3 py-2 border border-gray-300 rounded-lg bg-gray-50" />
           </div>
           <div>
             <label className="block text-sm font-medium text-text-primary mb-2">去向类型</label>
@@ -811,7 +826,10 @@ const TeacherGraduationManagement: React.FC = () => {
               data.proof_files.map((file, index) => (
                 <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded">
                   <span className="text-sm text-text-primary">{file}</span>
-                  <button className="text-secondary hover:text-accent transition-colors text-sm">
+                  <button 
+                    onClick={() => handleDownloadProofFile(file)}
+                    className="text-secondary hover:text-accent transition-colors text-sm"
+                  >
                     <i className="fas fa-download mr-1"></i>下载
                   </button>
                 </div>
@@ -1049,6 +1067,7 @@ const TeacherGraduationManagement: React.FC = () => {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.student?.student_id}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
+<<<<<<< HEAD
                       <div className="flex items-center">
                         <img 
                           className="h-8 w-8 rounded-full mr-3" 
@@ -1057,6 +1076,9 @@ const TeacherGraduationManagement: React.FC = () => {
                         />
                         <span className="font-medium text-text-primary">{record.student?.student_name}</span>
                       </div>
+=======
+                      <span className="font-medium text-text-primary">{record.student?.full_name}</span>
+>>>>>>> 99189c3911effb11cb5198390faf752cce0c6415
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.student?.class_info}</td>
                     <td className="px-6 py-4 whitespace-nowrap">

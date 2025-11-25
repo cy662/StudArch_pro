@@ -1,0 +1,762 @@
+import { supabase } from '../lib/supabase'
+
+export interface Document {
+  id: string
+  user_id: string
+  title: string
+  description?: string
+  file_name: string
+  file_path: string
+  file_size: number
+  file_type: string
+  mime_type?: string
+  document_type: 'transcript' | 'certificate' | 'graduation' | 'award' | 'other'
+  status: 'active' | 'deleted'
+  tags: string[]
+  is_public: boolean
+  download_count: number
+  created_at: string
+  updated_at: string
+  // 添加文件内容相关字段
+  file_content?: ArrayBuffer | null
+  file_hash?: string
+}
+
+export interface DocumentSearchParams {
+  document_type?: string
+  keyword?: string
+  date_from?: string
+  date_to?: string
+  page?: number
+  limit?: number
+}
+
+export interface DocumentListResponse {
+  documents: Document[]
+  total: number
+  page: number
+  limit: number
+  total_pages: number
+}
+
+export interface UploadResult {
+  document: Document
+  success: boolean
+  error?: string
+}
+
+export class DocumentService {
+  // 截断文件类型以确保不超过数据库字段限制
+  private static truncateFileType(fileType: string): string {
+    const maxLength = 50
+    if (fileType.length <= maxLength) {
+      return fileType
+    }
+    return fileType.substring(0, maxLength)
+  }
+
+  // 获取用户文档列表
+  static async getUserDocuments(
+    userId: string,
+    params: DocumentSearchParams = {}
+  ): Promise<DocumentListResponse> {
+    const {
+      document_type,
+      keyword,
+      date_from,
+      date_to,
+      page = 1,
+      limit = 10
+    } = params
+
+    try {
+      const { data, error } = await supabase
+        .rpc('get_user_documents', {
+          p_user_id: userId,
+          p_document_type: document_type || null,
+          p_keyword: keyword || null,
+          p_date_from: date_from ? new Date(date_from) : null,
+          p_date_to: date_to ? new Date(date_to) : null,
+          p_page: page,
+          p_limit: limit
+        })
+
+      if (error) {
+        console.error('获取文档列表失败:', error)
+        throw new Error(`获取文档列表失败: ${error.message}`)
+      }
+
+      const result = data?.[0]
+      const documents = result?.documents || []
+      const total = result?.total_count || 0
+
+      return {
+        documents: documents.map((doc: any) => ({
+          ...doc,
+          created_at: new Date(doc.created_at).toISOString(),
+          updated_at: new Date(doc.updated_at).toISOString()
+        })),
+        total,
+        page,
+        limit,
+        total_pages: Math.ceil(total / limit)
+      }
+    } catch (error) {
+      console.error('DocumentService.getUserDocuments error:', error)
+      throw error
+    }
+  }
+
+  // 读取文件为 ArrayBuffer
+  private static readFileAsArrayBuffer(file: File): Promise<ArrayBuffer> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result as ArrayBuffer);
+      reader.onerror = reject;
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  // 将 ArrayBuffer 转换为 base64 字符串（避免栈溢出）
+  private static arrayBufferToBase64(buffer: ArrayBuffer): string {
+    let binary = '';
+    const bytes = new Uint8Array(buffer);
+    const chunkSize = 8192; // 分块处理以避免栈溢出
+    
+    // 分块处理大文件
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      const chunk = bytes.subarray(i, Math.min(i + chunkSize, bytes.length));
+      // 使用自定义方法避免参数过多
+      for (let j = 0; j < chunk.length; j++) {
+        binary += String.fromCharCode(chunk[j]);
+      }
+    }
+    
+    return btoa(binary);
+  }
+
+  // 上传文档
+  static async uploadDocument(
+    userId: string,
+    file: File,
+    title: string,
+    description?: string,
+    documentType: Document['document_type'] = 'other',
+    tags: string[] = []
+  ): Promise<UploadResult> {
+    try {
+      // 读取文件内容为 ArrayBuffer
+      const fileContentArrayBuffer = await this.readFileAsArrayBuffer(file);
+      
+      // 将 ArrayBuffer 转换为 base64 字符串用于哈希计算
+      const fileContentBase64 = this.arrayBufferToBase64(fileContentArrayBuffer);
+      
+      // 生成文件哈希值（简化版本，实际应用中应使用SHA256）
+      const fileHash = await this.generateFileHash(fileContentBase64);
+      
+      // 使用原始文件名而不是生成安全文件名
+      const originalFileName = file.name;
+      const filePath = `${userId}/${originalFileName}`
+
+      // 在数据库中创建文档记录，包含完整文件内容
+      const documentData = {
+        user_id: userId,
+        title: title || file.name.replace(/\.[^/.]+$/, ''),
+        description: description || '',
+        file_name: originalFileName, // 使用原始文件名
+        file_path: filePath,
+        file_size: file.size,
+        file_type: this.truncateFileType(file.type.split('/')[1] || 'unknown'),
+        mime_type: file.type,
+        document_type: documentType,
+        tags: tags,
+        is_public: false,
+        file_content: new Uint8Array(fileContentArrayBuffer), // 存储原始二进制数据
+        file_hash: fileHash
+      }
+
+      const { data: docData, error: docError } = await supabase
+        .from('student_documents')
+        .insert([documentData])
+        .select()
+        .single()
+
+      if (docError) {
+        console.error('文档记录创建失败:', docError)
+        return {
+          document: {} as Document,
+          success: false,
+          error: `文档记录创建失败: ${docError.message}`
+        }
+      }
+
+      // 记录访问日志（如果失败不影响上传）
+      try {
+        await this.logDocumentAccess(docData.id, 'upload')
+      } catch (logError) {
+        console.warn('记录访问日志失败:', logError)
+      }
+
+      const document: Document = {
+        ...docData,
+        created_at: new Date(docData.created_at).toISOString(),
+        updated_at: new Date(docData.updated_at).toISOString()
+      }
+
+      return {
+        document,
+        success: true
+      }
+    } catch (error) {
+      console.error('DocumentService.uploadDocument error:', error)
+      return {
+        document: {} as Document,
+        success: false,
+        error: error instanceof Error ? error.message : '上传失败'
+      }
+    }
+  }
+
+  // 读取文件为 base64 字符串
+  private static readFileAsBase64(file: File): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        // 移除 data URL 前缀，只保留 base64 数据
+        const base64Data = (reader.result as string).split(',')[1];
+        resolve(base64Data);
+      };
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  // 生成文件哈希值（简化版本）
+  private static async generateFileHash(base64String: string): Promise<string> {
+    // 在实际应用中，这里应该使用 crypto.subtle.digest 来生成 SHA256 哈希
+    // 但由于兼容性考虑，我们使用简化的方法
+    let hash = 0;
+    for (let i = 0; i < base64String.length; i++) {
+      const char = base64String.charCodeAt(i);
+      hash = ((hash << 5) - hash) + char;
+      hash = hash & hash; // 转换为32位整数
+    }
+    return hash.toString(36);
+  }
+
+  // 下载文档
+  static async downloadDocument(documentId: string, userId: string): Promise<{ url: string; fileName: string }> {
+    try {
+      // 1. 获取文档信息和内容
+      const { data, error } = await supabase
+        .rpc('get_document_content', {
+          p_document_id: documentId,
+          p_user_id: userId
+        })
+        .single();
+
+      if (error) {
+        throw new Error(`获取文档内容失败: ${error.message}`);
+      }
+
+      if (!data || !data.file_content) {
+        throw new Error('文档内容不存在');
+      }
+
+      // 2. 将 base64 数据转换为 Blob
+      try {
+        // 构造完整的 data URL
+        const dataUrl = `data:${data.mime_type || 'application/octet-stream'};base64,${data.file_content}`;
+        
+        // 将 data URL 转换为 Blob
+        const response = await fetch(dataUrl);
+        const blob = await response.blob();
+        
+        // 3. 创建下载链接
+        const url = URL.createObjectURL(blob);
+        
+        // 4. 尝试增加下载次数（如果失败不影响下载）
+        try {
+          await supabase.rpc('increment_download_count', {
+            p_document_id: documentId
+          })
+        } catch (countError) {
+          console.warn('增加下载次数失败:', countError)
+        }
+
+        // 5. 记录下载日志（如果失败不影响下载）
+        try {
+          await this.logDocumentAccess(documentId, 'download')
+        } catch (logError) {
+          console.warn('记录下载日志失败:', logError)
+        }
+
+        return {
+          url,
+          fileName: data.file_name
+        }
+      } catch (conversionError) {
+        console.error('文件内容转换失败:', conversionError);
+        throw new Error('文件内容转换失败');
+      }
+    } catch (error) {
+      console.error('DocumentService.downloadDocument error:', error)
+      throw error
+    }
+  }
+
+  // 批量导出原始文件
+  static async batchExportOriginalFiles(userId: string): Promise<{ success: boolean; error?: string; downloadedCount?: number }> {
+    try {
+      // 获取用户的所有文档
+      const { documents: allDocuments } = await this.getUserDocuments(userId, {
+        limit: 1000 // 获取所有文档
+      })
+
+      if (allDocuments.length === 0) {
+        return {
+          success: false,
+          error: '没有可导出的文档'
+        }
+      }
+
+      let downloadedCount = 0
+      let failedCount = 0
+
+      console.log(`开始导出 ${allDocuments.length} 个原始文件`)
+
+      // 逐个下载文件
+      for (const doc of allDocuments) {
+        try {
+          // 直接从数据库获取文件内容
+          const { data, error } = await supabase
+            .rpc('get_document_content', {
+              p_document_id: doc.id,
+              p_user_id: userId
+            })
+            .single();
+
+          if (error) {
+            throw new Error(`获取文档内容失败: ${error.message}`);
+          }
+
+          if (!data || !data.file_content) {
+            throw new Error('文档内容不存在');
+          }
+
+          // 将 base64 数据转换为 Blob
+          try {
+            // 构造完整的 data URL
+            const dataUrl = `data:${data.mime_type || 'application/octet-stream'};base64,${data.file_content}`;
+            
+            // 将 data URL 转换为 Blob
+            const response = await fetch(dataUrl);
+            const blob = await response.blob();
+            
+            // 创建下载链接
+            const url = URL.createObjectURL(blob);
+            
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = data.file_name || doc.title;
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            
+            URL.revokeObjectURL(url);
+            downloadedCount++;
+            
+            console.log(`✅ 成功下载: ${data.file_name}`)
+          } catch (conversionError) {
+            console.error('文件内容转换失败:', conversionError);
+            throw new Error('文件内容转换失败');
+          }
+
+          // 记录导出日志
+          await this.logDocumentAccess(doc.id, 'export')
+          
+          // 添加延迟避免浏览器阻止多个下载
+          await new Promise(resolve => setTimeout(resolve, 500))
+          
+        } catch (error) {
+          console.error(`导出文件失败: ${doc.file_name}`, error)
+          failedCount++
+        }
+      }
+
+      const message = `导出完成！成功: ${downloadedCount} 个文件${failedCount > 0 ? `，失败: ${failedCount} 个` : ''}`
+      
+      return {
+        success: true,
+        downloadedCount,
+        error: failedCount > 0 ? message : undefined
+      }
+    } catch (error) {
+      console.error('批量导出失败:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '导出失败'
+      }
+    }
+  }
+
+  static async createZipExport(userId: string): Promise<{ success: boolean; error?: string; zipBlob?: Blob }> {
+    try {
+      // 动态导入 JSZip
+      let JSZip;
+      try {
+        JSZip = (await import('jszip')).default;
+      } catch (importError) {
+        console.warn('JSZip导入失败:', importError);
+        return {
+          success: false,
+          error: 'ZIP功能不可用，将使用单独下载'
+        }
+      }
+      
+      if (!JSZip) {
+        return {
+          success: false,
+          error: 'ZIP功能不可用，将使用单独下载'
+        }
+      }
+
+      // 获取用户的所有文档
+      const { documents: allDocuments } = await this.getUserDocuments(userId, {
+        limit: 1000
+      })
+
+      if (allDocuments.length === 0) {
+        return {
+          success: false,
+          error: '没有可导出的文档'
+        }
+      }
+
+      const zip = new JSZip()
+      
+      for (const doc of allDocuments) {
+        try {
+          // 直接从数据库获取文件内容
+          const { data, error } = await supabase
+            .rpc('get_document_content', {
+              p_document_id: doc.id,
+              p_user_id: userId
+            })
+            .single();
+
+          if (error) {
+            console.error(`获取文档内容失败: ${doc.file_name}`, error);
+            continue;
+          }
+
+          if (!data || !data.file_content) {
+            console.warn(`文档内容不存在: ${doc.file_name}`);
+            // 对于没有实际文件的记录，添加信息文件
+            const fileInfo = {
+              title: doc.title,
+              description: doc.description,
+              fileName: doc.file_name,
+              fileSize: doc.file_size,
+              fileType: doc.file_type,
+              documentType: DocumentService.getDocumentTypeName(doc.document_type),
+              tags: doc.tags,
+              uploadDate: doc.created_at,
+              downloadCount: doc.download_count,
+              note: '此文件仅记录信息，实际文件未上传'
+            }
+            
+            zip.file(`${doc.file_name.replace(/\.[^/.]+$/, '')}_信息.json`, JSON.stringify(fileInfo, null, 2))
+            console.log(`📄 添加信息文件: ${doc.file_name}`)
+            
+            // 记录导出日志
+            await this.logDocumentAccess(doc.id, 'export')
+            continue;
+          }
+
+          // 将 base64 数据转换为 Blob 并添加到 ZIP
+          try {
+            // 构造完整的 data URL
+            const dataUrl = `data:${data.mime_type || 'application/octet-stream'};base64,${data.file_content}`;
+            
+            // 将 data URL 转换为 Blob
+            const response = await fetch(dataUrl);
+            if (response.ok) {
+              const blob = await response.blob();
+              zip.file(data.file_name, blob);
+              console.log(`✅ 添加到ZIP: ${data.file_name}`);
+              
+              // 记录导出日志
+              await this.logDocumentAccess(doc.id, 'export')
+              continue;
+            }
+          } catch (conversionError) {
+            console.error(`文件内容转换失败: ${doc.file_name}`, conversionError);
+          }
+          
+          // 如果转换失败，添加信息文件
+          const fileInfo = {
+            title: doc.title,
+            description: doc.description,
+            fileName: doc.file_name,
+            fileSize: doc.file_size,
+            fileType: doc.file_type,
+            documentType: DocumentService.getDocumentTypeName(doc.document_type),
+            tags: doc.tags,
+            uploadDate: doc.created_at,
+            downloadCount: doc.download_count,
+            note: '此文件仅记录信息，实际文件内容转换失败'
+          }
+          
+          zip.file(`${doc.file_name.replace(/\.[^/.]+$/, '')}_信息.json`, JSON.stringify(fileInfo, null, 2))
+          console.log(`📄 添加信息文件: ${doc.file_name}`)
+          
+          // 记录导出日志
+          await this.logDocumentAccess(doc.id, 'export')
+          
+        } catch (error) {
+          console.error(`处理文件失败: ${doc.file_name}`, error)
+        }
+      }
+
+      // 生成 ZIP 文件
+      const zipBlob = await zip.generateAsync({ type: 'blob' })
+      
+      return {
+        success: true,
+        zipBlob
+      }
+    } catch (error) {
+      console.error('创建ZIP失败:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'ZIP创建失败'
+      }
+    }
+  }
+
+  // 获取文档详情
+  static async getDocumentById(documentId: string, userId: string): Promise<Document> {
+    try {
+      const { data, error } = await supabase
+        .from('student_documents')
+        .select('*')
+        .eq('id', documentId)
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .single()
+
+      if (error) {
+        throw new Error(`获取文档详情失败: ${error.message}`)
+      }
+
+      return {
+        ...data,
+        created_at: new Date(data.created_at).toISOString(),
+        updated_at: new Date(data.updated_at).toISOString()
+      }
+    } catch (error) {
+      console.error('DocumentService.getDocumentById error:', error)
+      throw error
+    }
+  }
+
+  // 删除文档
+  static async deleteDocument(documentId: string, userId: string): Promise<boolean> {
+    try {
+      // 1. 获取文档信息
+      const document = await this.getDocumentById(documentId, userId)
+
+      // 2. 从数据库中软删除（标记为deleted）
+      const { error: dbError } = await supabase
+        .from('student_documents')
+        .update({ status: 'deleted' })
+        .eq('id', documentId)
+        .eq('user_id', userId)
+
+      if (dbError) {
+        throw new Error(`删除文档记录失败: ${dbError.message}`)
+      }
+
+      // 3. 从Storage中删除文件
+      const { error: storageError } = await supabase.storage
+        .from('student-documents')
+        .remove([document.file_path])
+
+      if (storageError) {
+        console.warn('删除Storage文件失败:', storageError.message)
+      }
+
+      // 4. 记录删除日志
+      await this.logDocumentAccess(documentId, 'delete')
+
+      return true
+    } catch (error) {
+      console.error('DocumentService.deleteDocument error:', error)
+      throw error
+    }
+  }
+
+  // 记录文档访问
+  private static async logDocumentAccess(
+    documentId: string,
+    action: 'view' | 'download' | 'upload' | 'delete' | 'export'
+  ): Promise<void> {
+    try {
+      await supabase.rpc('log_document_access', {
+        p_document_id: documentId,
+        p_action: action,
+        p_ip_address: null, // 可以从请求中获取
+        p_user_agent: navigator.userAgent
+      })
+    } catch (error) {
+      console.warn('记录文档访问失败:', error)
+    }
+  }
+
+  // 获取文档统计信息
+  static async getDocumentStats(userId: string): Promise<{
+    total: number
+    byType: Record<string, number>
+    totalSize: number
+    totalDownloads: number
+  }> {
+    try {
+      const { data, error } = await supabase
+        .from('student_documents')
+        .select('document_type, file_size, download_count')
+        .eq('user_id', userId)
+        .eq('status', 'active')
+
+      if (error) {
+        throw new Error(`获取统计信息失败: ${error.message}`)
+      }
+
+      const stats = {
+        total: data?.length || 0,
+        byType: {} as Record<string, number>,
+        totalSize: 0,
+        totalDownloads: 0
+      }
+
+      data?.forEach((doc: any) => {
+        stats.byType[doc.document_type] = (stats.byType[doc.document_type] || 0) + 1
+        stats.totalSize += doc.file_size
+        stats.totalDownloads += doc.download_count
+      })
+
+      return stats
+    } catch (error) {
+      console.error('DocumentService.getDocumentStats error:', error)
+      throw error
+    }
+  }
+
+  static async batchDeleteDocuments(documentIds: string[], userId: string): Promise<{
+    success: number
+    failed: number
+    errors: string[]
+  }> {
+    let success = 0
+    let failed = 0
+    const errors: string[] = []
+
+    for (const documentId of documentIds) {
+      try {
+        await this.deleteDocument(documentId, userId)
+        success++
+      } catch (error) {
+        failed++
+        errors.push(error instanceof Error ? error.message : '删除失败')
+      }
+    }
+
+    return { success, failed, errors }
+  }
+
+  // 获取文档类型名称映射
+  static getDocumentTypeName(type: Document['document_type']): string {
+    const typeNames: Record<Document['document_type'], string> = {
+      transcript: '成绩单',
+      certificate: '在校证明',
+      graduation: '毕业证明',
+      award: '获奖证明',
+      other: '其他'
+    }
+    return typeNames[type] || '其他'
+  }
+
+  // 格式化文件大小
+  static formatFileSize(bytes: number): string {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  // 根据文件类型获取文档类型
+  static getDocumentTypeFromFile(file: File): Document['document_type'] {
+    const extension = file.name.split('.').pop()?.toLowerCase()
+    
+    if (['pdf'].includes(extension || '')) {
+      if (file.name.includes('成绩单') || file.name.includes('transcript')) {
+        return 'transcript'
+      }
+      if (file.name.includes('证明') || file.name.includes('certificate')) {
+        return 'certificate'
+      }
+      if (file.name.includes('毕业') || file.name.includes('graduation')) {
+        return 'graduation'
+      }
+      if (file.name.includes('奖') || file.name.includes('award') || file.name.includes('证书')) {
+        return 'award'
+      }
+    }
+    
+    return 'other'
+  }
+
+  // 获取文件图标
+  static getFileIcon(fileType: string, documentType?: Document['document_type']): string {
+    const extension = fileType.toLowerCase()
+    
+    if (extension === 'pdf') {
+      switch (documentType) {
+        case 'transcript':
+          return 'fas fa-file-alt'
+        case 'certificate':
+        case 'graduation':
+          return 'fas fa-certificate'
+        case 'award':
+          return 'fas fa-trophy'
+        default:
+          return 'fas fa-file-pdf'
+      }
+    }
+    
+    if (['doc', 'docx'].includes(extension)) {
+      return 'fas fa-file-word'
+    }
+    
+    if (['xls', 'xlsx'].includes(extension)) {
+      return 'fas fa-file-excel'
+    }
+    
+    if (['ppt', 'pptx'].includes(extension)) {
+      return 'fas fa-file-powerpoint'
+    }
+    
+    if (['jpg', 'jpeg', 'png', 'gif', 'bmp'].includes(extension)) {
+      return 'fas fa-file-image'
+    }
+    
+    if (['zip', 'rar', '7z'].includes(extension)) {
+      return 'fas fa-file-archive'
+    }
+    
+    return 'fas fa-file-alt'
+  }
+}
+
+export default DocumentService

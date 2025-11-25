@@ -87,7 +87,11 @@ export class GraduationDestinationService {
     } = params;
 
     try {
+<<<<<<< HEAD
       // 从 graduation_destinations 表查询
+=======
+      // 先获取毕业去向数据，不进行嵌套查询
+>>>>>>> 99189c3911effb11cb5198390faf752cce0c6415
       let query = supabase
         .from('graduation_destinations')
         .select('*', { count: 'exact' });
@@ -119,6 +123,7 @@ export class GraduationDestinationService {
         };
       }
 
+<<<<<<< HEAD
       // 获取所有学生ID
       const studentIds = [...new Set((data || []).map((item: any) => item.student_id).filter(Boolean))];
       
@@ -191,6 +196,52 @@ export class GraduationDestinationService {
           }
         };
       }).filter(Boolean) as GraduationDestination[];
+=======
+      // 如果有数据，分别获取学生信息
+      if (data && data.length > 0) {
+        // 获取所有唯一的学生ID
+        const studentIds = [...new Set(data.map((item: any) => item.student_id))];
+        
+        // 获取学生信息 (使用user_number字段，但在返回时映射为student_number)
+        const { data: studentsData, error: studentsError } = await supabase
+          .from('users')
+          .select('id, user_number, full_name, class_name')  // 数据库中字段名为user_number
+          .in('id', studentIds);
+
+        if (studentsError) {
+          console.warn('获取学生信息失败:', studentsError);
+          // 即使获取学生信息失败，也返回毕业去向数据
+          return {
+            destinations: data.map((item: any) => ({
+              ...item,
+              student: null
+            })),
+            total: count || 0
+          };
+        }
+
+        // 创建学生信息映射 (将user_number映射为student_number以匹配类型定义)
+        const studentMap = studentsData?.reduce((map: Record<string, any>, student: any) => {
+          map[student.id] = {
+            student_number: student.user_number,  // 字段映射
+            full_name: student.full_name,
+            class_name: student.class_name
+          };
+          return map;
+        }, {} as Record<string, any>) || {};
+
+        // 合并数据
+        const destinations = data.map((item: any) => ({
+          ...item,
+          student: studentMap[item.student_id] || null
+        }));
+
+        return {
+          destinations,
+          total: count || 0
+        };
+      }
+>>>>>>> 99189c3911effb11cb5198390faf752cce0c6415
 
       return {
         destinations,
@@ -211,14 +262,7 @@ export class GraduationDestinationService {
     try {
       const { data, error } = await supabase
         .from('graduation_destinations')
-        .select(`
-          *,
-          student!inner (
-            student_number,
-            full_name,
-            class_name
-          )
-        `)
+        .select('*')
         .eq('id', id)
         .single();
 
@@ -241,14 +285,7 @@ export class GraduationDestinationService {
     try {
       const { data, error } = await supabase
         .from('graduation_destinations')
-        .select(`
-          *,
-          student!inner (
-            student_number,
-            full_name,
-            class_name
-          )
-        `)
+        .select('*')
         .eq('student_id', studentId)
         .single();
 
@@ -277,36 +314,37 @@ export class GraduationDestinationService {
       // 检查是否已存在记录
       const existingRecord = await this.getGraduationDestinationByStudentId(destinationData.student_id);
 
+      // 过滤掉可能引起问题的字段，只保留数据库中存在的字段
+      const filteredData: any = {
+        destination_type: destinationData.destination_type,
+        company_name: destinationData.company_name,
+        position: destinationData.position,
+        salary: destinationData.salary,
+        work_location: destinationData.work_location,
+        school_name: destinationData.school_name,
+        major: destinationData.major,
+        degree: destinationData.degree,
+        abroad_country: destinationData.abroad_country,
+        startup_name: destinationData.startup_name,
+        startup_role: destinationData.startup_role,
+        other_description: destinationData.other_description,
+        status: 'pending',
+        submit_time: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      };
+
+      // 只有在字段存在时才添加它们
+      if (destinationData.hasOwnProperty('proof_files')) {
+        filteredData.proof_files = destinationData.proof_files || [];
+      }
+
       if (existingRecord) {
         // 更新现有记录
         const { data, error } = await supabase
           .from('graduation_destinations')
-          .update({
-            destination_type: destinationData.destination_type,
-            company_name: destinationData.company_name,
-            position: destinationData.position,
-            salary: destinationData.salary,
-            work_location: destinationData.work_location,
-            school_name: destinationData.school_name,
-            major: destinationData.major,
-            degree: destinationData.degree,
-            abroad_country: destinationData.abroad_country,
-            startup_name: destinationData.startup_name,
-            startup_role: destinationData.startup_role,
-            other_description: destinationData.other_description,
-            proof_files: destinationData.proof_files || [],
-            status: 'pending', // 重新提交后设为待审核
-            updated_at: new Date().toISOString()
-          })
+          .update(filteredData)
           .eq('id', existingRecord.id)
-          .select(`
-            *,
-            student!inner (
-              student_number,
-              full_name,
-              class_name
-            )
-          `)
+          .select('*')
           .single();
 
         if (error) {
@@ -316,34 +354,15 @@ export class GraduationDestinationService {
         return data;
       } else {
         // 创建新记录
+        const insertData = {
+          ...filteredData,
+          student_id: destinationData.student_id
+        };
+
         const { data, error } = await supabase
           .from('graduation_destinations')
-          .insert({
-            student_id: destinationData.student_id,
-            destination_type: destinationData.destination_type,
-            company_name: destinationData.company_name,
-            position: destinationData.position,
-            salary: destinationData.salary,
-            work_location: destinationData.work_location,
-            school_name: destinationData.school_name,
-            major: destinationData.major,
-            degree: destinationData.degree,
-            abroad_country: destinationData.abroad_country,
-            startup_name: destinationData.startup_name,
-            startup_role: destinationData.startup_role,
-            other_description: destinationData.other_description,
-            proof_files: destinationData.proof_files || [],
-            status: 'pending',
-            submit_time: new Date().toISOString()
-          })
-          .select(`
-            *,
-            student!inner (
-              student_number,
-              full_name,
-              class_name
-            )
-          `)
+          .insert(insertData)
+          .select('*')
           .single();
 
         if (error) {
@@ -379,14 +398,7 @@ export class GraduationDestinationService {
           updated_at: new Date().toISOString()
         })
         .eq('id', id)
-        .select(`
-          *,
-          student!inner (
-            student_number,
-            full_name,
-            class_name
-          )
-        `)
+        .select('*')
         .single();
 
       if (error) {
@@ -444,7 +456,7 @@ export class GraduationDestinationService {
         failure_count: 0,
         status: 'completed' as const,
         error_details: [],
-        imported_by: userId,
+        imported_by: userId || '',
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
