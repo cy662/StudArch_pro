@@ -29,11 +29,6 @@ interface StudentData {
   className: string;
   enrollmentYear: string;
   studyDuration: string;
-  counselor: string;
-  hometown: string;
-  entranceScore: string;
-  entranceMethod: string;
-  entranceDate: string;
 }
 
 const TeacherStudentDetail: React.FC = () => {
@@ -44,7 +39,7 @@ const TeacherStudentDetail: React.FC = () => {
   // 状态管理
   const [activeTab, setActiveTab] = useState<string>('basic');
   const [showEditProfileModal, setShowEditProfileModal] = useState<boolean>(false);
-  const [showAddGradeModal, setShowAddGradeModal] = useState<boolean>(false);
+
   const [showAddRewardModal, setShowAddRewardModal] = useState<boolean>(false);
   const [showEditGraduationModal, setShowEditGraduationModal] = useState<boolean>(false);
   const [destinationType, setDestinationType] = useState<string>('employment');
@@ -80,12 +75,7 @@ const TeacherStudentDetail: React.FC = () => {
     major: '未知',
     className: '未知',
     enrollmentYear: '未知',
-    studyDuration: '未知',
-    counselor: '未知',
-    hometown: '未知',
-    entranceScore: '未知',
-    entranceMethod: '未知',
-    entranceDate: '未知'
+    studyDuration: '未知'
   });
   
   // 加载状态
@@ -145,12 +135,7 @@ const TeacherStudentDetail: React.FC = () => {
           major: completeInfo?.major || '未知',
           className: userInfo.profile_class_name || userInfo.user_class_name || '未知',
           enrollmentYear: userInfo.admission_date ? userInfo.admission_date.substring(0, 4) + '年' : '未知',
-          studyDuration: completeInfo?.academic_system || '4年',
-          counselor: '未知', // 需从教师信息中获取
-          hometown: userInfo.home_address ? extractCityFromAddress(userInfo.home_address) : '未知',
-          entranceScore: '未知', // 需额外查询
-          entranceMethod: '未知', // 需额外查询
-          entranceDate: userInfo.admission_date ? formatDate(userInfo.admission_date) : '未知'
+          studyDuration: completeInfo?.academic_system || '4年'
         };
         
         setStudentData(newStudentData);
@@ -177,12 +162,8 @@ const TeacherStudentDetail: React.FC = () => {
           major: '未知',
           className: '未知',
           enrollmentYear: '未知',
-          studyDuration: '未知',
-          counselor: '未知',
-          hometown: '未知',
-          entranceScore: '未知',
-          entranceMethod: '未知',
-          entranceDate: '未知'
+          studyDuration: '未知'
+
         });
       } finally {
         setLoading(false);
@@ -207,15 +188,6 @@ const TeacherStudentDetail: React.FC = () => {
     }
   };
   
-  // 辅助函数：从地址提取城市
-  const extractCityFromAddress = (address: string) => {
-    if (!address) return '';
-    // 简单的城市提取逻辑，实际项目中可能需要更复杂的解析
-    const cityRegex = /[省市自治区]{1}\s*([^市县区]*[市县区])/;
-    const match = address.match(cityRegex);
-    return match ? match[1] : address.substring(0, 6); // 如果没有匹配到，返回前6个字符
-  };
-
   // 加载奖惩信息
   const loadRewardPunishments = async () => {
     try {
@@ -278,16 +250,7 @@ const TeacherStudentDetail: React.FC = () => {
     alert('档案信息已更新');
   };
 
-  // 录入收获与成果
-  const handleAddGrade = () => {
-    showModal(setShowAddGradeModal);
-  };
 
-  const handleSaveGrade = () => {
-    console.log('保存收获与成果信息');
-    hideModal(setShowAddGradeModal);
-    alert('收获与成果已录入');
-  };
 
   // 新增奖惩
   const handleAddReward = () => {
@@ -655,13 +618,7 @@ const TeacherStudentDetail: React.FC = () => {
             >
               基本信息
             </button>
-            <button 
-              onClick={() => handleTabChange('academic')}
-              className={`${activeTab === 'academic' ? styles.tabActive : styles.tabInactive} px-6 py-4 text-sm font-medium rounded-t-lg focus:outline-none transition-colors`}
-              role="tab"
-            >
-              学业信息
-            </button>
+
             <button 
               onClick={() => handleTabChange('rewards')}
               className={`${activeTab === 'rewards' ? styles.tabActive : styles.tabInactive} px-6 py-4 text-sm font-medium rounded-t-lg focus:outline-none transition-colors`}
@@ -705,136 +662,15 @@ const TeacherStudentDetail: React.FC = () => {
                     <span className="text-text-secondary">学制</span>
                     <span className="font-medium">{studentData.studyDuration}</span>
                   </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">辅导员</span>
-                    <span className="font-medium">{studentData.counselor}</span>
-                  </div>
+
                 </div>
               </div>
 
-              {/* 入学信息 */}
-              <div className="bg-gray-50 rounded-lg p-4">
-                <h4 className="font-semibold text-text-primary mb-3">入学信息</h4>
-                <div className="space-y-2">
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">生源地</span>
-                    <span className="font-medium">{studentData.hometown}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">高考成绩</span>
-                    <span className="font-medium">{studentData.entranceScore}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">入学方式</span>
-                    <span className="font-medium">{studentData.entranceMethod}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-text-secondary">入学时间</span>
-                    <span className="font-medium">{studentData.entranceDate}</span>
-                  </div>
-                </div>
-              </div>
+
             </div>
           </div>
 
-          {/* 学业信息内容 */}
-          <div className={`${styles.tabContent} ${activeTab !== 'academic' ? styles.tabContentHidden : ''} p-6`}>
-            <div className="flex items-center justify-between mb-4">
-              <h4 className="font-semibold text-text-primary">学业成果</h4>
-              <button 
-                onClick={handleAddGrade}
-                className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors text-sm"
-              >
-                <i className="fas fa-plus mr-2"></i>录入收获与成果
-              </button>
-            </div>
-            
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">课程名称</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">课程代码</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">学期</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">收获</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">成果</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">证明</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-border-light">
-                  <tr>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-primary">高等数学</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">MATH101</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">2021-2022学年第1学期</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">85</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">4.0</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">3.5</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm space-x-2">
-                      <button className="text-secondary hover:text-accent transition-colors">
-                        <i className="fas fa-edit"></i>
-                      </button>
-                      <button className="text-red-500 hover:text-red-700 transition-colors">
-                        <i className="fas fa-trash"></i>
-                      </button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-primary">大学英语</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">ENG101</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">2021-2022学年第1学期</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">92</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">3.0</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">4.0</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm space-x-2">
-                      <button className="text-secondary hover:text-accent transition-colors">
-                        <i className="fas fa-edit"></i>
-                      </button>
-                      <button className="text-red-500 hover:text-red-700 transition-colors">
-                        <i className="fas fa-trash"></i>
-                      </button>
-                    </td>
-                  </tr>
-                  <tr>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-primary">程序设计基础</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">CS101</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">2021-2022学年第2学期</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm font-medium">88</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">4.0</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm text-text-secondary">3.7</td>
-                    <td className="px-4 py-3 whitespace-nowrap text-sm space-x-2">
-                      <button className="text-secondary hover:text-accent transition-colors">
-                        <i className="fas fa-edit"></i>
-                      </button>
-                      <button className="text-red-500 hover:text-red-700 transition-colors">
-                        <i className="fas fa-trash"></i>
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            
-            {/* 学业统计 */}
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-text-primary">3.73</div>
-                <div className="text-sm text-text-secondary">平均证明</div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-text-primary">11.0</div>
-                <div className="text-sm text-text-secondary">总成果</div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-text-primary">88.3</div>
-                <div className="text-sm text-text-secondary">平均收获</div>
-              </div>
-              <div className="bg-gray-50 rounded-lg p-4 text-center">
-                <div className="text-2xl font-bold text-text-primary">85%</div>
-                <div className="text-sm text-text-secondary">课程完成率</div>
-              </div>
-            </div>
-          </div>
+
 
           {/* 奖惩信息内容 */}
           <div className={`${styles.tabContent} ${activeTab !== 'rewards' ? styles.tabContentHidden : ''} p-6`}>
@@ -1210,77 +1046,7 @@ const TeacherStudentDetail: React.FC = () => {
         </div>
       )}
 
-      {/* 录入收获与成果模态框 */}
-      {showAddGradeModal && (
-        <div className="fixed inset-0 z-50">
-          <div 
-            className={styles.modalBackdrop}
-            onClick={() => handleModalBackdropClick(setShowAddGradeModal)}
-          ></div>
-          <div className="relative flex items-center justify-center min-h-screen p-4">
-            <div className={`${styles.modalEnter} bg-white rounded-xl shadow-lg w-full max-w-md`}>
-              <div className="flex items-center justify-between p-6 border-b border-border-light">
-                <h3 className="text-lg font-semibold text-text-primary">录入收获与成果</h3>
-                <button 
-                  onClick={() => hideModal(setShowAddGradeModal)}
-                  className="text-text-secondary hover:text-text-primary transition-colors"
-                >
-                  <i className="fas fa-times text-xl"></i>
-                </button>
-              </div>
-              <div className="p-6">
-                <div className="space-y-4">
-                  <div>
-                    <label className="block text-sm font-medium text-text-primary mb-2">课程名称</label>
-                    <select className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent">
-                      <option>数据结构</option>
-                      <option>计算机网络</option>
-                      <option>数据库原理</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-primary mb-2">学期</label>
-                    <select className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent">
-                      <option>2023-2024学年第1学期</option>
-                      <option>2023-2024学年第2学期</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-primary mb-2">收获</label>
-                    <input 
-                      type="number" 
-                      className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent" 
-                      placeholder="请输入收获"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-text-primary mb-2">成果</label>
-                    <input 
-                      type="number" 
-                      className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent" 
-                      placeholder="请输入成果"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="flex items-center justify-end space-x-3 p-6 border-t border-border-light">
-                <button 
-                  onClick={() => hideModal(setShowAddGradeModal)}
-                  className="px-4 py-2 border border-border-light text-text-primary rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  取消
-                </button>
-                <button 
-                  onClick={handleSaveGrade}
-                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
-                >
-                  保存
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+
 
       {/* 新增/编辑奖惩模态框 */}
       {showAddRewardModal && (
