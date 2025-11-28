@@ -4,6 +4,8 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './styles.module.css';
 import { RewardPunishmentService } from '../../services/rewardPunishmentService';
+import { StudentProfileService } from '../../services/studentProfileService';
+import { UserService } from '../../services/userService';
 import { RewardPunishment, RewardPunishmentCreate, RewardPunishmentUpdate } from '../../types/rewardPunishment';
 import RewardPunishmentForm from '../../components/RewardPunishmentForm';
 
@@ -59,39 +61,160 @@ const TeacherStudentDetail: React.FC = () => {
   });
 
   // 学生数据
-  const [studentData] = useState<StudentData>({
+  const [studentData, setStudentData] = useState<StudentData>({
     id: studentId || 'unknown',
-    name: '李小明',
+    name: '加载中...',
     avatar: 'https://s.coze.cn/image/vdcOni23j40/',
-    status: '在读',
+    status: '未知',
     studentId: studentId || '未知',
-    gender: '男',
-    birthDate: '2003年5月15日',
-    nationality: '汉族',
-    politicalStatus: '共青团员',
-    phone: '138****5678',
-    email: 'lixiaoming@example.com',
-    address: '河南省郑州市金水区',
-    emergencyContact: '李大明 (父亲)',
-    emergencyPhone: '139****1234',
-    college: '计算机学院',
-    major: '计算机科学与技术',
-    className: '计算机科学与技术1班',
-    enrollmentYear: '2021年',
-    studyDuration: '4年',
-    counselor: '张老师',
-    hometown: '河南省郑州市',
-    entranceScore: '625分',
-    entranceMethod: '普通高考',
-    entranceDate: '2021年9月1日'
+    gender: '未知',
+    birthDate: '未知',
+    nationality: '未知',
+    politicalStatus: '未知',
+    phone: '未知',
+    email: '未知',
+    address: '未知',
+    emergencyContact: '未知',
+    emergencyPhone: '未知',
+    college: '未知',
+    major: '未知',
+    className: '未知',
+    enrollmentYear: '未知',
+    studyDuration: '未知',
+    counselor: '未知',
+    hometown: '未知',
+    entranceScore: '未知',
+    entranceMethod: '未知',
+    entranceDate: '未知'
   });
+  
+  // 加载状态
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
 
-  // 检查 studentId 是否存在
+  // 加载学生数据
   useEffect(() => {
-    if (!studentId) {
-      console.error('学生ID缺失，请通过学生列表页面访问');
-    }
+    const loadStudentData = async () => {
+      if (!studentId) {
+        setError('学生ID缺失，请通过学生列表页面访问');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        setLoading(true);
+        
+        // 首先，获取用户ID与档案ID的映射关系
+        const profileMapping = await UserService.getProfileUserMapping([studentId]);
+        
+        // 获取用户基本信息和学生档案信息
+        let userId = '';
+        if (profileMapping.success && profileMapping.data && profileMapping.data.length > 0) {
+          userId = profileMapping.data[0].user_id;
+        } else {
+          // 如果映射失败，尝试直接使用传入的ID作为用户ID
+          userId = studentId;
+        }
+        
+        // 获取学生个人信息
+        const profileInfo = await StudentProfileService.getStudentProfile(userId);
+        
+        // 获取学生完整信息
+        const completeInfo = await StudentProfileService.getStudentCompleteInfo(userId);
+        
+        // 整合数据
+        const userInfo = completeInfo || {};
+        
+        // 构造学生数据对象
+        const newStudentData: StudentData = {
+          id: studentId,
+          name: userInfo.full_name || '未知',
+          avatar: userInfo.profile_photo || 'https://s.coze.cn/image/vdcOni23j40/',
+          status: userInfo.profile_status_text || userInfo.user_status || '未知',
+          studentId: userInfo.user_number || '未知',
+          gender: userInfo.gender === 'male' ? '男' : userInfo.gender === 'female' ? '女' : userInfo.gender || '未知',
+          birthDate: formatDate(userInfo.birth_date) || '未知',
+          nationality: userInfo.nationality || '未知',
+          politicalStatus: userInfo.political_status || '未知',
+          phone: userInfo.profile_phone || userInfo.user_phone || '未知',
+          email: userInfo.email || '未知',
+          address: userInfo.home_address || '未知',
+          emergencyContact: userInfo.emergency_contact || '未知',
+          emergencyPhone: userInfo.emergency_phone || '未知',
+          college: userInfo.department || '未知',
+          major: completeInfo?.major || '未知',
+          className: userInfo.profile_class_name || userInfo.user_class_name || '未知',
+          enrollmentYear: userInfo.admission_date ? userInfo.admission_date.substring(0, 4) + '年' : '未知',
+          studyDuration: completeInfo?.academic_system || '4年',
+          counselor: '未知', // 需从教师信息中获取
+          hometown: userInfo.home_address ? extractCityFromAddress(userInfo.home_address) : '未知',
+          entranceScore: '未知', // 需额外查询
+          entranceMethod: '未知', // 需额外查询
+          entranceDate: userInfo.admission_date ? formatDate(userInfo.admission_date) : '未知'
+        };
+        
+        setStudentData(newStudentData);
+      } catch (err) {
+        console.error('加载学生数据失败:', err);
+        setError('加载学生信息失败，请稍后重试');
+        // 加载失败时使用默认数据
+        setStudentData({
+          id: studentId || 'unknown',
+          name: '加载失败',
+          avatar: 'https://s.coze.cn/image/vdcOni23j40/',
+          status: '未知',
+          studentId: studentId || '未知',
+          gender: '未知',
+          birthDate: '未知',
+          nationality: '未知',
+          politicalStatus: '未知',
+          phone: '未知',
+          email: '未知',
+          address: '未知',
+          emergencyContact: '未知',
+          emergencyPhone: '未知',
+          college: '未知',
+          major: '未知',
+          className: '未知',
+          enrollmentYear: '未知',
+          studyDuration: '未知',
+          counselor: '未知',
+          hometown: '未知',
+          entranceScore: '未知',
+          entranceMethod: '未知',
+          entranceDate: '未知'
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadStudentData();
   }, [studentId]);
+  
+  // 辅助函数：格式化日期
+  const formatDate = (dateString?: string) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('zh-CN', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).replace(/\//g, '年').replace(/\//, '月') + '日';
+    } catch (e) {
+      return '';
+    }
+  };
+  
+  // 辅助函数：从地址提取城市
+  const extractCityFromAddress = (address: string) => {
+    if (!address) return '';
+    // 简单的城市提取逻辑，实际项目中可能需要更复杂的解析
+    const cityRegex = /[省市自治区]{1}\s*([^市县区]*[市县区])/;
+    const match = address.match(cityRegex);
+    return match ? match[1] : address.substring(0, 6); // 如果没有匹配到，返回前6个字符
+  };
 
   // 加载奖惩信息
   const loadRewardPunishments = async () => {
@@ -381,6 +504,21 @@ const TeacherStudentDetail: React.FC = () => {
 
       {/* 主内容区 */}
       <main className="ml-64 mt-16 p-6 min-h-screen">
+        {loading && (
+          <div className="fixed inset-0 flex items-center justify-center bg-white bg-opacity-80 z-50">
+            <div className="flex flex-col items-center">
+              <div className="w-12 h-12 border-4 border-gray-200 border-t-blue-500 rounded-full animate-spin"></div>
+              <p className="mt-4 text-text-primary">加载学生信息中...</p>
+            </div>
+          </div>
+        )}
+        
+        {error && (
+          <div className="mb-6 p-4 bg-red-50 text-red-500 rounded-lg">
+            <i className="fas fa-exclamation-circle mr-2"></i>
+            {error}
+          </div>
+        )}
         {/* 页面头部 */}
         <div className="mb-8">
           <div className="flex items-center justify-between">
