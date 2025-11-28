@@ -45,6 +45,33 @@ const TeacherStudentList: React.FC = () => {
   const [assigningProgram, setAssigningProgram] = useState(false);
   const [programsLoading, setProgramsLoading] = useState(false);
 
+  // 将档案ID映射回用户ID（因为前端显示使用档案ID，但后端API需要用户ID）
+  const mapProfileIdsToUserIds = async (profileIds: string[]): Promise<string[]> => {
+    try {
+      if (!profileIds || profileIds.length === 0) {
+        return [];
+      }
+
+      // 使用现有的UserService来获取映射
+      const result = await UserService.getProfileUserMapping(profileIds);
+      
+      if (!result.success || !result.data) {
+        console.error('查询档案映射失败:', result.message);
+        return profileIds; // 返回原始ID作为后备
+      }
+
+      const idMap: Record<string, string> = {};
+      result.data.forEach((profile: any) => {
+        idMap[profile.id] = profile.user_id;
+      });
+
+      return profileIds.map(profileId => idMap[profileId] || profileId);
+    } catch (error) {
+      console.error('映射档案ID到用户ID失败:', error);
+      return profileIds; // 返回原始ID作为后备
+    }
+  };
+
   // 获取教师管理的学生列表
   const fetchTeacherStudents = async () => {
     try {
@@ -413,6 +440,7 @@ ${errorDetails}${moreErrors}`);
       setAssigningProgram(true);
       // 假设当前教师的ID是固定的，实际应用中应该从认证状态中获取
       const teacherId = '00000000-0000-0000-0000-000000000001';
+      // 修复：selectedStudents中已经是档案ID，直接使用不需要映射
       const studentIds = Array.from(selectedStudents);
 
       const response = await fetch(`/api/teacher/${teacherId}/batch-assign-training-program`, {
@@ -431,10 +459,34 @@ ${errorDetails}${moreErrors}`);
 
       if (result.success) {
         const { success_count, failure_count, total_count } = result.data;
+        
         if (failure_count === 0) {
-          alert(`✅ 成功为 ${success_count} 名学生分配培养方案！`);
+          alert(`✅ 成功为 ${success_count} 名学生分配培养方案！\
+\
+💡 学生可以在"教学任务与安排"页面查看分配的课程。`);
         } else {
-          alert(`⚠️ 成功分配 ${success_count} 名学生，${failure_count} 名学生分配失败。详情请查看控制台。`);
+          const details = result.data.details || [];
+          let detailsMessage = '';
+          
+          if (details.length > 0) {
+            detailsMessage = '\
+\
+失败详情:\
+' + details.slice(0, 3).map((d: any) => 
+              `• 学生ID ${d.student_id}: ${d.error}`
+            ).join('\
+');
+            
+            if (details.length > 3) {
+              detailsMessage += `\
+...还有 ${details.length - 3} 个错误`;
+            }
+          }
+          
+          alert(`⚠️ 培养方案分配完成\
+\
+✅ 成功分配: ${success_count} 名学生\
+❌ 分配失败: ${failure_count} 名学生${detailsMessage}`);
           console.log('分配详情:', result.data.details);
         }
         
@@ -445,6 +497,17 @@ ${errorDetails}${moreErrors}`);
         
         // 刷新学生列表数据
         await fetchTeacherStudents();
+        
+        // 如果有成功的分配，显示额外提示
+        if (success_count > 0) {
+          setTimeout(() => {
+            alert(`📚 培养方案分配成功！\
+\
+分配的 ${success_count} 名学生现在可以在他们的"教学任务与安排"页面中看到相关课程。\
+\
+请通知学生登录系统查看。`);
+          }, 1000);
+        }
       } else {
         alert(`❌ 分配失败: ${result.message}`);
       }

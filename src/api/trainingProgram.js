@@ -189,9 +189,12 @@ router.post('/student/:studentId/assign-training-program', async (req, res) => {
     const { studentId } = req.params;
     const { programId, teacherId, notes } = req.body;
 
-    // 验证UUID格式
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(studentId) || !uuidRegex.test(programId)) {
+    // 验证ID格式 - 支持标准UUID和占位符格式
+    const standardUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const placeholderUuidRegex = /^00000000-0000-0000-0000-000000000\d{3}$/i;
+    
+    if (!(standardUuidRegex.test(studentId) || placeholderUuidRegex.test(studentId)) || 
+        !(standardUuidRegex.test(programId) || placeholderUuidRegex.test(programId))) {
       return res.status(400).json({
         success: false,
         message: '无效的ID格式'
@@ -244,9 +247,12 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
     const { teacherId } = req.params;
     const { programId, studentIds, notes } = req.body;
 
-    // 验证UUID格式
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    if (!uuidRegex.test(teacherId) || !uuidRegex.test(programId)) {
+    // 验证ID格式 - 支持标准UUID和占位符格式
+    const standardUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const placeholderUuidRegex = /^00000000-0000-0000-0000-000000000\d{3}$/i;
+    
+    if (!(standardUuidRegex.test(teacherId) || placeholderUuidRegex.test(teacherId)) || 
+        !(standardUuidRegex.test(programId) || placeholderUuidRegex.test(programId))) {
       return res.status(400).json({
         success: false,
         message: '无效的ID格式'
@@ -260,11 +266,26 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
       });
     }
 
+    // 验证所有学生ID格式
+    const invalidStudentIds = studentIds.filter(id => 
+      !(standardUuidRegex.test(id) || placeholderUuidRegex.test(id))
+    );
+    
+    if (invalidStudentIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: '发现无效的学生ID格式'
+      });
+    }
+
+    // 确保所有ID都是字符串格式，避免JSON序列化问题
+    const validStudentIds = studentIds.map(id => String(id));
+    
     const { data, error } = await supabase.rpc('batch_assign_training_program_to_teacher_students', {
       p_teacher_id: teacherId,
       p_program_id: programId,
-      p_student_ids: studentIds,
-      p_notes: notes
+      p_student_ids: validStudentIds,  // 确保传递正确的数组格式
+      p_notes: notes || null
     });
 
     if (error) {
@@ -312,6 +333,49 @@ router.get('/teacher/:teacherId/students-training-programs', async (req, res) =>
       return res.status(500).json({
         success: false,
         message: '获取学生培养方案汇总失败: ' + error.message
+      });
+    }
+
+    res.json({
+      success: true,
+      data: data || []
+    });
+
+  } catch (error) {
+    console.error('API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器内部错误'
+    });
+  }
+});
+
+// 获取学生培养方案课程（用于学生端教学任务与安排页面）
+router.get('/student/:studentId/training-program-courses', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    // 验证ID格式 - 支持标准UUID和占位符格式
+    const standardUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const placeholderUuidRegex = /^00000000-0000-0000-0000-000000000\d{3}$/i;
+    
+    if (!(standardUuidRegex.test(studentId) || placeholderUuidRegex.test(studentId))) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的学生ID'
+      });
+    }
+
+    // 获取学生培养方案课程信息
+    const { data, error } = await supabase.rpc('get_student_training_program_courses', {
+      p_student_id: studentId
+    });
+
+    if (error) {
+      console.error('获取学生培养方案课程失败:', error);
+      return res.status(500).json({
+        success: false,
+        message: '获取学生培养方案课程失败: ' + error.message
       });
     }
 

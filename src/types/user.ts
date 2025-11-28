@@ -29,6 +29,7 @@ export interface Role {
 
 export interface UserWithRole extends User {
   role: Role
+  user_id?: string // 原始用户ID（与档案ID不同时的映射）
 }
 
 export interface UserSearchParams {

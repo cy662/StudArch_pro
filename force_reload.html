@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>强制刷新</title>
+    <meta http-equiv="refresh" content="2;url=/login">
+    <script>
+        // 清除localStorage并强制跳转
+        localStorage.clear();
+        console.log('清除缓存，准备重新加载...');
+        setTimeout(() => {
+            window.location.href = '/login';
+        }, 1000);
+    </script>
+</head>
+<body>
+    <h1>正在清除缓存并重新加载...</h1>
+    <p>请稍候...</p>
+</body>
+</html>

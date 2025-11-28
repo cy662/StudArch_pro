@@ -88,7 +88,7 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION batch_assign_training_program_to_teacher_students(
     p_teacher_id UUID,
     p_program_id UUID,
-    p_student_ids UUID[],
+    p_student_ids TEXT[],  -- 修改为TEXT数组以避免JSON解析问题
     p_notes TEXT DEFAULT NULL
 )
 RETURNS JSONB AS $$
@@ -108,7 +108,7 @@ BEGIN
     END IF;
     
     -- 逐个处理学生
-    FOR student_uuid IN SELECT * FROM unnest(p_student_ids)
+    FOR student_uuid IN SELECT * FROM unnest(p_student_ids::UUID[])  -- 转换为UUID数组
     LOOP
         -- 调用单个分配函数
         result := assign_training_program_to_student(student_uuid, p_program_id, p_teacher_id, p_notes);
@@ -139,88 +139,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 5. 更新获取学生培养方案的函数（简化版）
-CREATE OR REPLACE FUNCTION get_student_training_program(p_student_id UUID)
-RETURNS JSONB AS $$
-DECLARE
-    result JSONB;
-    program_uuid UUID;
-BEGIN
-    -- 获取学生的培养方案
-    SELECT tp.id, tp.program_name, tp.program_code, tp.major, tp.department, tp.total_credits, tp.duration_years, tp.description
-    INTO program_uuid, result
-    FROM student_training_programs stp
-    JOIN training_programs tp ON stp.program_id = tp.id
-    WHERE stp.student_id = p_student_id 
-    AND stp.status = 'active' 
-    AND tp.status = 'active'
-    LIMIT 1;
-    
-    -- 如果学生没有分配培养方案，返回空结果
-    IF program_uuid IS NULL THEN
-        RETURN '{}'::jsonb;
-    END IF;
-    
-    -- 添加课程列表
-    result := result || jsonb_build_object(
-        'courses', (
-            SELECT jsonb_agg(
-                jsonb_build_object(
-                    'id', tpc.id,
-                    'course_number', tpc.course_number,
-                    'course_name', tpc.course_name,
-                    'credits', tpc.credits,
-                    'recommended_grade', tpc.recommended_grade,
-                    'semester', tpc.semester,
-                    'exam_method', tpc.exam_method,
-                    'course_nature', tpc.course_nature,
-                    'course_type', tpc.course_type,
-                    'sequence_order', tpc.sequence_order
-                )
-            )
-            FROM training_program_courses tpc
-            WHERE tpc.program_id = program_uuid AND tpc.status = 'active'
-            ORDER BY tpc.sequence_order, tpc.course_number
-        )
-    );
-    
-    -- 添加学生修读进度
-    result := result || jsonb_build_object(
-        'progress', (
-            SELECT jsonb_agg(
-                jsonb_build_object(
-                    'course_id', scp.course_id,
-                    'course_number', tpc.course_number,
-                    'course_name', tpc.course_name,
-                    'status', scp.status,
-                    'grade', scp.grade,
-                    'grade_point', scp.grade_point,
-                    'semester_completed', scp.semester_completed,
-                    'academic_year', scp.academic_year,
-                    'completed_at', scp.completed_at
-                )
-            )
-            FROM student_course_progress scp
-            JOIN training_program_courses tpc ON scp.course_id = tpc.id
-            WHERE scp.student_id = p_student_id
-        )
-    );
-    
-    RETURN result;
-END;
-$$ LANGUAGE plpgsql;
-
--- 6. 获取教师所有学生的培养方案汇总（简化版）
+-- 5. 创建获取教师学生培养方案汇总的函数
 CREATE OR REPLACE FUNCTION get_teacher_students_training_programs_summary(p_teacher_id UUID)
 RETURNS SETOF JSONB AS $$
 BEGIN
     RETURN QUERY
     SELECT jsonb_build_object(
         'student_id', sp.id,
-        'student_number', sp.student_number,
         'student_name', sp.full_name,
-        'class_name', sp.class_name,
-        'program_assigned', CASE WHEN stp.id IS NOT NULL THEN true ELSE false END,
+        'student_number', sp.student_number,
+        'program_id', tp.id,
         'program_name', tp.program_name,
         'program_code', tp.program_code,
         'total_credits', tp.total_credits,
@@ -251,14 +179,17 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 7. 创建视图：教师培养方案管理视图
+-- 6. 创建视图：教师培养方案管理视图
 CREATE OR REPLACE VIEW teacher_training_programs_view AS
 SELECT 
     tp.*,
     (SELECT COUNT(*) FROM student_training_programs stp WHERE stp.program_id = tp.id AND stp.status = 'active') as assigned_students_count,
-    (SELECT COUNT(DISTINCT stp.teacher_id) FROM student_training_programs stp WHERE stp.program_id = tp.id AND stp.status = 'active') as teachers_count,
-    (SELECT jsonb_agg(DISTINCT stp.teacher_id) FROM student_training_programs stp WHERE stp.program_id = tp.id AND stp.status = 'active') as assigned_teachers
+    (SELECT COUNT(DISTINCT stp.teacher_id) FROM student_training_programs stp WHERE stp.program_id = tp.id AND stp.status = 'active') as teachers_count
 FROM training_programs tp
 WHERE tp.status = 'active';
+
+-- 7. 索引优化
+CREATE INDEX IF NOT EXISTS idx_student_training_programs_teacher_id ON student_training_programs(teacher_id);
+CREATE INDEX IF NOT EXISTS idx_student_training_programs_student_teacher ON student_training_programs(student_id, teacher_id);
 
 COMMIT;

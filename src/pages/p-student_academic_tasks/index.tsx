@@ -55,50 +55,9 @@ const StudentAcademicTasks: React.FC = () => {
   ]);
 
   // 课程数据状态
-  const [courses, setCourses] = useState<Course[]>([
-    {
-      id: '1',
-      name: '数据结构与算法',
-      teacher: '张教授',
-      credits: 4,
-      status: 'in_progress',
-      tags: ['数据结构', '算法', 'C++', 'Python'],
-      outcomes: '掌握了基本数据结构，理解了算法复杂度分析',
-      achievements: '完成了所有实验项目，期中成绩85分',
-      proofFiles: [],
-      startDate: '2024-02-26',
-      endDate: '2024-07-15',
-      description: '本课程主要讲授数据结构的基本概念和算法设计与分析方法'
-    },
-    {
-      id: '2',
-      name: 'Web前端开发',
-      teacher: '李老师',
-      credits: 3,
-      status: 'in_progress',
-      tags: ['HTML/CSS', 'JavaScript', 'React', '前端开发'],
-      outcomes: '学会了React框架，掌握了前端工程化',
-      achievements: '完成了个人博客项目，小组项目获得优秀',
-      proofFiles: [],
-      startDate: '2024-02-26',
-      endDate: '2024-07-15',
-      description: '学习现代前端开发技术和框架，掌握Web应用开发'
-    },
-    {
-      id: '3',
-      name: '数据库系统',
-      teacher: '王教授',
-      credits: 3,
-      status: 'pending',
-      tags: ['SQL', '数据库设计', 'MongoDB'],
-      outcomes: '',
-      achievements: '',
-      proofFiles: [],
-      startDate: '2024-02-26',
-      endDate: '2024-07-15',
-      description: '学习数据库原理、设计和应用开发'
-    },
-  ]);
+  const [courses, setCourses] = useState<Course[]>([]);
+  const [coursesLoading, setCoursesLoading] = useState(false);
+  const [trainingProgramName, setTrainingProgramName] = useState<string>('');
 
   // 编辑状态
   const [editingCourse, setEditingCourse] = useState<string | null>(null);
@@ -106,11 +65,127 @@ const StudentAcademicTasks: React.FC = () => {
   // 标签输入相关状态
   const [tagInput, setTagInput] = useState<{ [courseId: string]: string }>({});
 
+  // 加载学生的培养方案课程
+  const fetchStudentTrainingProgramCourses = async () => {
+    if (!currentUser?.id) {
+      console.log('当前用户ID不存在，无法加载课程');
+      return;
+    }
+
+    try {
+      setCoursesLoading(true);
+      console.log('开始加载学生培养方案课程，学生ID:', currentUser.id);
+      
+      const response = await fetch(`/api/student/${currentUser.id}/training-program-courses`);
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('API响应错误:', errorData);
+        
+        // 如果API调用失败，显示演示数据
+        setCourses([
+          {
+            id: 'demo-1',
+            name: '数据结构与算法',
+            teacher: '张教授',
+            credits: 4,
+            status: 'in_progress',
+            tags: ['数据结构', '算法', 'C++', 'Python'],
+            outcomes: '掌握了基本数据结构，理解了算法复杂度分析',
+            achievements: '完成了所有实验项目，期中成绩85分',
+            proofFiles: [],
+            startDate: '2024-02-26',
+            endDate: '2024-07-15',
+            description: '本课程主要讲授数据结构的基本概念和算法设计与分析方法'
+          }
+        ]);
+        setTrainingProgramName('演示培养方案');
+        return;
+      }
+      
+      const result = await response.json();
+      console.log('获取到的培养方案课程数据:', result);
+      
+      if (result.success && result.data && Array.isArray(result.data)) {
+        const programData = result.data;
+        
+        if (programData.length === 0) {
+          // 如果没有分配培养方案，显示提示信息
+          setCourses([]);
+          setTrainingProgramName('暂未分配培养方案');
+        } else {
+          // 从第一条记录中获取培养方案名称
+          const programName = programData[0]?.program_name || '培养方案';
+          setTrainingProgramName(programName);
+          
+          // 转换数据格式
+          const transformedCourses = programData.map((course: any) => ({
+            id: course.id,
+            name: course.course_name,
+            teacher: course.teacher || '待定',
+            credits: course.credits || 0,
+            status: course.status || 'not_started',
+            tags: [], // 标签可以从课程性质或分类中提取
+            outcomes: '',
+            achievements: '',
+            proofFiles: [],
+            startDate: '2024-02-26', // 可以从实际数据中获取
+            endDate: '2024-07-15',   // 可以从实际数据中获取
+            description: course.course_description || `${course.course_name} - ${course.course_nature}`,
+            programName: course.program_name,
+            programCode: course.program_code,
+            semester: course.semester,
+            courseNature: course.course_nature,
+            examMethod: course.exam_method,
+            grade: course.grade,
+            completedAt: course.completed_at
+          }));
+          
+          console.log('转换后的课程数据:', transformedCourses);
+          setCourses(transformedCourses);
+        }
+      } else {
+        console.warn('API返回数据格式不正确:', result);
+        setCourses([]);
+        setTrainingProgramName('数据加载失败');
+      }
+    } catch (error) {
+      console.error('加载培养方案课程失败:', error);
+      // 显示错误状态，但仍保留基本功能
+      setCourses([
+        {
+          id: 'error-1',
+          name: '数据加载失败',
+          teacher: '未知',
+          credits: 0,
+          status: 'pending',
+          tags: [],
+          outcomes: '',
+          achievements: '',
+          proofFiles: [],
+          startDate: '',
+          endDate: '',
+          description: '无法加载培养方案数据，请检查网络连接或联系管理员'
+        }
+      ]);
+      setTrainingProgramName('数据加载失败');
+    } finally {
+      setCoursesLoading(false);
+    }
+  };
+
   useEffect(() => {
     const originalTitle = document.title;
     document.title = '教学任务与安排 - 学档通';
     return () => { document.title = originalTitle; };
   }, []);
+
+  // 页面加载时获取培养方案课程
+  useEffect(() => {
+    if (currentUser?.id) {
+      fetchStudentTrainingProgramCourses();
+    }
+  }, [currentUser?.id, selectedSemester]);
 
   const handleLogoutClick = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -435,7 +510,15 @@ const StudentAcademicTasks: React.FC = () => {
           <div className="mb-6 flex items-center justify-between">
             <div>
               <h3 className="text-lg font-semibold text-text-primary mb-2">课程详情</h3>
-              <p className="text-sm text-text-secondary">点击编辑按钮填写学习收获和成果</p>
+              <div className="flex items-center space-x-3">
+                {trainingProgramName && (
+                  <div className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
+                    <i className="fas fa-graduation-cap mr-1"></i>
+                    {trainingProgramName}
+                  </div>
+                )}
+                <p className="text-sm text-text-secondary">点击编辑按钮填写学习收获和成果</p>
+              </div>
             </div>
             <div className="flex items-center space-x-2 text-sm text-text-secondary">
               <i className="fas fa-info-circle"></i>
@@ -444,7 +527,29 @@ const StudentAcademicTasks: React.FC = () => {
           </div>
           
           <div className="space-y-6">
-            {courses.map((course) => (
+            {coursesLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="text-center">
+                  <i className="fas fa-spinner fa-spin text-3xl text-secondary mb-4"></i>
+                  <p className="text-text-secondary">正在加载培养方案课程...</p>
+                </div>
+              </div>
+            ) : courses.length === 0 ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i className="fas fa-book-open text-2xl text-gray-400"></i>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-600 mb-2">暂无培养方案课程</h3>
+                  <p className="text-sm text-gray-500 mb-4">
+                    {trainingProgramName === '暂未分配培养方案' 
+                      ? '您的教师还未为您分配培养方案，请联系教师。' 
+                      : '当前培养方案下暂无课程安排。'
+                    }
+                  </p>
+                </div>
+              </div>
+            ) : courses.map((course) => (
               <div key={course.id} className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300`}>
                 {/* 课程头部信息 */}
                 <div className="flex items-start justify-between mb-6">
@@ -468,6 +573,18 @@ const StudentAcademicTasks: React.FC = () => {
                             <i className="fas fa-graduation-cap text-xs"></i>
                             <span>{course.credits}学分</span>
                           </span>
+                          {(course as any).semester && (
+                            <span className="flex items-center space-x-1">
+                              <i className="fas fa-calendar-alt text-xs"></i>
+                              <span>{(course as any).semester}</span>
+                            </span>
+                          )}
+                          {(course as any).courseNature && (
+                            <span className="flex items-center space-x-1">
+                              <i className="fas fa-tag text-xs"></i>
+                              <span>{(course as any).courseNature}</span>
+                            </span>
+                          )}
                         </div>
                       </div>
                       <div className="ml-4">

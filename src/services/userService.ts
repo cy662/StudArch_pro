@@ -181,50 +181,9 @@ export class UserService {
       limit = 20
     } = params || {}
 
-    // 简化查询：先获取student_profiles，再关联users信息
+    // 直接查询所有学生用户，不依赖student_profiles
     try {
       let query = supabase
-        .from('student_profiles')
-        .select(`
-          id,
-          user_id,
-          class_name,
-          major,
-          department,
-          academic_status,
-          created_at,
-          updated_at
-        `, { count: 'exact' })
-
-      // 基础搜索条件（只针对student_profiles的字段）
-      if (keyword) {
-        query = query.or(`
-          class_name.ilike.%${keyword}%,
-          major.ilike.%${keyword}%,
-          department.ilike.%${keyword}%
-        `)
-      }
-
-      // 分页
-      query = query
-        .range((page - 1) * limit, page * limit - 1)
-        .order('created_at', { ascending: false })
-
-      const { data: profiles, error, count } = await query
-
-      if (error) {
-        console.error('查询学生数据失败:', error);
-        // 降级到原有的RPC方法
-        return await UserService.getTeacherStudentsRPC(teacherId, { keyword, page, limit });
-      }
-
-      if (!profiles || profiles.length === 0) {
-        return { students: [], total: count || 0 };
-      }
-
-      // 获取对应的用户信息
-      const userIds = profiles.map(p => p.user_id);
-      const { data: users, error: userError } = await supabase
         .from('users')
         .select(`
           id,
@@ -233,57 +192,82 @@ export class UserService {
           full_name,
           user_number,
           phone,
-          status,
-          role_id,
-          roles!inner(
-            id,
-            role_name,
-            role_description
-          )
-        `)
-        .in('id', userIds);
+          created_at
+        `, { count: 'exact' })
 
-      if (userError) {
-        console.error('查询用户信息失败:', userError);
+      // 基础搜索条件：查找学号以20开头的用户（假设学号格式）
+      query = query.like('user_number', '20%')
+
+      // 关键词搜索
+      if (keyword) {
+        query = query.or(`
+          full_name.ilike.%${keyword}%,
+          user_number.ilike.%${keyword}%,
+          email.ilike.%${keyword}%
+        `)
+      }
+
+      // 分页
+      query = query
+        .range((page - 1) * limit, page * limit - 1)
+        .order('created_at', { ascending: false })
+
+      const { data: users, error, count } = await query
+
+      if (error) {
+        console.error('查询学生数据失败:', error);
+        // 降级到原有的RPC方法
+        return await UserService.getTeacherStudentsRPC(teacherId, { keyword, page, limit });
+      }
+
+      if (!users || users.length === 0) {
         return { students: [], total: count || 0 };
       }
 
-      // 创建user映射
-      const userMap: Record<string, any> = {};
-      users?.forEach(user => {
-        userMap[user.id] = user;
+      // 获取对应的student_profiles ID（用于培养方案分配）
+      const userIds = users.map(u => u.id);
+      const { data: profiles } = await supabase
+        .from('student_profiles')
+        .select('id, user_id')
+        .in('user_id', userIds);
+
+      // 创建user到profile的ID映射
+      const profileIdMap: Record<string, string> = {};
+      profiles?.forEach(profile => {
+        profileIdMap[profile.user_id] = profile.id;
       });
 
       // 转换数据格式
-      const students: UserWithRole[] = profiles.map(profile => {
-        const user = userMap[profile.user_id];
-        if (!user) return null;
-
+      const students: UserWithRole[] = users.map(user => {
+        // 使用student_profiles的ID（如果存在），否则使用user的ID
+        const displayId = profileIdMap[user.id] || user.id;
+        
         return {
-          id: profile.id, // 使用student_profiles的id
-          username: user.username,
-          email: user.email,
-          user_number: user.user_number,
-          full_name: user.full_name,
-          phone: user.phone,
-          role_id: user.role_id,
-          status: user.status,
-          class_name: profile.class_name,
-          department: profile.department,
-          major: profile.major,
+          id: displayId, // 优先使用student_profiles的id，用于培养方案分配
+          user_id: user.id, // 保留user的原始ID
+          username: user.username || '',
+          email: user.email || '',
+          user_number: user.user_number || '',
+          full_name: user.full_name || '',
+          phone: user.phone || '',
+          role_id: null,
+          status: '在读',
+          class_name: '待分配',
+          department: '待分配',
+          major: '待分配',
           role: {
-            id: user.roles.id,
-            role_name: user.roles.role_name,
-            role_description: user.roles.role_description,
+            id: '1',
+            role_name: 'student',
+            role_description: '学生',
             permissions: {},
             is_system_default: true,
             created_at: '2021-01-01',
             updated_at: '2021-01-01'
           },
-          created_at: profile.created_at,
-          updated_at: profile.updated_at
+          created_at: user.created_at,
+          updated_at: user.created_at
         };
-      }).filter(Boolean); // 过滤掉null值
+      });
 
       return {
         students,
@@ -528,6 +512,37 @@ export class UserService {
     error?: string
   }> {
     return this.batchImportStudents(teacherId, studentIds)
+  }
+
+  // 获取档案ID到用户ID的映射
+  static async getProfileUserMapping(profileIds: string[]): Promise<{
+    success: boolean
+    message?: string
+    data?: Array<{ id: string; user_id: string }>
+  }> {
+    try {
+      const { data, error } = await supabase
+        .from('student_profiles')
+        .select('id, user_id')
+        .in('id', profileIds);
+
+      if (error) {
+        return {
+          success: false,
+          message: `查询档案映射失败: ${error.message}`
+        };
+      }
+
+      return {
+        success: true,
+        data: data || []
+      };
+    } catch (error) {
+      return {
+        success: false,
+        message: `查询档案映射异常: ${error instanceof Error ? error.message : '未知错误'}`
+      };
+    }
   }
 }
 

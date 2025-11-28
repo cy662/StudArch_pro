@@ -5,8 +5,8 @@
 CREATE OR REPLACE FUNCTION import_training_program_courses(
     p_courses JSONB,
     p_program_code TEXT DEFAULT 'CS_2021',
-    p_batch_name TEXT,
-    p_imported_by TEXT
+    p_batch_name TEXT DEFAULT NULL,
+    p_imported_by TEXT DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -300,12 +300,29 @@ $$ LANGUAGE plpgsql;
 CREATE OR REPLACE FUNCTION assign_training_program_to_student(
     p_student_id UUID,
     p_program_id UUID,
+    p_teacher_id UUID DEFAULT NULL,
     p_notes TEXT DEFAULT NULL
 )
 RETURNS JSONB AS $$
 DECLARE
     result JSONB;
+    assignment_uuid UUID;
+    is_teacher_student BOOLEAN := FALSE;
 BEGIN
+    -- 检查教师是否管理该学生（如果提供了教师ID）
+    IF p_teacher_id IS NOT NULL THEN
+        SELECT COUNT(*) > 0 INTO is_teacher_student
+        FROM teacher_student_assignments
+        WHERE teacher_id = p_teacher_id AND student_id = p_student_id AND status = 'active';
+        
+        IF NOT is_teacher_student THEN
+            RETURN jsonb_build_object(
+                'success', false,
+                'message', '该学生不在您的管理列表中，无法分配培养方案'
+            );
+        END IF;
+    END IF;
+    
     -- 插入或更新学生培养方案关联
     INSERT INTO student_training_programs (
         student_id,
@@ -330,18 +347,162 @@ BEGIN
         status = 'active',
         notes = COALESCE(EXCLUDED.notes, student_training_programs.notes),
         updated_at = NOW()
-    RETURNING id INTO result;
+    RETURNING id INTO assignment_uuid;
+    
+    -- 创建学生课程进度记录（初始化所有课程为未开始状态）
+    INSERT INTO student_course_progress (
+        student_id,
+        course_id,
+        status,
+        created_at,
+        updated_at
+    )
+    SELECT 
+        p_student_id,
+        tpc.id,
+        'not_started',
+        NOW(),
+        NOW()
+    FROM training_program_courses tpc
+    WHERE tpc.program_id = p_program_id 
+    AND tpc.status = 'active'
+    ON CONFLICT (student_id, course_id) DO NOTHING;
     
     -- 返回成功结果
     RETURN jsonb_build_object(
         'success', true,
         'message', '培养方案分配成功',
-        'assignment_id', result
+        'assignment_id', assignment_uuid,
+        'courses_initialized', (
+            SELECT COUNT(*) 
+            FROM training_program_courses tpc 
+            WHERE tpc.program_id = p_program_id AND tpc.status = 'active'
+        )
     );
 END;
 $$ LANGUAGE plpgsql;
 
--- 6. 获取导入历史
+-- 6. 批量分配培养方案给教师的学生
+CREATE OR REPLACE FUNCTION batch_assign_training_program_to_teacher_students(
+    p_teacher_id UUID,
+    p_program_id UUID,
+    p_student_ids UUID[],
+    p_notes TEXT DEFAULT NULL
+)
+RETURNS JSONB AS $$
+DECLARE
+    success_count INTEGER := 0;
+    failure_count INTEGER := 0;
+    student_uuid UUID;
+    result JSONB;
+    failed_students JSONB := '[]'::jsonb;
+    assignment_result JSONB;
+BEGIN
+    -- 验证教师ID和培养方案ID的有效性
+    IF NOT EXISTS (SELECT 1 FROM users WHERE id = p_teacher_id) THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'message', '教师ID无效'
+        );
+    END IF;
+    
+    IF NOT EXISTS (SELECT 1 FROM training_programs WHERE id = p_program_id AND status = 'active') THEN
+        RETURN jsonb_build_object(
+            'success', false,
+            'message', '培养方案ID无效或不存在'
+        );
+    END IF;
+    
+    -- 遍历学生ID列表进行批量分配
+    FOREACH student_uuid IN ARRAY p_student_ids
+    LOOP
+        BEGIN
+            -- 调用单个分配函数
+            SELECT assign_training_program_to_student(student_uuid, p_program_id, p_teacher_id, p_notes)
+            INTO assignment_result;
+            
+            -- 检查分配结果
+            IF (assignment_result->>'success')::boolean THEN
+                success_count := success_count + 1;
+            ELSE
+                failure_count := failure_count + 1;
+                failed_students := failed_students || jsonb_build_object(
+                    'student_id', student_uuid,
+                    'error', assignment_result->>'message'
+                );
+            END IF;
+            
+        EXCEPTION WHEN OTHERS THEN
+            failure_count := failure_count + 1;
+            failed_students := failed_students || jsonb_build_object(
+                'student_id', student_uuid,
+                'error', SQLERRM
+            );
+        END;
+    END LOOP;
+    
+    -- 构建返回结果
+    result := jsonb_build_object(
+        'success', success_count > 0,
+        'message', format('批量分配完成：成功 %d 个，失败 %d 个', success_count, failure_count),
+        'success_count', success_count,
+        'failure_count', failure_count,
+        'total_count', success_count + failure_count,
+        'details', failed_students
+    );
+    
+    RETURN result;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 7. 获取学生培养方案课程（用于学生端展示）
+CREATE OR REPLACE FUNCTION get_student_training_program_courses(p_student_id UUID)
+RETURNS SETOF JSONB AS $$
+BEGIN
+    RETURN QUERY
+    SELECT jsonb_build_object(
+        'id', tpc.id,
+        'course_number', tpc.course_number,
+        'course_name', tpc.course_name,
+        'credits', tpc.credits,
+        'recommended_grade', tpc.recommended_grade,
+        'semester', tpc.semester,
+        'exam_method', tpc.exam_method,
+        'course_nature', tpc.course_nature,
+        'course_type', tpc.course_type,
+        'course_category', tpc.course_category,
+        'teaching_hours', tpc.teaching_hours,
+        'theory_hours', tpc.theory_hours,
+        'practice_hours', tpc.practice_hours,
+        'weekly_hours', tpc.weekly_hours,
+        'course_description', tpc.course_description,
+        'sequence_order', tpc.sequence_order,
+        'program_name', tp.program_name,
+        'program_code', tp.program_code,
+        'status', COALESCE(scp.status, 'not_started'),
+        'grade', scp.grade,
+        'grade_point', scp.grade_point,
+        'semester_completed', scp.semester_completed,
+        'academic_year', scp.academic_year,
+        'teacher', scp.teacher,
+        'notes', scp.notes,
+        'completed_at', scp.completed_at,
+        'enrollment_date', stp.enrollment_date
+    )
+    FROM student_training_programs stp
+    JOIN training_programs tp ON stp.program_id = tp.id
+    JOIN training_program_courses tpc ON tpc.program_id = tp.id
+    LEFT JOIN student_course_progress scp ON scp.course_id = tpc.id AND scp.student_id = p_student_id
+    WHERE 
+        stp.student_id = p_student_id 
+        AND stp.status = 'active' 
+        AND tp.status = 'active' 
+        AND tpc.status = 'active'
+    ORDER BY tpc.sequence_order, tpc.course_number;
+END;
+$$ LANGUAGE plpgsql;
+
+-- 8. 获取导入历史
 CREATE OR REPLACE FUNCTION get_training_program_import_history()
 RETURNS SETOF JSONB AS $$
 BEGIN
