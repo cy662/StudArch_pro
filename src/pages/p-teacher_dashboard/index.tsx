@@ -12,14 +12,24 @@ const TeacherDashboard: React.FC = () => {
   const [loading, setLoading] = useState(true);
   const [studentCount, setStudentCount] = useState<number>(0);
   const [studentCountLoading, setStudentCountLoading] = useState<boolean>(true);
+  const [pendingTasksCount, setPendingTasksCount] = useState<number>(0);
+  const [pendingTasksLoading, setPendingTasksLoading] = useState<boolean>(true);
+  const [approvedGraduationCount, setApprovedGraduationCount] = useState<number>(0);
+  const [graduationCompletionRate, setGraduationCompletionRate] = useState<string>('0%');
+  const [graduationRateLoading, setGraduationRateLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const loadUserInfo = () => {
+    const loadUserInfo = async () => {
       try {
         const userInfo = localStorage.getItem('user_info');
         if (userInfo) {
           const userData = JSON.parse(userInfo);
           setCurrentUser(userData);
+          // 用户信息加载后立即获取待审核任务数量
+          await loadPendingTasksCount(userData.id);
+        } else {
+          // 即使没有用户信息也尝试获取相关数据
+          await loadPendingTasksCount();
         }
       } catch (error) {
         console.error('加载用户信息失败:', error);
@@ -34,10 +44,53 @@ const TeacherDashboard: React.FC = () => {
         // 直接获取student_complete_info表中的学生总数
         const count = await UserService.getStudentCompleteInfoCount();
         setStudentCount(count || 0);
+        
+        // 学生总数加载完成后，加载毕业去向完成率
+        const userInfo = localStorage.getItem('user_info');
+        if (userInfo) {
+          const userData = JSON.parse(userInfo);
+          await loadGraduationCompletionRate(userData.id);
+        } else {
+          await loadGraduationCompletionRate();
+        }
       } catch (error) {
         console.error('加载学生统计数据失败:', error);
       } finally {
         setStudentCountLoading(false);
+      }
+    };
+
+    const loadPendingTasksCount = async (teacherId?: string) => {
+      try {
+        setPendingTasksLoading(true);
+        // 获取未审核毕业去向申请数量
+        const count = await UserService.getPendingGraduationApplicationsCount(teacherId);
+        setPendingTasksCount(count || 0);
+      } catch (error) {
+        console.error('加载待审核任务数量失败:', error);
+      } finally {
+        setPendingTasksLoading(false);
+      }
+    };
+
+    const loadGraduationCompletionRate = async (teacherId?: string) => {
+      try {
+        setGraduationRateLoading(true);
+        // 获取已审批毕业去向学生数量
+        const approvedCount = await UserService.getApprovedGraduationApplicationsCount(teacherId);
+        setApprovedGraduationCount(approvedCount || 0);
+        
+        // 计算完成率
+        if (studentCount > 0 && approvedCount !== undefined) {
+          const rate = (approvedCount / studentCount) * 100;
+          setGraduationCompletionRate(`${rate.toFixed(1)}%`);
+        } else {
+          setGraduationCompletionRate('0%');
+        }
+      } catch (error) {
+        console.error('加载毕业去向完成率失败:', error);
+      } finally {
+        setGraduationRateLoading(false);
       }
     };
 
@@ -49,6 +102,15 @@ const TeacherDashboard: React.FC = () => {
     
     return () => { document.title = originalTitle; };
   }, []);
+
+  // 当学生总数或已审批数量变化时重新计算毕业去向完成率
+  useEffect(() => {
+    // 只有当所有数据都加载完成且有有效数据时才计算
+    if (!graduationRateLoading && studentCount > 0 && approvedGraduationCount > 0) {
+      const rate = (approvedGraduationCount / studentCount) * 100;
+      setGraduationCompletionRate(`${rate.toFixed(1)}%`);
+    }
+  }, [studentCount, approvedGraduationCount, graduationRateLoading]);
 
   const handleNotificationClick = () => {
     console.log('查看通知功能');
@@ -225,7 +287,9 @@ const TeacherDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-text-secondary text-sm mb-1">待审核任务</p>
-                  <p className="text-3xl font-bold text-text-primary">5</p>
+                  <p className="text-3xl font-bold text-text-primary">
+                    {pendingTasksLoading ? '加载中...' : pendingTasksCount}
+                  </p>
                   <p className="text-orange-600 text-sm mt-1">
                     <i className="fas fa-clock mr-1"></i>
                     需要处理
@@ -242,10 +306,12 @@ const TeacherDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-text-secondary text-sm mb-1">毕业去向完成率</p>
-                  <p className="text-3xl font-bold text-text-primary">85%</p>
+                  <p className="text-3xl font-bold text-text-primary">
+                    {graduationRateLoading ? '加载中...' : graduationCompletionRate}
+                  </p>
                   <p className="text-blue-600 text-sm mt-1">
-                    <i className="fas fa-arrow-up mr-1"></i>
-                    较上周 +5%
+                    <i className="fas fa-info-circle mr-1"></i>
+                    已审批: {approvedGraduationCount}/{studentCount}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center">

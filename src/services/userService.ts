@@ -659,6 +659,62 @@ export class UserService {
       return 0;
     }
   }
+
+  // 获取未审核毕业去向申请数量
+  static async getPendingGraduationApplicationsCount(teacherId?: string): Promise<number> {
+    try {
+      let query = supabase
+        .from('graduation_destinations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending'); // 未审核状态为'pending'
+
+      // 如果提供了教师ID，可以根据需要添加过滤条件
+      if (teacherId) {
+        // 这里可以根据数据库结构添加相应的过滤条件
+        // 例如通过关联student_profiles和teacher_students表
+      }
+
+      const { error, count } = await query;
+
+      if (error) {
+        console.error('获取未审核毕业去向申请数量失败:', error);
+        throw new Error(`获取未审核任务数量失败: ${error.message}`);
+      }
+
+      return count || 0;
+    } catch (error) {
+      console.error('获取未审核任务数量异常:', error);
+      return 0;
+    }
+  }
+
+  // 获取已审批毕业去向学生数量
+  static async getApprovedGraduationApplicationsCount(teacherId?: string): Promise<number> {
+    try {
+      let query = supabase
+        .from('graduation_destinations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'approved'); // 已审批状态为'approved'
+
+      // 如果提供了教师ID，可以根据需要添加过滤条件
+      if (teacherId) {
+        // 这里可以根据数据库结构添加相应的过滤条件
+        // 例如通过关联student_profiles和teacher_students表
+      }
+
+      const { error, count } = await query;
+
+      if (error) {
+        console.error('获取已审批毕业去向学生数量失败:', error);
+        throw new Error(`获取已审批毕业去向学生数量失败: ${error.message}`);
+      }
+
+      return count || 0;
+    } catch (error) {
+      console.error('获取已审批毕业去向学生数量异常:', error);
+      return 0;
+    }
+  }
 }
 
 export default UserService
