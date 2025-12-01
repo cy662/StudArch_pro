@@ -1,11 +1,13 @@
 
 
 import React, { useState, useEffect } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
-import styles from './styles.module.css';
+import { useNavigate, Link } from 'react-router-dom';
 import { UserWithRole } from '../../types/user';
 import { useAuth } from '../../hooks/useAuth';
 import useStudentProfile from '../../hooks/useStudentProfile';
+import { RewardPunishmentService } from '../../services/rewardPunishmentService';
+import { RewardPunishment } from '../../types/rewardPunishment';
+import styles from './styles.module.css';
 
 interface TabType {
   id: string;
@@ -18,6 +20,8 @@ const StudentMyProfile: React.FC = () => {
   const { user: currentUser, loading: authLoading } = useAuth();
   const [activeTab, setActiveTab] = useState<string>('basic');
   const [loading, setLoading] = useState(true);
+  const [rewardsPunishments, setRewardsPunishments] = useState<RewardPunishment[]>([]);
+  const [loadingRP, setLoadingRP] = useState(false);
 
   // 使用useStudentProfile hook获取个人信息
   const { 
@@ -64,11 +68,55 @@ const StudentMyProfile: React.FC = () => {
     }
   };
 
+  // 获取奖惩级别的样式类
+  const getLevelClass = (level?: string): string => {
+    switch (level?.toLowerCase()) {
+      case 'national':
+        return 'bg-red-100 text-red-800';
+      case 'provincial':
+        return 'bg-blue-100 text-blue-800';
+      case 'school':
+        return 'bg-green-100 text-green-800';
+      default:
+        return 'bg-gray-100 text-gray-800';
+    }
+  };
 
+  // 获取奖惩级别的显示文本
+  const getLevelText = (level?: string): string => {
+    switch (level?.toLowerCase()) {
+      case 'national':
+        return '国家级';
+      case 'provincial':
+        return '省级';
+      case 'school':
+        return '校级';
+      default:
+        return '其他';
+    }
+  };
+
+  // 加载奖惩信息
+  useEffect(() => {
+    const loadRewardPunishments = async () => {
+      if (!currentUser?.id || activeTab !== 'awards') return;
+      
+      try {
+        setLoadingRP(true);
+        const result = await RewardPunishmentService.getStudentRewardPunishments(currentUser.id);
+        setRewardsPunishments(result.items || []);
+      } catch (error) {
+        console.error('加载奖惩信息失败:', error);
+      } finally {
+        setLoadingRP(false);
+      }
+    };
+
+    loadRewardPunishments();
+  }, [activeTab, currentUser?.id]);
 
   const handleUserInfoClick = () => {
-    // 用户信息点击
-    console.log('User info clicked');
+    setActiveTab('basic')
   };
 
   return (
@@ -497,40 +545,41 @@ const StudentMyProfile: React.FC = () => {
           {/* 奖惩信息 */}
           <div className={`${styles.tabContent} ${activeTab !== 'awards' ? styles.tabContentHidden : ''} bg-white rounded-xl shadow-card p-6`}>
             <h4 className="text-lg font-semibold text-text-primary mb-4">奖惩信息</h4>
-            <div className="space-y-4">
-              <div className="flex items-start space-x-4 p-4 bg-green-50 rounded-lg">
-                <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <i className="fas fa-trophy text-green-600"></i>
-                </div>
-                <div className="flex-1">
-                  <h5 className="font-medium text-text-primary">校级奖学金</h5>
-                  <p className="text-sm text-text-secondary mt-1">获得2021-2022学年校级一等奖学金</p>
-                  <p className="text-xs text-text-secondary mt-1">2022年9月</p>
-                </div>
+            {loadingRP ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-secondary mb-4"></div>
+                <p className="text-text-secondary">加载奖惩信息中...</p>
               </div>
-              
-              <div className="flex items-start space-x-4 p-4 bg-blue-50 rounded-lg">
-                <div className="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <i className="fas fa-medal text-blue-600"></i>
+            ) : rewardsPunishments.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mb-4">
+                  <i className="fas fa-clipboard-list text-gray-400 text-2xl"></i>
                 </div>
-                <div className="flex-1">
-                  <h5 className="font-medium text-text-primary">优秀学生干部</h5>
-                  <p className="text-sm text-text-secondary mt-1">被评为2022年度优秀学生干部</p>
-                  <p className="text-xs text-text-secondary mt-1">2023年3月</p>
-                </div>
+                <p className="text-text-secondary">暂无奖惩信息记录</p>
               </div>
-              
-              <div className="flex items-start space-x-4 p-4 bg-yellow-50 rounded-lg">
-                <div className="w-10 h-10 bg-yellow-100 rounded-full flex items-center justify-center flex-shrink-0">
-                  <i className="fas fa-award text-yellow-600"></i>
-                </div>
-                <div className="flex-1">
-                  <h5 className="font-medium text-text-primary">学科竞赛获奖</h5>
-                  <p className="text-sm text-text-secondary mt-1">在全国大学生数学建模竞赛中获得省级二等奖</p>
-                  <p className="text-xs text-text-secondary mt-1">2023年11月</p>
-                </div>
+            ) : (
+              <div className="space-y-4">
+                {rewardsPunishments.map((item) => (
+                  <div key={item.id} className={`flex items-start space-x-4 p-4 ${item.type === 'reward' ? 'bg-green-50' : 'bg-red-50'} rounded-lg`}>
+                    <div className={`w-10 h-10 ${item.type === 'reward' ? 'bg-green-100' : 'bg-red-100'} rounded-full flex items-center justify-center flex-shrink-0`}>
+                      <i className={`fas ${item.type === 'reward' ? 'fa-trophy text-green-600' : 'fa-exclamation-triangle text-red-600'}`}></i>
+                    </div>
+                    <div className="flex-1">
+                      <h5 className="font-medium text-text-primary">{item.name}</h5>
+                      <p className="text-sm text-text-secondary mt-1">{item.description}</p>
+                      <div className="flex items-center mt-1 space-x-4">
+                        <p className="text-xs text-text-secondary">{item.date}</p>
+                        {item.level && (
+                          <span className={`px-2 py-0.5 text-xs rounded-full ${getLevelClass(item.level)}`}>
+                            {getLevelText(item.level)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </div>
-            </div>
+            )}
           </div>
 
 
