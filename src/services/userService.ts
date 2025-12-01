@@ -181,82 +181,153 @@ export class UserService {
       limit = 20
     } = params || {}
 
-    // 直接查询所有学生用户，不依赖student_profiles
     try {
-      let query = supabase
-        .from('users')
-        .select(`
-          id,
-          username,
-          email,
-          full_name,
-          user_number,
-          phone,
-          created_at
-        `, { count: 'exact' })
+      // 优先尝试使用数据库函数获取完整的学生信息
+      const { data: functionData, error: functionError } = await supabase
+        .rpc('get_teacher_students_v2', {
+          p_teacher_id: teacherId,
+          p_keyword: keyword,
+          p_page: page,
+          p_limit: limit
+        });
 
-      // 基础搜索条件：查找学号以20开头的用户（假设学号格式）
-      query = query.like('user_number', '20%')
+      if (!functionError && functionData && functionData.length > 0) {
+        const result = functionData[0];
+        const students = (result.students || []) as UserWithRole[];
+        
+        return {
+          students,
+          total: result.total_count || 0
+        };
+      }
+
+      // 降级到原函数
+      const { data: originalData, error: originalError } = await supabase
+        .rpc('get_teacher_students', {
+          p_teacher_id: teacherId,
+          p_keyword: keyword,
+          p_page: page,
+          p_limit: limit
+        });
+
+      if (!originalError && originalData && originalData.length > 0) {
+        const result = originalData[0];
+        const students = (result.students || []) as UserWithRole[];
+        
+        // 需要将user_id转换为student_profiles.id
+        const studentsWithProfileIds = await this.mapUsersToProfileIds(students);
+        
+        return {
+          students: studentsWithProfileIds,
+          total: result.total_count || 0
+        };
+      }
+
+      // 最后降级：直接查询用户表并关联学生档案获取班级信息
+      let query = supabase
+        .from('teacher_students')
+        .select(`
+          student_id,
+          created_at,
+          users!inner(
+            id,
+            username,
+            email,
+            full_name,
+            user_number,
+            phone,
+            department,
+            grade,
+            class_name,
+            status,
+            created_at
+          ),
+          roles!inner(id, role_name, role_description)
+        `, { count: 'exact' })
+        .eq('teacher_id', teacherId)
+        .eq('users.role_id', '3'); // 学生角色
 
       // 关键词搜索
       if (keyword) {
         query = query.or(`
-          full_name.ilike.%${keyword}%,
-          user_number.ilike.%${keyword}%,
-          email.ilike.%${keyword}%
-        `)
+          users.full_name.ilike.%${keyword}%,
+          users.user_number.ilike.%${keyword}%,
+          users.email.ilike.%${keyword}%
+        `);
       }
 
       // 分页
       query = query
         .range((page - 1) * limit, page * limit - 1)
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false });
 
-      const { data: users, error, count } = await query
+      const { data, error, count } = await query;
 
       if (error) {
         console.error('查询学生数据失败:', error);
-        // 降级到原有的RPC方法
-        return await UserService.getTeacherStudentsRPC(teacherId, { keyword, page, limit });
+        throw new Error(`获取教师学生列表失败: ${error.message}`);
       }
 
-      if (!users || users.length === 0) {
+      if (!data || data.length === 0) {
         return { students: [], total: count || 0 };
       }
 
-      // 获取对应的student_profiles ID（用于培养方案分配）
-      const userIds = users.map(u => u.id);
+      // 获取对应的学生档案信息，包括更准确的班级信息
+      const userIds = data.map(d => d.users.id);
       const { data: profiles } = await supabase
         .from('student_profiles')
-        .select('id, user_id')
+        .select('id, user_id, class_name, class_id')
         .in('user_id', userIds);
 
-      // 创建user到profile的ID映射
-      const profileIdMap: Record<string, string> = {};
+      // 如果有档案信息，也获取班级表信息
+      const classIds = profiles?.map(p => p.class_id).filter(Boolean) || [];
+      const { data: classes } = classIds.length > 0 ? await supabase
+        .from('classes')
+        .select('id, class_name')
+        .in('id', classIds) : { data: [] };
+
+      // 创建映射
+      const profileMap: Record<string, any> = {};
       profiles?.forEach(profile => {
-        profileIdMap[profile.user_id] = profile.id;
+        profileMap[profile.user_id] = profile;
+      });
+
+      const classMap: Record<string, string> = {};
+      classes?.forEach(cls => {
+        classMap[cls.id] = cls.class_name;
       });
 
       // 转换数据格式
-      const students: UserWithRole[] = users.map(user => {
-        // 使用student_profiles的ID（如果存在），否则使用user的ID
-        const displayId = profileIdMap[user.id] || user.id;
+      const students: UserWithRole[] = data.map(item => {
+        const user = item.users;
+        const profile = profileMap[user.id];
+        const profileId = profile?.id || user.id;
         
+        // 优先使用档案中的班级信息，其次是用户表中的班级信息
+        let className = user.class_name || '待分配';
+        if (profile) {
+          if (profile.class_id && classMap[profile.class_id]) {
+            className = classMap[profile.class_id];
+          } else if (profile.class_name) {
+            className = profile.class_name;
+          }
+        }
+
         return {
-          id: displayId, // 优先使用student_profiles的id，用于培养方案分配
-          user_id: user.id, // 保留user的原始ID
+          id: profileId, // 使用student_profiles的ID，便于后续操作
+          user_id: user.id, // 保留原始用户ID
           username: user.username || '',
           email: user.email || '',
           user_number: user.user_number || '',
           full_name: user.full_name || '',
           phone: user.phone || '',
-          role_id: null,
-          status: '在读',
-          class_name: '待分配',
-          department: '待分配',
-          major: '待分配',
+          department: user.department || '待分配',
+          grade: user.grade || '待分配',
+          class_name: className, // 正确的班级信息
+          status: user.status === 'active' ? '在读' : '其他',
+          role_id: '3',
           role: {
-            id: '1',
+            id: '3',
             role_name: 'student',
             role_description: '学生',
             permissions: {},
@@ -273,6 +344,7 @@ export class UserService {
         students,
         total: count || 0
       };
+
     } catch (error) {
       console.error('获取教师学生列表异常:', error);
       return { students: [], total: 0 };
@@ -289,10 +361,10 @@ export class UserService {
       // 获取所有user_id
       const userIds = students.map(s => s.id);
       
-      // 查询对应的student_profiles
+      // 查询对应的student_profiles，包括班级信息
       const { data: profiles, error } = await supabase
         .from('student_profiles')
-        .select('id, user_id')
+        .select('id, user_id, class_name, class_id')
         .in('user_id', userIds);
 
       if (error) {
@@ -300,17 +372,41 @@ export class UserService {
         return students;
       }
 
-      // 创建user_id到student_profiles.id的映射
-      const idMap: Record<string, string> = {};
+      // 如果有班级ID，获取班级信息
+      const classIds = profiles?.map(p => p.class_id).filter(Boolean) || [];
+      let classMap: Record<string, string> = {};
+      
+      if (classIds.length > 0) {
+        const { data: classes } = await supabase
+          .from('classes')
+          .select('id, class_name')
+          .in('id', classIds);
+          
+        classes?.forEach(cls => {
+          classMap[cls.id] = cls.class_name;
+        });
+      }
+
+      // 创建user_id到student_profiles信息的映射
+      const profileMap: Record<string, any> = {};
       profiles?.forEach(profile => {
-        idMap[profile.user_id] = profile.id;
+        profileMap[profile.user_id] = {
+          id: profile.id,
+          class_name: profile.class_id && classMap[profile.class_id] 
+            ? classMap[profile.class_id] 
+            : profile.class_name
+        };
       });
 
-      // 更新学生的ID
-      return students.map(student => ({
-        ...student,
-        id: idMap[student.id] || student.id // 使用profile的ID，如果没有则保持原ID
-      }));
+      // 更新学生的ID和班级信息
+      return students.map(student => {
+        const profile = profileMap[student.id];
+        return {
+          ...student,
+          id: profile?.id || student.id, // 使用profile的ID，如果没有则保持原ID
+          class_name: profile?.class_name || student.class_name || '待分配' // 使用档案中的班级信息
+        };
+      });
 
     } catch (error) {
       console.error('映射ID失败:', error);

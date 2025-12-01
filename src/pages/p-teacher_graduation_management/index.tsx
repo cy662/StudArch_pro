@@ -237,7 +237,7 @@ const TeacherGraduationManagement: React.FC = () => {
             <div className="space-y-2">
               <div className="flex justify-between">
                 <span className="text-text-secondary">学号：</span>
-                <span className="text-text-primary">{data.student?.student_id}</span>
+                <span className="text-text-primary">{data.student?.student_number}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">姓名：</span>
@@ -245,7 +245,7 @@ const TeacherGraduationManagement: React.FC = () => {
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">班级：</span>
-                <span className="text-text-primary">{data.student?.class_info}</span>
+                <span className="text-text-primary">{data.student?.class_name}</span>
               </div>
               <div className="flex justify-between">
                 <span className="text-text-secondary">去向类型：</span>
@@ -481,15 +481,15 @@ const TeacherGraduationManagement: React.FC = () => {
       <div className="space-y-4">
         <div className="flex justify-between">
           <span className="text-text-secondary">学号：</span>
-          <span className="text-text-primary">{data.student?.student_id}</span>
+          <span className="text-text-primary">{data.student?.student_number}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-text-secondary">姓名：</span>
-          <span className="text-text-primary">{data.student?.student_name}</span>
+          <span className="text-text-primary">{data.student?.full_name}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-text-secondary">班级：</span>
-          <span className="text-text-primary">{data.student?.class_info}</span>
+          <span className="text-text-primary">{data.student?.class_name}</span>
         </div>
         <div className="flex justify-between">
           <span className="text-text-secondary">去向类型：</span>
@@ -744,11 +744,11 @@ const TeacherGraduationManagement: React.FC = () => {
                         className="rounded border-border-light"
                       />
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.student?.student_id}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.student?.student_number}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className="font-medium text-text-primary">{record.student?.full_name}</span>
                     </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.student?.class_info}</td>
+                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{record.student?.class_name}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <span className={`px-2 py-1 text-xs font-medium ${styles[`type${record.destination_type.charAt(0).toUpperCase() + record.destination_type.slice(1)}`]} rounded-full`}>
                         {getDestinationTypeText(record.destination_type)}
