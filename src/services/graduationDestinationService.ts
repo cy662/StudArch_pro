@@ -114,7 +114,7 @@ export class GraduationDestinationService {
   // 创建毕业去向记录
   static async createGraduationDestination(data: Partial<GraduationDestination>): Promise<GraduationDestination> {
     try {
-      const { data, error } = await supabase
+      const { data: result, error } = await supabase
         .from('graduation_destinations')
         .insert([{
           ...data,
@@ -129,7 +129,7 @@ export class GraduationDestinationService {
         throw new Error(`创建毕业去向失败: ${error.message}`);
       }
 
-      return data as GraduationDestination;
+      return result as GraduationDestination;
     } catch (error) {
       console.error('创建毕业去向异常:', error);
       throw new Error(`创建毕业去向异常: ${error instanceof Error ? error.message : '未知错误'}`);
@@ -139,7 +139,7 @@ export class GraduationDestinationService {
   // 更新毕业去向记录
   static async updateGraduationDestination(id: string, data: Partial<GraduationDestination>): Promise<GraduationDestination> {
     try {
-      const { data, error } = await supabase
+      const { data: result, error } = await supabase
         .from('graduation_destinations')
         .update({
           ...data,
@@ -154,7 +154,7 @@ export class GraduationDestinationService {
         throw new Error(`更新毕业去向失败: ${error.message}`);
       }
 
-      return data as GraduationDestination;
+      return result as GraduationDestination;
     } catch (error) {
       console.error('更新毕业去向异常:', error);
       throw new Error(`更新毕业去向异常: ${error instanceof Error ? error.message : '未知错误'}`);
@@ -176,6 +176,73 @@ export class GraduationDestinationService {
     } catch (error) {
       console.error('删除毕业去向异常:', error);
       throw new Error(`删除毕业去向异常: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
+
+  // 获取单个学生的毕业去向信息
+  static async getGraduationDestinationByStudentId(studentId: string): Promise<GraduationDestination | null> {
+    try {
+      // 查询指定学生的毕业去向信息
+      const { data: result, error } = await supabase
+        .from('graduation_destinations')
+        .select('*')
+        .eq('student_id', studentId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .single();
+
+      if (error) {
+        if (error.code === 'PGRST116') {
+          // 没有找到记录，返回null
+          return null;
+        }
+        console.error('获取学生毕业去向失败:', error);
+        throw new Error(`获取学生毕业去向失败: ${error.message}`);
+      }
+
+      if (result) {
+        // 获取学生信息 (使用user_number字段，但在返回时映射为student_number)
+        const { data: studentData, error: studentError } = await supabase
+          .from('users')
+          .select('id, user_number, full_name, class_name')
+          .eq('id', studentId)
+          .single();
+
+        if (!studentError && studentData) {
+          return {
+            ...result,
+            student: {
+              student_number: studentData.user_number,
+              full_name: studentData.full_name,
+              class_name: studentData.class_name
+            }
+          };
+        }
+
+        return result as GraduationDestination;
+      }
+
+      return null;
+    } catch (error) {
+      console.error('获取学生毕业去向异常:', error);
+      throw new Error(`获取学生毕业去向异常: ${error instanceof Error ? error.message : '未知错误'}`);
+    }
+  }
+
+  // 保存毕业去向（创建或更新）
+  static async saveGraduationDestination(data: Partial<GraduationDestination>): Promise<GraduationDestination> {
+    try {
+      // 如果有id，则更新现有记录
+      if (data.id) {
+        return await this.updateGraduationDestination(data.id, data);
+      } 
+      // 否则创建新记录
+      else {
+        return await this.createGraduationDestination(data);
+      }
+    } catch (error) {
+      console.error('保存毕业去向失败:', error);
+      throw new Error(`保存毕业去向失败: ${error instanceof Error ? error.message : '未知错误'}`);
     }
   }
 

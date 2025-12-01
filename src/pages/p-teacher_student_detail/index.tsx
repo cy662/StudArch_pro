@@ -6,7 +6,9 @@ import styles from './styles.module.css';
 import { RewardPunishmentService } from '../../services/rewardPunishmentService';
 import { StudentProfileService } from '../../services/studentProfileService';
 import { UserService } from '../../services/userService';
+import { GraduationDestinationService } from '../../services/graduationDestinationService';
 import { RewardPunishment, RewardPunishmentCreate, RewardPunishmentUpdate } from '../../types/rewardPunishment';
+import { GraduationDestination } from '../../types/graduationDestination';
 import RewardPunishmentForm from '../../components/RewardPunishmentForm';
 
 interface StudentData {
@@ -81,6 +83,11 @@ const TeacherStudentDetail: React.FC = () => {
   // 加载状态
   const [loading, setLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // 毕业去向相关状态
+  const [graduationData, setGraduationData] = useState<GraduationDestination | null>(null);
+  const [loadingGraduation, setLoadingGraduation] = useState<boolean>(false);
+  const [errorGraduation, setErrorGraduation] = useState<string | null>(null);
 
   // 加载学生数据
   useEffect(() => {
@@ -174,10 +181,10 @@ const TeacherStudentDetail: React.FC = () => {
   }, [studentId]);
   
   // 辅助函数：格式化日期
-  const formatDate = (dateString?: string) => {
+  const formatDate = (dateString?: string | Date) => {
     if (!dateString) return '';
     try {
-      const date = new Date(dateString);
+      const date = typeof dateString === 'string' ? new Date(dateString) : dateString;
       return date.toLocaleDateString('zh-CN', {
         year: 'numeric',
         month: '2-digit',
@@ -185,6 +192,60 @@ const TeacherStudentDetail: React.FC = () => {
       }).replace(/\//g, '年').replace(/\//, '月') + '日';
     } catch (e) {
       return '';
+    }
+  };
+  
+  // 获取审核状态对应的CSS类
+  const getReviewStatusClass = (status: string) => {
+    switch (status) {
+      case 'approved':
+        return 'bg-green-50 border border-green-200';
+      case 'pending':
+        return 'bg-yellow-50 border border-yellow-200';
+      case 'rejected':
+        return 'bg-red-50 border border-red-200';
+      default:
+        return 'bg-gray-50 border border-gray-200';
+    }
+  };
+  
+  // 获取毕业去向数据
+  useEffect(() => {
+    const fetchGraduationData = async () => {
+      if (!studentId) return;
+      
+      setLoadingGraduation(true);
+      setErrorGraduation(null);
+      
+      try {
+        const data = await GraduationDestinationService.getGraduationDestinationByStudentId(studentId);
+        setGraduationData(data);
+      } catch (err) {
+        setErrorGraduation('获取毕业去向信息失败');
+        console.error('Error fetching graduation data:', err);
+      } finally {
+        setLoadingGraduation(false);
+      }
+    };
+    
+    fetchGraduationData();
+  }, [studentId]);
+  
+  // 刷新毕业去向数据（用于编辑后更新）
+  const refreshGraduationData = async () => {
+    if (!studentId) return;
+    
+    setLoadingGraduation(true);
+    setErrorGraduation(null);
+    
+    try {
+      const data = await GraduationDestinationService.getGraduationDestinationByStudentId(studentId);
+      setGraduationData(data);
+    } catch (err) {
+      setErrorGraduation('获取毕业去向信息失败');
+      console.error('Error refreshing graduation data:', err);
+    } finally {
+      setLoadingGraduation(false);
     }
   };
   
@@ -892,75 +953,138 @@ const TeacherStudentDetail: React.FC = () => {
               </button>
             </div>
             
-            <div className="bg-white border border-border-light rounded-lg p-6">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                  <h5 className="font-medium text-text-primary mb-3">去向信息</h5>
-                  <div className="space-y-3">
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">去向类型</span>
-                      <span className="font-medium">就业</span>
+            {loadingGraduation ? (
+              <div className="bg-white border border-border-light rounded-lg p-6 text-center py-12">
+                <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-secondary mx-auto mb-4"></div>
+                <p className="text-text-secondary">加载毕业去向信息中...</p>
+              </div>
+            ) : errorGraduation ? (
+              <div className="bg-white border border-border-light rounded-lg p-6 text-center py-12">
+                <i className="fas fa-exclamation-circle text-red-500 text-3xl mb-4"></i>
+                <p className="text-red-500 mb-4">{errorGraduation}</p>
+                <button 
+                  onClick={refreshGraduationData}
+                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors text-sm"
+                >
+                  重试
+                </button>
+              </div>
+            ) : graduationData ? (
+              <div className="bg-white border border-border-light rounded-lg p-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <h5 className="font-medium text-text-primary mb-3">去向信息</h5>
+                    <div className="space-y-3">
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">去向类型</span>
+                        <span className="font-medium">
+                          {graduationData.destination_type === 'employment' ? '就业' :
+                           graduationData.destination_type === 'furtherstudy' ? '升学' :
+                           graduationData.destination_type === 'entrepreneurship' ? '创业' :
+                           graduationData.destination_type === 'other' ? '其他' : '-'}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">单位名称</span>
+                        <span className="font-medium">{graduationData.company_name || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">单位性质</span>
+                        <span className="font-medium">{graduationData.company_type || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">职位</span>
+                        <span className="font-medium">{graduationData.position || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">工作地点</span>
+                        <span className="font-medium">{graduationData.location || '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">薪资</span>
+                        <span className="font-medium">{graduationData.salary ? `${graduationData.salary}K/月` : '-'}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">入职时间</span>
+                        <span className="font-medium">
+                          {graduationData.employment_date 
+                            ? formatDate(graduationData.employment_date) 
+                            : '-'}
+                        </span>
+                      </div>
                     </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">单位名称</span>
-                      <span className="font-medium">阿里巴巴（中国）有限公司</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">单位性质</span>
-                      <span className="font-medium">互联网企业</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">职位</span>
-                      <span className="font-medium">前端开发工程师</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">工作地点</span>
-                      <span className="font-medium">浙江省杭州市</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">薪资</span>
-                      <span className="font-medium">15K/月</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-text-secondary">入职时间</span>
-                      <span className="font-medium">2024年7月1日</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h5 className="font-medium text-text-primary mb-3">审核状态</h5>
-                  <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
-                    <i className="fas fa-check-circle text-green-500 text-3xl mb-2"></i>
-                    <div className="font-medium text-green-800">已审核通过</div>
-                    <div className="text-sm text-green-600 mt-1">审核人：张老师</div>
-                    <div className="text-sm text-green-600">审核时间：2024年1月10日</div>
                   </div>
                   
-                  <h5 className="font-medium text-text-primary mb-3 mt-6">证明材料</h5>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <i className="fas fa-file-pdf text-red-500"></i>
-                        <span className="text-sm">就业协议书.pdf</span>
-                      </div>
-                      <button className="text-secondary hover:text-accent transition-colors">
-                        <i className="fas fa-download"></i>
-                      </button>
+                  <div>
+                    <h5 className="font-medium text-text-primary mb-3">审核状态</h5>
+                    <div className={`p-4 text-center rounded-lg ${getReviewStatusClass(graduationData.status)}`}>
+                      {graduationData.status === 'approved' && (
+                        <>
+                          <i className="fas fa-check-circle text-green-500 text-3xl mb-2"></i>
+                          <div className="font-medium text-green-800">已审核通过</div>
+                        </>
+                      )}
+                      {graduationData.status === 'pending' && (
+                        <>
+                          <i className="fas fa-clock text-yellow-500 text-3xl mb-2"></i>
+                          <div className="font-medium text-yellow-800">待审核</div>
+                        </>
+                      )}
+                      {graduationData.status === 'rejected' && (
+                        <>
+                          <i className="fas fa-times-circle text-red-500 text-3xl mb-2"></i>
+                          <div className="font-medium text-red-800">审核未通过</div>
+                        </>
+                      )}
+                      {graduationData.reviewed_at && (
+                        <div className="text-sm text-text-secondary mt-1">
+                          审核时间：{formatDate(graduationData.reviewed_at)}
+                        </div>
+                      )}
+                      {graduationData.review_comment && (
+                        <div className="text-sm text-text-secondary mt-2">
+                          审核意见：{graduationData.review_comment}
+                        </div>
+                      )}
                     </div>
-                    <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                      <div className="flex items-center space-x-3">
-                        <i className="fas fa-file-pdf text-red-500"></i>
-                        <span className="text-sm">录用通知书.pdf</span>
-                      </div>
-                      <button className="text-secondary hover:text-accent transition-colors">
-                        <i className="fas fa-download"></i>
-                      </button>
-                    </div>
+                    
+                    {graduationData.proof_files && graduationData.proof_files.length > 0 && (
+                      <>
+                        <h5 className="font-medium text-text-primary mb-3 mt-6">证明材料</h5>
+                        <div className="space-y-2">
+                          {graduationData.proof_files.map((file, index) => (
+                            <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                              <div className="flex items-center space-x-3">
+                                <i className="fas fa-file-pdf text-red-500"></i>
+                                <span className="text-sm">{file.file_name}</span>
+                              </div>
+                              <button 
+                                className="text-secondary hover:text-accent transition-colors"
+                                onClick={() => {
+                                  if (file.file_content) {
+                                    const url = typeof file.file_content === 'string' 
+                                      ? file.file_content 
+                                      : URL.createObjectURL(file.file_content);
+                                    window.open(url, '_blank');
+                                  }
+                                }}
+                              >
+                                <i className="fas fa-eye mr-1"></i> 查看
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
-            </div>
+            ) : (
+              <div className="bg-white border border-border-light rounded-lg p-6 text-center py-12">
+                <i className="fas fa-info-circle text-blue-500 text-3xl mb-4"></i>
+                <p className="text-text-secondary mb-4">该学生暂未填写毕业去向信息</p>
+              </div>
+            )}
           </div>
         </div>
       </main>
