@@ -5,7 +5,7 @@ import express from 'express';
 import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
-import trainingProgramRoutes from './src/api/trainingProgram.js';
+import trainingProgramRoutes from './src/api/trainingProgramSimple.js';
 
 // 获取当前目录路径
 const __filename = fileURLToPath(import.meta.url);

@@ -67,16 +67,16 @@ const StudentAcademicTasks: React.FC = () => {
 
   // 加载学生的培养方案课程
   const fetchStudentTrainingProgramCourses = async () => {
-    if (!currentUser?.id) {
-      console.log('当前用户ID不存在，无法加载课程');
+    if (!studentProfile?.id) {
+      console.log('学生档案ID不存在，无法加载课程');
       return;
     }
 
     try {
       setCoursesLoading(true);
-      console.log('开始加载学生培养方案课程，学生ID:', currentUser.id);
+      console.log('开始加载学生培养方案课程，学生档案ID:', studentProfile.id);
       
-      const response = await fetch(`/api/student/${currentUser.id}/training-program-courses`);
+      const response = await fetch(`/api/student/${studentProfile.id}/training-program-courses`);
       
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
@@ -182,10 +182,10 @@ const StudentAcademicTasks: React.FC = () => {
 
   // 页面加载时获取培养方案课程
   useEffect(() => {
-    if (currentUser?.id) {
+    if (studentProfile?.id) {
       fetchStudentTrainingProgramCourses();
     }
-  }, [currentUser?.id, selectedSemester]);
+  }, [studentProfile?.id, selectedSemester]);
 
   const handleLogoutClick = () => {
     if (confirm('确定要退出登录吗？')) {

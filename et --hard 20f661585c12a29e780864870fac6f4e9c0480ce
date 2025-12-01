@@ -1,0 +1,216 @@
+[33mcommit b9be5cc617f7a3b32542031e0f0c99a6ff33a035[m[33m ([m[1;36mHEAD -> [m[1;32mmain[m[33m, [m[1;31morigin/main[m[33m)[m
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Fri Nov 28 08:22:19 2025 +0800
+
+    冲突
+
+[33mcommit 6f94f4a984f9c6fcdc01b8e22817e00c541e2dc6[m
+Merge: 25d6809 20f6615
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Fri Nov 28 08:12:43 2025 +0800
+
+    解决合并冲突：整合 final_verification.cjs、userService.ts 等文件的远程代码
+
+[33mcommit 25d6809760150a552209859f6232e927b2289939[m
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Fri Nov 28 08:08:27 2025 +0800
+
+    教师端
+
+[33mcommit 20f661585c12a29e780864870fac6f4e9c0480ce[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Fri Nov 28 08:04:51 2025 +0800
+
+    修复了很多功能，增加了学生端培养计划页面功能
+
+[33mcommit f8d957ea5d705e9f6de863927c083e86d12ab09f[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Wed Nov 26 16:35:01 2025 +0800
+
+    完成学生端，教学任务与安排的页面设计
+
+[33mcommit d7356228886cc8a8b6f456d8cb80e0c0994d5cb5[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Wed Nov 26 15:17:26 2025 +0800
+
+    完善教师导入培养方案
+
+[33mcommit e3b6231863baa19fa676ff9296f49a730da08be3[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 25 17:15:24 2025 +0800
+
+    完成教师端添加培养方案的Excel表格下载模版
+
+[33mcommit 59a7fcffbe5db275c524213ef05aeead4bd19792[m
+Merge: 1d63c08 4cbb1f1
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 25 16:08:16 2025 +0800
+
+    合并冲突
+
+[33mcommit 1d63c084f2c50dda2366a484105502069f7bfcc1[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 25 16:05:06 2025 +0800
+
+    完善老师端的奖惩信息
+
+[33mcommit 4cbb1f17878d2f1bf30e38100118c634a24eeb64[m
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Tue Nov 25 16:03:56 2025 +0800
+
+    教师端-我的学生-批量导入
+
+[33mcommit c521d36b2a0928cb49cb85000a0c62cf814932ec[m
+Merge: 9faf785 99189c3
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 25 09:30:32 2025 +0800
+
+    修复
+
+[33mcommit 9faf785cdc432bee524bfe926cc0ebef8e4fdf68[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 25 09:24:44 2025 +0800
+
+    修复
+
+[33mcommit 99189c3911effb11cb5198390faf752cce0c6415[m
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Tue Nov 25 09:16:36 2025 +0800
+
+    学生端-毕业去向统计
+
+[33mcommit 99a11600e777d54dfd7adb80be46bec93546e557[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Fri Nov 21 09:39:04 2025 +0800
+
+    修改毕业去向管理
+
+[33mcommit ca9a1adc40f3e76c3f4a3601627e4cce05fd55fc[m
+Merge: db722d6 5582cb2
+Author: liu0521613 <2784565967@qq.com>
+Date:   Thu Nov 20 10:12:35 2025 +0800
+
+    解决文件冲突
+
+[33mcommit db722d6208350cc236e8dce16f5d5c7a60a52371[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Thu Nov 20 09:57:27 2025 +0800
+
+    增加毕业去向管理批量导入，删除绩点统计
+
+[33mcommit 5582cb286690ed4808d87ac6c022a31954ff3139[m
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Thu Nov 20 09:40:00 2025 +0800
+
+    学生端首次登录强制填写基础信息
+
+[33mcommit d802d0083bf0d33622b6b1ecd1b59832ea171370[m
+Merge: 234b0bb 98b297f
+Author: liu0521613 <2784565967@qq.com>
+Date:   Thu Nov 20 08:19:43 2025 +0800
+
+    Merge branch 'main' of https://github.com/liu0521613/StudArch
+
+[33mcommit 234b0bb890f0aad8af36a2dbb0400962131b920f[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Thu Nov 20 08:16:22 2025 +0800
+
+    修改教师导入学生方式和功能
+
+[33mcommit 98b297f3da9930279e7ba11b74a49f414ac19795[m
+Merge: 940c4d7 ceb2395
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Tue Nov 18 17:18:08 2025 +0800
+
+    Merge branch 'main' of github.com:liu0521613/StudArch
+
+[33mcommit 940c4d776a8e1c1565d12a2fad436b307dff8c56[m
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Tue Nov 18 17:16:12 2025 +0800
+
+    超级管理
+
+[33mcommit ceb23954ac5f67cf297cc07193ec14e61b45081e[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 18 16:49:55 2025 +0800
+
+    完善页面，删除不必要页面
+
+[33mcommit 152f022e4d7af7cb0f5f741e48ab00ccf4e52747[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 18 16:09:07 2025 +0800
+
+    删除了教师管理平台中学业信息管理和班级归属
+
+[33mcommit 5ee68aef673af1bc568ba62b3c08b8fe21abeedd[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 18 15:34:33 2025 +0800
+
+    删除右上新消息提示，删除个人信息维护调试信息
+
+[33mcommit 214338db3c43b1b1db7f2c406f30a2194a2ebab5[m
+Merge: 4380506 06f3071
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 18 14:48:41 2025 +0800
+
+    Merge branch 'main' of https://github.com/liu0521613/StudArch
+
+[33mcommit 43805063faf227328a10254d6793239cccb6bb58[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Tue Nov 18 14:43:08 2025 +0800
+
+    修改学生服务平台菜单，删除不需要页面，添加教学任务与安排菜单
+
+[33mcommit 06f3071c8605449d1df85010a7904f694fe1b376[m
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Tue Nov 18 14:37:54 2025 +0800
+
+    超级管理员功能
+
+[33mcommit 37578433d99855d9d8e77cf267e23b3f3ff9b4b2[m
+Author: 陈瑶-2023015682 <2663493952@qq.com>
+Date:   Tue Nov 18 14:25:42 2025 +0800
+
+    超级管理员界面功能
+
+[33mcommit e3e91e96fde096a07f5e43f82d76f1a1e1061d80[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Fri Nov 14 12:03:53 2025 +0800
+
+    修改了分账户登录，不同人登录进来显示自己的页面，实现学生服务平台中我的档案页面可以显示数据库信息
+
+[33mcommit 77ebaf5ef80df3510435d8df0aac18e388617ca8[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Fri Nov 14 09:31:25 2025 +0800
+
+    分账号管理，不同用户登录显示自己的页面
+
+[33mcommit b67681e0fc7aaacb92ffcdb0fc1866f01138f4f9[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Thu Nov 13 10:20:09 2025 +0800
+
+    完善登录界面，删除用户名登录方式，超级管理员通过教师工号登录
+
+[33mcommit be31b9db0d89fe828c71e3cc88dd363a9c5666b3[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Thu Nov 13 09:22:17 2025 +0800
+
+    完成登录界面的修改，支持学生学号登录，教师工号登录
+
+[33mcommit 2a471215498b4ed0622945b414f8d8fbfd436c51[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Thu Nov 13 08:44:51 2025 +0800
+
+    实现批量导入，下载Excel模板
+
+[33mcommit 1fa42615d15a677da37f0ab1ae5c96969d103a79[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Wed Nov 12 17:04:14 2025 +0800
+
+    连接数据库，完成新增用户的功能
+
+[33mcommit c1e4d9fbafbe6203921b56fbbd0f50e6b5f68d01[m
+Author: liu0521613 <2784565967@qq.com>
+Date:   Wed Nov 12 14:37:28 2025 +0800
+
+    初始化前端项目代码

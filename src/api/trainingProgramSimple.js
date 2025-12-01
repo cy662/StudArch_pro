@@ -1,0 +1,467 @@
+// 培养方案API路由 - 简化版本
+// 只处理核心分配功能，避免外键约束问题
+
+import { Router } from 'express';
+import { createClient } from '@supabase/supabase-js';
+import dotenv from 'dotenv';
+
+dotenv.config();
+
+const router = Router();
+
+// Supabase配置
+const supabaseUrl = process.env.VITE_SUPABASE_URL;
+const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+
+if (!supabaseUrl || !supabaseServiceKey) {
+  console.error('Supabase配置缺失');
+  process.exit(1);
+}
+
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
+
+// 获取培养方案列表
+router.get('/training-programs', async (req, res) => {
+  try {
+    const { data: programs, error: programsError } = await supabase
+      .from('training_programs')
+      .select('*');
+
+    if (programsError) {
+      console.error('获取培养方案失败:', programsError);
+      return res.status(500).json({
+        success: false,
+        message: '获取培养方案失败: ' + programsError.message
+      });
+    }
+
+    const programsWithCourseCount = await Promise.all(
+      (programs || []).map(async (program) => {
+        const { data: courses, error: coursesError } = await supabase
+          .from('training_program_courses')
+          .select('id')
+          .eq('program_id', program.id);
+
+        return {
+          ...program,
+          course_count: coursesError ? 0 : (courses?.length || 0)
+        };
+      })
+    );
+
+    res.json({
+      success: true,
+      data: programsWithCourseCount
+    });
+
+  } catch (error) {
+    console.error('API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器内部错误'
+    });
+  }
+});
+
+// 简化的单个分配 - 使用数据库函数
+router.post('/student/:studentId/assign-training-program', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+    const { programId, teacherId, notes } = req.body;
+
+    const basicUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    
+    if (!basicUuidRegex.test(studentId) || !basicUuidRegex.test(programId)) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的ID格式'
+      });
+    }
+
+    // 使用原始的数据库函数（如果存在）
+    const { data, error } = await supabase.rpc('simple_assign_training_program', {
+      p_student_id: studentId,
+      p_program_id: programId
+    });
+
+    if (error) {
+      // 如果函数不存在，尝试直接插入
+      console.log('函数不存在，尝试直接插入...');
+      
+      // 验证学生和培养方案存在
+      const { data: student, error: studentError } = await supabase
+        .from('student_profiles')
+        .select('id')
+        .eq('id', studentId)
+        .single();
+
+      if (studentError || !student) {
+        return res.status(404).json({
+          success: false,
+          message: '学生不存在'
+        });
+      }
+
+      const { data: program, error: programError } = await supabase
+        .from('training_programs')
+        .select('*')
+        .eq('id', programId)
+        .eq('status', 'active')
+        .single();
+
+      if (programError || !program) {
+        return res.status(404).json({
+          success: false,
+          message: '培养方案不存在或已停用'
+        });
+      }
+
+      // 直接创建记录（跳过 teacher_id）
+      const { data: insertData, error: insertError } = await supabase
+        .from('student_training_programs')
+        .insert({
+          student_id: studentId,
+          program_id: programId,
+          enrollment_date: new Date().toISOString().split('T')[0],
+          status: 'active',
+          notes: notes || '直接分配',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (insertError) {
+        console.error('直接插入失败:', insertError);
+        return res.status(500).json({
+          success: false,
+          message: '分配失败: ' + insertError.message
+        });
+      }
+
+      // 创建课程进度记录
+      const { data: courses, error: coursesError } = await supabase
+        .from('training_program_courses')
+        .select('id')
+        .eq('program_id', programId)
+        .eq('status', 'active');
+
+      if (!coursesError && courses && courses.length > 0) {
+        const courseProgressData = courses.map(course => ({
+          student_id: studentId,
+          course_id: course.id,
+          status: 'not_started',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }));
+
+        await supabase
+          .from('student_course_progress')
+          .upsert(courseProgressData, {
+            onConflict: 'student_id,course_id',
+            ignoreDuplicates: true
+          });
+      }
+
+      res.json({
+        success: true,
+        message: '培养方案分配成功',
+        assignment_id: insertData.id
+      });
+
+    } else {
+      // 函数执行成功
+      res.json(data);
+    }
+
+  } catch (error) {
+    console.error('API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器内部错误'
+    });
+  }
+});
+
+// 简化的批量分配
+router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res) => {
+  try {
+    const { teacherId } = req.params;
+    const { programId, studentIds, notes } = req.body;
+
+    const basicUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    
+    if (!basicUuidRegex.test(teacherId) || !basicUuidRegex.test(programId)) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的ID格式'
+      });
+    }
+
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供有效的学生ID列表'
+      });
+    }
+
+    const invalidStudentIds = studentIds.filter(id => !basicUuidRegex.test(id));
+    
+    if (invalidStudentIds.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: '发现无效的学生ID格式'
+      });
+    }
+
+    // 验证培养方案存在
+    const { data: program, error: programError } = await supabase
+      .from('training_programs')
+      .select('*')
+      .eq('id', programId)
+      .eq('status', 'active')
+      .single();
+
+    if (programError || !program) {
+      return res.status(404).json({
+        success: false,
+        message: '培养方案不存在或已停用'
+      });
+    }
+
+    // 逐个处理学生分配
+    let successCount = 0;
+    let failureCount = 0;
+    const details = [];
+
+    for (const studentId of studentIds) {
+      try {
+        // 验证学生存在
+        const { data: student, error: studentError } = await supabase
+          .from('student_profiles')
+          .select('id')
+          .eq('id', studentId)
+          .single();
+
+        if (studentError || !student) {
+          failureCount++;
+          details.push({
+            student_id: studentId,
+            error: '学生不存在'
+          });
+          continue;
+        }
+
+        // 创建学生培养方案关联（使用简单的直接插入）
+        const { error: assignmentError } = await supabase
+          .from('student_training_programs')
+          .upsert({
+            student_id: studentId,
+            program_id: programId,
+            enrollment_date: new Date().toISOString().split('T')[0],
+            status: 'active',
+            notes: notes || '批量分配',
+            updated_at: new Date().toISOString()
+          }, {
+            onConflict: 'student_id,program_id',
+            ignoreDuplicates: true  // 忽略重复，不更新
+          });
+
+        if (assignmentError) {
+          console.log('分配失败（可能是重复）:', assignmentError.message);
+          // 检查是否是因为已经存在而失败
+          if (assignmentError.message.includes('duplicate')) {
+            successCount++; // 已存在的也算成功
+          } else {
+            failureCount++;
+            details.push({
+              student_id: studentId,
+              error: assignmentError.message
+            });
+          }
+          continue;
+        }
+
+        // 创建课程进度记录
+        const { data: courses, error: coursesError } = await supabase
+          .from('training_program_courses')
+          .select('id')
+          .eq('program_id', programId)
+          .eq('status', 'active');
+
+        if (!coursesError && courses && courses.length > 0) {
+          const courseProgressData = courses.map(course => ({
+            student_id: studentId,
+            course_id: course.id,
+            status: 'not_started',
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }));
+
+          await supabase
+            .from('student_course_progress')
+            .upsert(courseProgressData, {
+              onConflict: 'student_id,course_id',
+              ignoreDuplicates: true
+            });
+        }
+
+        successCount++;
+
+      } catch (error) {
+        failureCount++;
+        details.push({
+          student_id: studentId,
+          error: error.message
+        });
+      }
+    }
+
+    const resultData = {
+      success_count: successCount,
+      failure_count: failureCount,
+      total_count: successCount + failureCount,
+      details: details
+    };
+
+    res.json({
+      success: successCount > 0,
+      message: `批量分配完成：成功 ${successCount} 个，失败 ${failureCount} 个`,
+      data: resultData
+    });
+
+  } catch (error) {
+    console.error('API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器内部错误'
+    });
+  }
+});
+
+// 获取学生培养方案课程
+router.get('/student/:studentId/training-program-courses', async (req, res) => {
+  try {
+    const { studentId } = req.params;
+
+    const basicUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    
+    if (!basicUuidRegex.test(studentId)) {
+      return res.status(400).json({
+        success: false,
+        message: '无效的学生ID'
+      });
+    }
+
+    // 使用简化的查询
+    const { data: assignments, error: assignError } = await supabase
+      .from('student_training_programs')
+      .select(`
+        program_id,
+        enrollment_date,
+        training_programs!inner (
+          program_name,
+          program_code,
+          training_program_courses!inner (
+            id,
+            course_number,
+            course_name,
+            credits,
+            recommended_grade,
+            semester,
+            exam_method,
+            course_nature,
+            course_type,
+            course_category,
+            teaching_hours,
+            theory_hours,
+            practice_hours,
+            weekly_hours,
+            course_description,
+            sequence_order
+          )
+        )
+      `)
+      .eq('student_id', studentId)
+      .eq('status', 'active')
+      .eq('training_programs.status', 'active');
+
+    if (assignError) {
+      console.error('获取学生培养方案课程失败:', assignError);
+      return res.status(500).json({
+        success: false,
+        message: '获取学生培养方案课程失败: ' + assignError.message
+      });
+    }
+
+    // 格式化返回数据
+    const formattedCourses = [];
+    if (assignments && assignments.length > 0) {
+      for (const assignment of assignments) {
+        const programInfo = assignment.training_programs;
+        const courses = programInfo.training_program_courses;
+
+        if (courses && courses.length > 0) {
+          for (const course of courses) {
+            // 获取课程进度
+            const { data: progress, error: progressError } = await supabase
+              .from('student_course_progress')
+              .select('*')
+              .eq('student_id', studentId)
+              .eq('course_id', course.id)
+              .single();
+
+            const courseProgress = progressError ? null : progress;
+            
+            formattedCourses.push({
+              id: course.id,
+              course_number: course.course_number,
+              course_name: course.course_name,
+              credits: course.credits,
+              recommended_grade: course.recommended_grade,
+              semester: course.semester,
+              exam_method: course.exam_method,
+              course_nature: course.course_nature,
+              course_type: course.course_type,
+              course_category: course.course_category,
+              teaching_hours: course.teaching_hours,
+              theory_hours: course.theory_hours,
+              practice_hours: course.practice_hours,
+              weekly_hours: course.weekly_hours,
+              course_description: course.course_description,
+              sequence_order: course.sequence_order,
+              program_name: programInfo.program_name,
+              program_code: programInfo.program_code,
+              status: courseProgress?.status || 'not_started',
+              grade: courseProgress?.grade,
+              grade_point: courseProgress?.grade_point,
+              semester_completed: courseProgress?.semester_completed,
+              academic_year: courseProgress?.academic_year,
+              teacher: courseProgress?.teacher,
+              notes: courseProgress?.notes,
+              completed_at: courseProgress?.completed_at,
+              enrollment_date: assignment.enrollment_date
+            });
+          }
+        }
+      }
+    }
+
+    // 按顺序排序
+    formattedCourses.sort((a, b) => (a.sequence_order || 0) - (b.sequence_order || 0));
+
+    res.json({
+      success: true,
+      data: formattedCourses
+    });
+
+  } catch (error) {
+    console.error('API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器内部错误'
+    });
+  }
+});
+
+export default router;

@@ -7,6 +7,7 @@ const isConfigured = import.meta.env.VITE_SUPABASE_URL &&
                     !import.meta.env.VITE_SUPABASE_URL.includes('demo.supabase.co') &&
                     import.meta.env.VITE_SUPABASE_URL.startsWith('https://')
 
+// 创建单一的 Supabase 客户端实例，避免多实例问题
 let supabase: any
 
 if (isConfigured) {
@@ -17,7 +18,10 @@ if (isConfigured) {
     {
       auth: {
         persistSession: true,
-        autoRefreshToken: true
+        autoRefreshToken: true,
+        // 防止多实例警告的关键配置
+        detectSessionInUrl: false,
+        flow: 'pkce'
       }
     }
   )

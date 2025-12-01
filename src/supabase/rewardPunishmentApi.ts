@@ -1,15 +1,5 @@
-import { createClient } from '@supabase/supabase-js';
+import { supabase } from '../lib/supabase';
 import { RewardPunishment, RewardPunishmentCreate, RewardPunishmentUpdate, RewardPunishmentFilters } from '../types/rewardPunishment';
-
-// Supabase客户端配置
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  console.error('Missing Supabase configuration. Please check your environment variables.');
-}
-
-const supabase = createClient(supabaseUrl!, supabaseAnonKey!);
 
 export class RewardPunishmentApi {
   /**

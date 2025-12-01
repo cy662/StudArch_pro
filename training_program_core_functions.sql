@@ -159,7 +159,7 @@ BEGIN
     -- 构建返回结果
     result := jsonb_build_object(
         'success', success_count > 0,
-        'message', format('批量分配完成：成功 %d 个，失败 %d 个', success_count, failure_count),
+        'message', format('批量分配完成：成功 %s 个，失败 %s 个', success_count, failure_count),
         'success_count', success_count,
         'failure_count', failure_count,
         'total_count', success_count + failure_count

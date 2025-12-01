@@ -1,73 +1,60 @@
--- 快速修复外键约束问题
--- 移除 graduation_import_batches 表的外键约束
+-- 修复外键约束问题的SQL脚本
 
--- 1. 移除外键约束
-ALTER TABLE graduation_import_batches 
-DROP CONSTRAINT IF EXISTS graduation_import_batches_imported_by_fkey;
+-- 1. 首先临时禁用外键约束检查
+-- 注意：在某些PostgreSQL版本中可能不支持，我们尝试其他方法
 
--- 2. 将 imported_by 列改为 TEXT 类型（如果还不是）
-ALTER TABLE graduation_import_batches 
-ALTER COLUMN imported_by TYPE TEXT USING imported_by::TEXT;
+-- 2. 删除student_training_programs表中有问题的记录（这些学生ID在users表中不存在）
+DELETE FROM student_training_programs 
+WHERE student_id IN (
+    SELECT sp.student_id 
+    FROM student_training_programs sp
+    LEFT JOIN users u ON sp.student_id = u.id
+    WHERE u.id IS NULL
+);
 
--- 3. 插入一个模拟用户记录到 auth.users 表（可选方案）
--- 注意：这需要管理员权限，如果不行就用上面的方案
+-- 3. 验证清理结果
 DO $$
+DECLARE
+    deleted_count INTEGER;
+    remaining_count INTEGER;
 BEGIN
-    -- 检查是否存在模拟用户，不存在则创建
-    IF NOT EXISTS (SELECT 1 FROM auth.users WHERE id = '550e8400-e29b-41d4-a716-446655440001') THEN
-        -- 尝试插入模拟用户（可能会因权限失败）
-        BEGIN
-            INSERT INTO auth.users (
-                id,
-                aud,
-                role,
-                email,
-                created_at,
-                updated_at
-            ) VALUES (
-                '550e8400-e29b-41d4-a716-446655440001',
-                'authenticated',
-                'authenticated',
-                'mock-user@local.dev',
-                NOW(),
-                NOW()
-            );
-        EXCEPTION WHEN OTHERS THEN
-            RAISE NOTICE '无法创建模拟用户: %', SQLERRM;
-        END;
+    -- 获取删除的记录数（如果上面的DELETE语句执行了）
+    GET DIAGNOSTICS deleted_count = ROW_COUNT;
+    
+    -- 获取剩余的记录数
+    SELECT COUNT(*) INTO remaining_count FROM student_training_programs;
+    
+    RAISE NOTICE '🧹 清理完成：删除了 %s 条无效记录，剩余 %s 条有效记录', 
+                 COALESCE(deleted_count, 0), remaining_count;
+    
+    -- 验证剩余记录的外键完整性
+    IF EXISTS (
+        SELECT 1 FROM student_training_programs sp
+        LEFT JOIN users u ON sp.student_id = u.id
+        WHERE u.id IS NULL
+        LIMIT 1
+    ) THEN
+        RAISE NOTICE '⚠️ 警告：仍有无效的外键记录存在';
+    ELSE
+        RAISE NOTICE '✅ 所有剩余记录的外键完整性验证通过';
     END IF;
 END $$;
 
--- 4. 验证修复结果
-\d+ graduation_import_batches;
-
--- 5. 测试插入
-INSERT INTO graduation_import_batches (
-    batch_name,
-    filename,
-    total_count,
-    success_count,
-    failed_count,
-    status,
-    imported_by,
-    created_at,
+-- 4. 测试插入一条有效记录
+INSERT INTO student_training_programs (
+    student_id, 
+    program_id, 
+    enrollment_date, 
+    status, 
+    created_at, 
     updated_at
 ) VALUES (
-    '测试批次',
-    'test.xlsx',
-    1,
-    0,
-    0,
-    'processing',
-    '550e8400-e29b-41d4-a716-446655440001',
+    'db888c86-eb18-4c5d-819a-d59f0d223adc',
+    '62b2cc69-5b10-4238-8232-59831cdb7964',
+    CURRENT_DATE,
+    'active',
     NOW(),
     NOW()
-) ON CONFLICT (id) DO NOTHING;
-
--- 查看结果
-SELECT * FROM graduation_import_batches ORDER BY created_at DESC LIMIT 1;
-
--- 清理测试数据
-DELETE FROM graduation_import_batches WHERE batch_name = '测试批次';
-
-COMMIT;
+)
+ON CONFLICT (student_id, program_id) DO NOTHING
+RETURNING '✅ 测试插入成功' as result;

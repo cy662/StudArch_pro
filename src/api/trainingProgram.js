@@ -77,21 +77,37 @@ router.post('/training-program/import', async (req, res) => {
 // 获取培养方案列表
 router.get('/training-programs', async (req, res) => {
   try {
-    const { data, error } = await supabase
+    // 首先获取所有培养方案
+    const { data: programs, error: programsError } = await supabase
       .from('training_programs')
       .select('*');
 
-    if (error) {
-      console.error('获取培养方案失败:', error);
+    if (programsError) {
+      console.error('获取培养方案失败:', programsError);
       return res.status(500).json({
         success: false,
-        message: '获取培养方案失败: ' + error.message
+        message: '获取培养方案失败: ' + programsError.message
       });
     }
 
+    // 为每个培养方案获取课程数量
+    const programsWithCourseCount = await Promise.all(
+      (programs || []).map(async (program) => {
+        const { data: courses, error: coursesError } = await supabase
+          .from('training_program_courses')
+          .select('id')
+          .eq('program_id', program.id);
+
+        return {
+          ...program,
+          course_count: coursesError ? 0 : (courses?.length || 0)
+        };
+      })
+    );
+
     res.json({
       success: true,
-      data: data
+      data: programsWithCourseCount
     });
 
   } catch (error) {
@@ -227,10 +243,7 @@ router.post('/student/:studentId/assign-training-program', async (req, res) => {
       });
     }
 
-    res.json({
-      success: true,
-      data: data
-    });
+    res.json(data);
 
   } catch (error) {
     console.error('API错误:', error);
@@ -296,10 +309,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
       });
     }
 
-    res.json({
-      success: true,
-      data: data
-    });
+    res.json(data);
 
   } catch (error) {
     console.error('API错误:', error);
@@ -451,7 +461,7 @@ router.get('/training-program/import-history', async (req, res) => {
 
     res.json({
       success: true,
-      data: data
+      data: data || []
     });
 
   } catch (error) {
