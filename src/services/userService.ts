@@ -640,6 +640,25 @@ export class UserService {
       };
     }
   }
+
+  // 获取student_complete_info表中的学生总数
+  static async getStudentCompleteInfoCount(): Promise<number> {
+    try {
+      const { error, count } = await supabase
+        .from('student_complete_info')
+        .select('*', { count: 'exact', head: true });
+
+      if (error) {
+        console.error('获取student_complete_info表学生总数失败:', error);
+        throw new Error(`获取学生总数失败: ${error.message}`);
+      }
+
+      return count || 0;
+    } catch (error) {
+      console.error('获取学生总数异常:', error);
+      return 0;
+    }
+  }
 }
 
 export default UserService
