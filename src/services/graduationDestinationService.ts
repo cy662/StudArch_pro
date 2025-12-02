@@ -275,6 +275,103 @@ export class GraduationDestinationService {
 
   
 
+  // 获取毕业去向统计数据
+  static async getGraduationStats(): Promise<{ approvedCount: number; pendingCount: number }> {
+    try {
+      // 获取已审核通过的毕业去向数量（所有类型）
+      const { count: approvedCount, error } = await supabase
+        .from('graduation_destinations')
+        .select('id', { count: 'exact' })
+        .eq('status', 'approved');
+
+      if (error) {
+        console.error('获取毕业去向统计失败:', error);
+        return { approvedCount: 0, pendingCount: 0 };
+      }
+
+      // 获取待审核的毕业去向数量
+      const { count: pendingCount } = await supabase
+        .from('graduation_destinations')
+        .select('id', { count: 'exact' })
+        .eq('status', 'pending');
+
+      return {
+        approvedCount: approvedCount || 0,
+        pendingCount: pendingCount || 0
+      };
+    } catch (error) {
+      console.error('获取毕业去向统计异常:', error);
+      return { approvedCount: 0, pendingCount: 0 };
+    }
+  }
+
+  // 获取按去向类型分组的统计数据
+  static async getGraduationDestinationStats(teacherId?: string): Promise<Record<string, number>> {
+    try {
+      // 初始化查询
+      let query = supabase
+        .from('graduation_destinations')
+        .select('destination_type', { count: 'exact' })
+        .eq('status', 'approved')
+        .group('destination_type');
+
+      // 如果提供了教师ID，可以添加过滤条件
+      if (teacherId) {
+        // 这里可以根据实际数据库结构调整过滤逻辑
+        query = query.eq('teacher_id', teacherId);
+      }
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('获取毕业去向类型统计失败:', error);
+        // 返回默认值
+        return {
+          employment: 0,
+          furtherstudy: 0,
+          entrepreneurship: 0,
+          abroad: 0,
+          unemployed: 0,
+          other: 0
+        };
+      }
+
+      // 初始化结果对象
+      const result: Record<string, number> = {
+        employment: 0,
+        furtherstudy: 0,
+        entrepreneurship: 0,
+        abroad: 0,
+        unemployed: 0,
+        other: 0
+      };
+
+      // 处理返回的数据
+      if (data && Array.isArray(data)) {
+        data.forEach(item => {
+          const type = item.destination_type;
+          const count = item.count || 0;
+          if (result.hasOwnProperty(type)) {
+            result[type] = count;
+          }
+        });
+      }
+
+      return result;
+    } catch (error) {
+      console.error('获取毕业去向类型统计异常:', error);
+      // 返回默认值
+      return {
+        employment: 0,
+        furtherstudy: 0,
+        entrepreneurship: 0,
+        abroad: 0,
+        unemployed: 0,
+        other: 0
+      };
+    }
+  }
+
   // 创建ZIP导出
   static async createZipExport(userId: string): Promise<{ success: boolean; error?: string; zipBlob?: Blob }> {
     try {

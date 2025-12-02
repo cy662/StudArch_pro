@@ -6,6 +6,7 @@ import {
   RewardPunishmentFilters 
 } from '../types/rewardPunishment';
 import { RewardPunishmentApi } from '../supabase/rewardPunishmentApi';
+import { supabase } from '../lib/supabase';
 
 export class RewardPunishmentService {
   /**
@@ -143,6 +144,35 @@ export class RewardPunishmentService {
       return result;
     }
   }
+
+  /**
+   * 获取教师管理学生的获奖统计信息
+   */
+  static async getTeacherRewardStats(teacherId: string): Promise<{ rewardedStudentCount: number }> {
+    try {
+      // 获取教师管理的学生中，有奖励记录且状态为approved的学生数量
+      const { count, error } = await supabase
+        .from('reward_punishments')
+        .select('student_id', { count: 'exact', head: true })
+        .eq('record_type', 'reward') // 只统计奖励
+        .eq('status', 'approved') // 只统计已通过的
+        .in('student_id', supabase.from('teacher_students').select('student_id').eq('teacher_id', teacherId));
+
+      if (error) {
+        console.error('获取教师奖励统计失败:', error);
+        return { rewardedStudentCount: 0 };
+      }
+
+      return {
+        rewardedStudentCount: count || 0
+      };
+    } catch (error) {
+      console.error('获取教师奖励统计异常:', error);
+      return { rewardedStudentCount: 0 };
+    }
+  }
+
+
 
   /**
    * 检查数据库连接
