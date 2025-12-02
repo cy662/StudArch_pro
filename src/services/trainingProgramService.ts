@@ -2,7 +2,8 @@ import { TrainingProgramCourse, TrainingProgramImportResult } from '../types/tra
 import * as XLSX from 'xlsx';
 
 export class TrainingProgramService {
-  private static readonly BASE_URL = '/api';
+  // 修改BASE_URL以明确指向API服务器
+  private static readonly BASE_URL = 'http://localhost:3001/api';
 
   /**
    * 下载培养方案Excel模板

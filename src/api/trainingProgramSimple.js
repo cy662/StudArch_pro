@@ -20,6 +20,163 @@ if (!supabaseUrl || !supabaseServiceKey) {
 
 const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
+// 添加导入培养方案课程的路由处理器
+router.post('/training-program/import', async (req, res) => {
+  try {
+    const { courses, programCode = 'CS_2021', batchName, importedBy } = req.body;
+
+    // 验证输入
+    if (!courses || !Array.isArray(courses)) {
+      return res.status(400).json({
+        success: false,
+        message: '请提供有效的课程数据'
+      });
+    }
+
+    if (courses.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: '课程数据不能为空'
+      });
+    }
+
+    // 生成批次名称
+    const finalBatchName = batchName || `导入批次_${new Date().toLocaleString('zh-CN').replace(/[/:]/g, '-')}`;
+    
+    // 首先确保培养方案存在
+    let { data: program, error: programError } = await supabase
+      .from('training_programs')
+      .select('id')
+      .eq('program_code', programCode)
+      .single();
+
+    // 如果培养方案不存在，则创建一个新的
+    if (programError || !program) {
+      const { data: newProgram, error: createError } = await supabase
+        .from('training_programs')
+        .insert({
+          program_code: programCode,
+          program_name: `${programCode}培养方案`,
+          department: '计算机系',
+          degree_level: '本科',
+          duration_years: 4,
+          total_credits: 160,
+          status: 'active',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        })
+        .select()
+        .single();
+
+      if (createError) {
+        console.error('创建培养方案失败:', createError);
+        return res.status(500).json({
+          success: false,
+          message: '创建培养方案失败: ' + createError.message
+        });
+      }
+      
+      program = newProgram;
+    }
+
+    // 准备导入的数据
+    const programCourses = courses.map(course => ({
+      program_id: program.id, // 使用培养方案的ID
+      course_number: course.course_number,
+      course_name: course.course_name,
+      credits: course.credits,
+      recommended_grade: course.recommended_grade,
+      semester: course.semester,
+      exam_method: course.exam_method,
+      course_nature: course.course_nature,
+      status: 'active',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    }));
+
+    // 插入课程数据
+    const { data, error } = await supabase
+      .from('training_program_courses')
+      .insert(programCourses);
+
+    if (error) {
+      console.error('导入失败:', error);
+      return res.status(500).json({
+        success: false,
+        message: '导入失败: ' + error.message
+      });
+    }
+
+    // 创建导入批次记录
+    const batchRecord = {
+      batch_name: finalBatchName,
+      program_id: program.id,
+      total_records: courses.length,
+      success_count: courses.length,
+      failed_count: 0,
+      imported_by: importedBy || null,
+      import_time: new Date().toISOString()
+    };
+
+    const { error: batchError } = await supabase
+      .from('training_program_import_batches')
+      .insert(batchRecord);
+
+    if (batchError) {
+      console.error('创建导入批次记录失败:', batchError);
+      // 不中断主流程，只是记录警告
+    }
+
+    res.json({
+      success: true,
+      data: {
+        success: courses.length,
+        failed: 0,
+        total: courses.length
+      },
+      message: `成功导入 ${courses.length} 门课程`
+    });
+
+  } catch (error) {
+    console.error('API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器内部错误'
+    });
+  }
+});
+
+// 获取学生列表 - 添加新的API端点
+router.get('/students', async (req, res) => {
+  try {
+    // 从数据库获取学生列表
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .select('id, full_name, student_number, major, enrollment_year')
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('获取学生列表失败:', error);
+      return res.status(500).json({
+        success: false,
+        message: '获取学生列表失败: ' + error.message
+      });
+    }
+
+    res.json({
+      success: true,
+      data: data || []
+    });
+
+  } catch (error) {
+    console.error('API错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '服务器内部错误'
+    });
+  }
+});
+
 // 获取培养方案列表
 router.get('/training-programs', async (req, res) => {
   try {
@@ -69,9 +226,12 @@ router.post('/student/:studentId/assign-training-program', async (req, res) => {
     const { studentId } = req.params;
     const { programId, teacherId, notes } = req.body;
 
-    const basicUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // 验证ID格式 - 支持标准UUID和占位符格式
+    const standardUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const placeholderUuidRegex = /^00000000-0000-0000-0000-000000000\d{3}$/i;
     
-    if (!basicUuidRegex.test(studentId) || !basicUuidRegex.test(programId)) {
+    if (!(standardUuidRegex.test(studentId) || placeholderUuidRegex.test(studentId)) || 
+        !(standardUuidRegex.test(programId) || placeholderUuidRegex.test(programId))) {
       return res.status(400).json({
         success: false,
         message: '无效的ID格式'
@@ -189,9 +349,12 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
     const { teacherId } = req.params;
     const { programId, studentIds, notes } = req.body;
 
-    const basicUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    // 验证ID格式 - 支持标准UUID和占位符格式
+    const standardUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    const placeholderUuidRegex = /^00000000-0000-0000-0000-000000000\d{3}$/i;
     
-    if (!basicUuidRegex.test(teacherId) || !basicUuidRegex.test(programId)) {
+    if (!(standardUuidRegex.test(teacherId) || placeholderUuidRegex.test(teacherId)) || 
+        !(standardUuidRegex.test(programId) || placeholderUuidRegex.test(programId))) {
       return res.status(400).json({
         success: false,
         message: '无效的ID格式'
@@ -205,7 +368,9 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
       });
     }
 
-    const invalidStudentIds = studentIds.filter(id => !basicUuidRegex.test(id));
+    const invalidStudentIds = studentIds.filter(id => 
+      !(standardUuidRegex.test(id) || placeholderUuidRegex.test(id))
+    );
     
     if (invalidStudentIds.length > 0) {
       return res.status(400).json({
@@ -236,27 +401,41 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
 
     for (const studentId of studentIds) {
       try {
-        // 验证学生存在
-        const { data: student, error: studentError } = await supabase
+        // 验证学生存在 - 支持档案ID和用户ID
+        let { data: student, error: studentError } = await supabase
           .from('student_profiles')
           .select('id')
           .eq('id', studentId)
           .single();
 
+        let actualStudentId = studentId; // 默认使用传入的ID
+
+        // 如果按档案ID没找到，尝试按用户ID查找
         if (studentError || !student) {
-          failureCount++;
-          details.push({
-            student_id: studentId,
-            error: '学生不存在'
-          });
-          continue;
+          const { data: studentByUserId, error: userError } = await supabase
+            .from('student_profiles')
+            .select('id')
+            .eq('user_id', studentId)
+            .single();
+
+          if (userError || !studentByUserId) {
+            failureCount++;
+            details.push({
+              student_id: studentId,
+              error: '学生不存在'
+            });
+            continue;
+          }
+          
+          student = studentByUserId;
+          actualStudentId = studentByUserId.id; // 使用找到的档案ID
         }
 
-        // 创建学生培养方案关联（使用简单的直接插入）
+        // 创建学生培养方案关联（使用实际的档案ID）
         const { error: assignmentError } = await supabase
           .from('student_training_programs')
           .upsert({
-            student_id: studentId,
+            student_id: actualStudentId,
             program_id: programId,
             enrollment_date: new Date().toISOString().split('T')[0],
             status: 'active',
@@ -269,6 +448,8 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
 
         if (assignmentError) {
           console.log('分配失败（可能是重复）:', assignmentError.message);
+          console.log('学生ID:', studentId);
+          console.log('培养方案ID:', programId);
           // 检查是否是因为已经存在而失败
           if (assignmentError.message.includes('duplicate')) {
             successCount++; // 已存在的也算成功
@@ -289,21 +470,29 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
           .eq('program_id', programId)
           .eq('status', 'active');
 
+        if (coursesError) {
+          console.log('获取课程列表失败:', coursesError.message);
+        }
+
         if (!coursesError && courses && courses.length > 0) {
           const courseProgressData = courses.map(course => ({
-            student_id: studentId,
+            student_id: actualStudentId,
             course_id: course.id,
             status: 'not_started',
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           }));
 
-          await supabase
+          const { error: progressError } = await supabase
             .from('student_course_progress')
             .upsert(courseProgressData, {
               onConflict: 'student_id,course_id',
               ignoreDuplicates: true
             });
+
+          if (progressError) {
+            console.log('创建课程进度记录失败:', progressError.message);
+          }
         }
 
         successCount++;
@@ -314,6 +503,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
           student_id: studentId,
           error: error.message
         });
+        console.error('处理学生分配时发生异常:', error);
       }
     }
 
@@ -334,7 +524,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
     console.error('API错误:', error);
     res.status(500).json({
       success: false,
-      message: '服务器内部错误'
+      message: '服务器内部错误: ' + error.message
     });
   }
 });

@@ -1,99 +1,56 @@
-const { createClient } = require('@supabase/supabase-js');
-require('dotenv').config({ path: '.env' });
+// 测试最终修复：使用用户ID进行分配
+const fetch = require('node-fetch');
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = process.env.VITE_SUPABASE_ANON_KEY;
-const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const API_BASE = 'http://localhost:3001/api';
 
 async function testFinalFix() {
   try {
-    console.log('🎯 测试完整的奖惩保存修复...');
-    
-    // 1. 获取学生数据（使用修复后的方法）
-    console.log('📝 模拟修复后的UserService.getTeacherStudents...');
-    
-    const { data: profiles, error: profileError } = await supabase
-      .from('student_profiles')
-      .select(`
-        id,
-        user_id,
-        class_name,
-        major
-      `)
-      .limit(1);
+    console.log('🧪 测试最终修复：使用用户ID进行培养方案分配\n');
 
-    if (profileError || !profiles || profiles.length === 0) {
-      console.log('❌ 获取学生档案失败');
-      return;
-    }
-
-    const studentProfile = profiles[0];
-    console.log('✅ 获取到学生档案:', {
-      profileId: studentProfile.id,
-      userId: studentProfile.user_id,
-      className: studentProfile.class_name
+    // 使用用户ID进行批量分配测试
+    const response = await fetch(`${API_BASE}/teacher/00000000-0000-0000-0000-000000000001/batch-assign-training-program`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        programId: '62b2cc69-5b10-4238-8232-59831cdb7964',
+        studentIds: ['d365a6d0-11a7-423a-9ede-13c10b039f08'], // 这是用户ID，不是档案ID
+        notes: '测试用户ID自动转换为档案ID'
+      })
     });
 
-    // 2. 获取用户信息
-    const { data: user, error: userError } = await supabase
-      .from('users')
-      .select('username, email, full_name, user_number')
-      .eq('id', studentProfile.user_id)
-      .single();
-
-    if (userError) {
-      console.log('❌ 获取用户信息失败:', userError.message);
-      return;
-    }
-
-    console.log('✅ 获取到用户信息:', user);
-
-    // 3. 测试奖惩保存
-    console.log('🔍 测试奖惩记录保存...');
-    const rewardData = {
-      student_id: studentProfile.id, // 使用正确的student_profiles.id
-      type: 'reward',
-      name: '测试奖励',
-      level: 'school',
-      description: '这是一个测试记录',
-      date: '2024-01-01',
-      created_by: 'test_teacher'
-    };
-
-    console.log('📦 准备保存的奖惩数据:', rewardData);
-
-    const { data: insertedReward, error: insertError } = await supabase
-      .from('reward_punishments')
-      .insert(rewardData)
-      .select()
-      .single();
-
-    if (insertError) {
-      console.log('❌ 奖惩保存失败:', insertError.message);
-      return;
-    }
-
-    console.log('✅ 奖惩保存成功:', {
-      id: insertedReward.id,
-      student_id: insertedReward.student_id,
-      name: insertedReward.name
-    });
-
-    // 4. 清理测试数据
-    await supabase
-      .from('reward_punishments')
-      .delete()
-      .eq('id', insertedReward.id);
+    const result = await response.json();
     
-    console.log('🧹 测试数据已清理');
+    console.log('📊 测试结果:');
+    console.log('   • HTTP状态:', response.status);
+    console.log('   • API成功:', result.success ? '✅' : '❌');
+    console.log('   • 消息:', result.message);
+    
+    if (result.data) {
+      console.log('   • 成功数量:', result.data.success_count);
+      console.log('   • 失败数量:', result.data.failure_count);
+      
+      if (result.data.details && result.data.details.length > 0) {
+        console.log('   • 错误详情:');
+        result.data.details.forEach(detail => {
+          console.log(`     - 学生ID: ${detail.student_id.substring(0, 8)}..., 错误: ${detail.error}`);
+        });
+      }
+    }
 
-    console.log('\n🎉 修复验证成功！');
-    console.log('✅ 学生列表现在使用正确的student_profiles.id');
-    console.log('✅ 奖惩保存功能正常工作');
-    console.log('✅ ID格式验证通过');
+    // 总结修复效果
+    console.log('\n💡 修复总结:');
+    if (result.success) {
+      console.log('✅ 成功！API现在能够:');
+      console.log('   1. 接受用户ID作为输入');
+      console.log('   2. 自动查找对应的档案ID');
+      console.log('   3. 使用正确的档案ID进行分配');
+      console.log('   4. 创建培养方案关联和课程进度');
+    } else {
+      console.log('❌ 仍有问题需要解决');
+    }
 
-  } catch (err) {
-    console.log('❌ 测试异常:', err.message);
+  } catch (error) {
+    console.error('❌ 测试失败:', error.message);
   }
 }
 

@@ -79,12 +79,15 @@ const TeacherStudentList: React.FC = () => {
       // 这里应该从认证状态中获取当前教师的ID，暂时使用固定的UUID
       const currentTeacherId = '00000000-0000-0000-0000-000000000001';
       
+      console.log('获取教师学生列表:', { currentTeacherId, searchTerm, currentPage, pageSize });
+      
       const result = await UserService.getTeacherStudents(currentTeacherId, {
         keyword: searchTerm,
         page: currentPage,
         limit: pageSize
       });
       
+      console.log('教师学生列表结果:', result);
       setStudentsData(result.students);
       setStudentsTotal(result.total);
     } catch (error) {
@@ -443,6 +446,8 @@ ${errorDetails}${moreErrors}`);
       // 修复：selectedStudents中已经是档案ID，直接使用不需要映射
       const studentIds = Array.from(selectedStudents);
 
+      console.log('开始分配培养方案:', { programId: selectedProgram, studentIds, teacherId });
+
       const response = await fetch(`/api/teacher/${teacherId}/batch-assign-training-program`, {
         method: 'POST',
         headers: {
@@ -456,6 +461,7 @@ ${errorDetails}${moreErrors}`);
       });
 
       const result = await response.json();
+      console.log('分配响应:', result);
 
       if (result.success) {
         const { success_count, failure_count, total_count } = result.data;
@@ -496,7 +502,9 @@ ${errorDetails}${moreErrors}`);
         setSelectedStudents(new Set());
         
         // 刷新学生列表数据
+        console.log('开始刷新学生列表...');
         await fetchTeacherStudents();
+        console.log('学生列表刷新完成');
         
         // 如果有成功的分配，显示额外提示
         if (success_count > 0) {
@@ -1630,6 +1638,10 @@ const StudentForm: React.FC<StudentFormProps> = ({ student, onSave, onCancel }) 
 };
 
 export default TeacherStudentList;
+
+
+
+
 
 
 
