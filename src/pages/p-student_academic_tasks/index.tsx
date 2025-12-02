@@ -682,7 +682,7 @@ const StudentAcademicTasks: React.FC = () => {
                 <select 
                   value={selectedSemester}
                   onChange={(e) => handleSemesterChange(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent bg-white w-48"
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent bg-white w-48"
                 >
                   {semesters.map(semester => (
                     <option key={semester.value} value={semester.value}>
@@ -844,11 +844,11 @@ const StudentAcademicTasks: React.FC = () => {
                     </div>
                   </div>
                   <Button 
-                    variant="text"
+                    variant={editingCourse === course.id ? "outline" : "text"}
                     onClick={() => editingCourse === course.id ? handleCancelEdit() : handleEditCourse(course.id)}
                     className={`px-4 py-2 rounded-lg transition-all duration-200 flex items-center ${
                       editingCourse === course.id 
-                        ? 'border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 hover:border-gray-400' 
+                        ? 'border border-gray-300 text-text-secondary bg-white hover:bg-gray-50' 
                         : 'bg-secondary text-white hover:bg-accent'
                     }`}
                   >
@@ -873,7 +873,7 @@ const StudentAcademicTasks: React.FC = () => {
                           course.tags.map((tag, index) => (
                             <span 
                               key={index}
-                              className="inline-flex items-center px-3 py-1 text-sm bg-purple-100 text-purple-800 rounded-full"
+                              className="inline-flex items-center px-3 py-1 text-sm bg-primary text-accent rounded-full"
                             >
                               {tag}
                               <button
@@ -901,15 +901,15 @@ const StudentAcademicTasks: React.FC = () => {
                             }
                           }}
                           placeholder="输入自定义标签后按回车添加"
-                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
                         />
-                        <Button
+                        <button
                           onClick={() => handleAddTag(course.id, tagInput[course.id] || '')}
                           className="px-4 py-2 bg-secondary text-white hover:bg-accent rounded-lg transition-colors flex items-center"
                         >
                           <i className="fas fa-plus mr-1"></i>
                           添加
-                        </Button>
+                        </button>
                       </div>
                       
                       {/* 常用标签选择 */}
@@ -924,7 +924,7 @@ const StudentAcademicTasks: React.FC = () => {
                               className={`px-3 py-1 text-sm rounded-full transition-colors ${
                                 course.tags.includes(tag)
                                   ? 'bg-gray-200 text-gray-400 cursor-not-allowed'
-                                  : 'bg-gray-100 text-gray-700 hover:bg-purple-100 hover:text-purple-800'
+                                  : 'bg-gray-100 text-text-secondary hover:bg-primary hover:text-accent'
                               }`}
                             >
                               {tag}
@@ -939,7 +939,7 @@ const StudentAcademicTasks: React.FC = () => {
                         course.tags.map((tag, index) => (
                           <span 
                             key={index}
-                            className="inline-flex items-center px-3 py-1 text-sm bg-purple-100 text-purple-800 rounded-full"
+                            className="inline-flex items-center px-3 py-1 text-sm bg-primary text-accent rounded-full"
                           >
                             <i className="fas fa-tag mr-1 text-xs"></i>
                             {tag}
@@ -970,7 +970,7 @@ const StudentAcademicTasks: React.FC = () => {
                           onChange={(value) => handleCourseChange(course.id, 'outcomes', value)}
                           placeholder="请描述您在本课程中的学习收获和体会..."
                           rows={4}
-                          className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-accent focus:border-transparent"
                         />
                       ) : (
                         <div className="min-h-[100px] p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -992,7 +992,7 @@ const StudentAcademicTasks: React.FC = () => {
                           onChange={(value) => handleCourseChange(course.id, 'achievements', value)}
                           placeholder="请描述您在本课程中取得的具体成果和成就..."
                           rows={4}
-                          className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                          className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-accent focus:border-transparent"
                         />
                       ) : (
                         <div className="min-h-[100px] p-4 bg-gray-50 rounded-lg border border-gray-200">
@@ -1016,14 +1016,13 @@ const StudentAcademicTasks: React.FC = () => {
                         <i className="fas fa-times mr-2"></i>
                         取消
                       </Button>
-                      <Button 
-                        theme="primary" 
+                      <button 
                         onClick={() => handleSaveCourse(course.id)} 
                         className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors flex items-center"
                       >
                         <i className="fas fa-save mr-2"></i>
                         保存更改
-                      </Button>
+                      </button>
                     </div>
                   )}
                 </div>

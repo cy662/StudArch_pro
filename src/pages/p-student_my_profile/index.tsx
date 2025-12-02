@@ -442,21 +442,7 @@ const StudentMyProfile: React.FC = () => {
                     {loading ? '加载中...' : (studentProfile?.emergency_phone || '未知')}
                   </span>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-text-secondary">个人状态：</span>
-                  <span className={`font-medium ${
-                    loading ? 'text-gray-400' :
-                    studentProfile?.profile_status === 'approved' ? 'text-green-600' :
-                    studentProfile?.profile_status === 'pending' ? 'text-orange-600' :
-                    'text-red-600'
-                  }`}>
-                    {loading ? '加载中...' : 
-                     studentProfile?.profile_status === 'approved' ? '已审核' :
-                     studentProfile?.profile_status === 'pending' ? '待审核' :
-                     studentProfile?.profile_status === 'rejected' ? '已驳回' : '未填写'
-                    }
-                  </span>
-                </div>
+
               </div>
             </div>
           </div>

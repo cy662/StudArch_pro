@@ -1,5 +1,3 @@
-
-
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { message } from 'antd';
@@ -47,8 +45,6 @@ const StudentDashboard: React.FC = () => {
     handleCloseReminder();
     navigate('/student-profile-edit');
   };
-
-
 
   const handleLogoutClick = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -204,7 +200,7 @@ const StudentDashboard: React.FC = () => {
           
           <!-- 统一技术标签展示 -->
           <div style="margin-bottom: 30px;">
-            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">🏷️ 技术标签汇总</h2>
+            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">技术标签汇总</h2>
             <div style="display: flex; flex-wrap: wrap; gap: 8px;">
               ${learningInfo.technical_tags.length > 0 
                 ? [...new Set(learningInfo.technical_tags.map(tag => tag.tag_name))].sort().map(tagName => 
@@ -223,130 +219,126 @@ const StudentDashboard: React.FC = () => {
             </div>
             ${learningInfo.technical_tags.length > 0 ? `
               <div style="margin-top: 10px; font-size: 12px; color: #666;">
-                📊 共掌握 ${[...new Set(learningInfo.technical_tags.map(tag => tag.tag_name))].length} 项技术技能
+                共掌握 ${[...new Set(learningInfo.technical_tags.map(tag => tag.tag_name))].length} 项技术技能
               </div>
             ` : ''}
           </div>
           
           <!-- 课程学习详情（按课程分组展示收获和成果） -->
           <div style="margin-bottom: 30px;">
-            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">📚 课程学习详情</h2>
+            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">课程学习详情</h2>
             
-            ${
-              // 按课程分组数据
-              (() => {
-                const courseGroups: Record<string, {achievements: any[], outcomes: any[]}> = {};
-                
-                // 处理学习收获
-                learningInfo.learning_achievements.forEach((achievement: any) => {
-                  const courseName = achievement.related_course || 
-                                   achievement.title?.split(' - ')[0] || 
-                                   '未分类收获';
-                  if (!courseGroups[courseName]) {
-                    courseGroups[courseName] = { achievements: [], outcomes: [] };
-                  }
-                  courseGroups[courseName].achievements.push(achievement);
-                });
-                
-                // 处理学习成果
-                learningInfo.learning_outcomes.forEach((outcome: any) => {
-                  const courseName = outcome.related_course || 
-                                   outcome.outcome_title?.split(' - ')[0] || 
-                                   '未分类成果';
-                  if (!courseGroups[courseName]) {
-                    courseGroups[courseName] = { achievements: [], outcomes: [] };
-                  }
-                  courseGroups[courseName].outcomes.push(outcome);
-                });
-                
-                return Object.keys(courseGroups).length > 0 
-                  ? Object.entries(courseGroups).map(([courseName, data], index) => `
-                    <div style="
-                      margin-bottom: 25px;
-                      padding: 20px;
-                      background: white;
-                      border: 1px solid #e1e8ed;
-                      border-radius: 8px;
-                      box-shadow: 0 2px 8px rgba(0,0,0,0.05);
-                    ">
-                      <!-- 课程标题 -->
-                      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
-                        <h3 style="
-                          font-size: 16px;
-                          font-weight: bold;
-                          color: #2c3e50;
-                          margin: 0;
-                        ">${index + 1}. ${courseName}</h3>
-                        <div style="display: flex; align-items: center; gap: 10px; font-size: 12px;">
-                          <span style="
-                            padding: 4px 8px;
-                            background: #d4edda;
-                            color: #155724;
-                            border-radius: 4px;
-                            font-weight: 500;
-                          ">已录入</span>
-                        </div>
-                      </div>
+            ${learningInfo.courses.length > 0 
+              ? learningInfo.courses.map((course, index) => {
+                  // 找到该课程的学习收获
+                  const courseAchievement = learningInfo.learning_achievements.find(
+                    achievement => achievement.related_course === course.course_name
+                  );
+                  
+                  // 找到该课程的学习成果
+                  const courseOutcome = learningInfo.learning_outcomes.find(
+                    outcome => outcome.related_course === course.course_name
+                  );
+                  
+                  // 找到该课程的技术标签
+                  const courseTags = learningInfo.technical_tags
+                    .filter(tag => tag.description?.includes(course.course_name))
+                    .map(tag => tag.tag_name);
 
-                      <!-- 学习收获 -->
-                      <div style="margin-bottom: 15px;">
-                        <div style="font-size: 13px; font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: flex; align-items: center;">
-                          <span style="margin-right: 5px;">💡</span> 学习收获
-                        </div>
-                        <div style="
-                          padding: 12px;
-                          background: #fefefe;
-                          border: 1px solid #f0f0f0;
-                          border-radius: 6px;
-                          font-size: 13px;
-                          line-height: 1.6;
-                          color: #555;
-                          min-height: 40px;
-                        ">
-                          ${data.achievements.length > 0 
-                            ? (() => {
-                                // 按更新时间排序，取最新的
-                                const latestAchievement = data.achievements.sort((a, b) => 
-                                  new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
-                                )[0];
-                                return latestAchievement.content || latestAchievement.description || '暂无详细描述';
-                              })()
-                            : '<span style="color: #999; font-style: italic;">暂未填写学习收获</span>'
-                          }
-                        </div>
-                      </div>
-
-                      <!-- 学习成果 -->
-                      <div>
-                        <div style="font-size: 13px; font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: flex; align-items: center;">
-                          <span style="margin-right: 5px;">🏆</span> 学习成果
-                        </div>
-                        <div style="
-                          padding: 12px;
-                          background: #fefefe;
-                          border: 1px solid #f0f0f0;
-                          border-radius: 6px;
-                          font-size: 13px;
-                          line-height: 1.6;
-                          color: #555;
-                          min-height: 40px;
-                        ">
-                          ${data.outcomes.length > 0 
-                            ? (() => {
-                                // 按更新时间排序，取最新的
-                                const latestOutcome = data.outcomes.sort((a, b) => 
-                                  new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at)
-                                )[0];
-                                return latestOutcome.outcome_description || latestOutcome.description || '暂无详细描述';
-                              })()
-                            : '<span style="color: #999; font-style: italic;">暂未填写学习成果</span>'
-                          }
-                        </div>
+                  return `
+                  <div style="
+                    margin-bottom: 25px;
+                    padding: 20px;
+                    background: white;
+                    border: 1px solid #e1e8ed;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 8px rgba(0,0,0,0.05);
+                  ">
+                    <!-- 课程标题 -->
+                    <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+                      <h3 style="
+                        font-size: 16px;
+                        font-weight: bold;
+                        color: #2c3e50;
+                        margin: 0;
+                      ">${index + 1}. ${course.course_name}</h3>
+                      <div style="display: flex; align-items: center; gap: 10px; font-size: 12px;">
+                        <span style="
+                          padding: 4px 8px;
+                          background: ${course.status === 'completed' ? '#d4edda' : course.status === 'in_progress' ? '#fff3cd' : '#e2e3e5'};
+                          color: ${course.status === 'completed' ? '#155724' : course.status === 'in_progress' ? '#856404' : '#383d41'};
+                          border-radius: 4px;
+                          font-weight: 500;
+                        ">${course.status === 'completed' ? '已完成' : course.status === 'in_progress' ? '进行中' : '待开始'}</span>
+                        <span style="color: #666;">${course.credits || 0} 学分</span>
                       </div>
                     </div>
-                  `).join('')
-                  : '<div style="color: #999; text-align: center; padding: 20px;">📝 暂无课程学习数据</div>';
-              })()
+
+                    <!-- 课程信息 -->
+                    ${course.teacher ? `<div style="margin-bottom: 10px; font-size: 13px; color: #666;">授课教师：${course.teacher}</div>` : ''}
+
+                    <!-- 技术标签 -->
+                    ${courseTags.length > 0 ? `
+                      <div style="margin-bottom: 15px;">
+                        <div style="font-size: 13px; font-weight: 600; color: #2c3e50; margin-bottom: 8px;">课程相关技术标签：</div>
+                        <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                          ${courseTags.map(tag => `
+                            <span style="
+                              display: inline-block;
+                              padding: 4px 8px;
+                              background: #e3f2fd;
+                              color: #1976d2;
+                              border-radius: 12px;
+                              font-size: 11px;
+                              font-weight: 500;
+                              border: 1px solid #bbdefb;
+                            ">${tag}</span>
+                          `).join('')}
+                        </div>
+                      </div>
+                    ` : ''}
+
+                    <!-- 学习收获 -->
+                    <div style="margin-bottom: 15px;">
+                      <div style="font-size: 13px; font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="margin-right: 5px;">💡</span> 学习收获
+                      </div>
+                      <div style="
+                        padding: 12px;
+                        background: #fefefe;
+                        border: 1px solid #f0f0f0;
+                        border-radius: 6px;
+                        font-size: 13px;
+                        line-height: 1.6;
+                        color: #555;
+                        min-height: 40px;
+                      ">
+                        ${courseAchievement ? courseAchievement.content : '暂未填写学习收获'}
+                      </div>
+                    </div>
+
+                    <!-- 学习成果 -->
+                    <div>
+                      <div style="font-size: 13px; font-weight: 600; color: #2c3e50; margin-bottom: 8px; display: flex; align-items: center;">
+                        <span style="margin-right: 5px;">🏆</span> 学习成果
+                      </div>
+                      <div style="
+                        padding: 12px;
+                        background: #fefefe;
+                        border: 1px solid #f0f0f0;
+                        border-radius: 6px;
+                        font-size: 13px;
+                        line-height: 1.6;
+                        color: #555;
+                        min-height: 40px;
+                      ">
+                        ${courseOutcome ? courseOutcome.outcome_description : '暂未填写学习成果'}
+                      </div>
+                    </div>
+                  </div>
+                  `;
+                }).join('')
+              : '<p style="color: #999; text-align: center; padding: 20px;">暂无课程数据</p>'
             }
           </div>
           
@@ -358,44 +350,31 @@ const StudentDashboard: React.FC = () => {
             border-left: 4px solid #4299e1;
             margin-bottom: 30px;
           ">
-            <h3 style="font-size: 16px; font-weight: bold; color: #2c3e50; margin: 0 0 15px 0;">
-              <span style="margin-right: 5px;">📊</span>学习统计
-            </h3>
+            <h3 style="font-size: 16px; font-weight: bold; color: #2c3e50; margin: 0 0 15px 0;">学习统计</h3>
             <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; text-align: center;">
               <div>
                 <div style="font-size: 24px; font-weight: bold; color: #3498db; margin-bottom: 5px;">
-                  ${(() => {
-                    const courseGroups: Record<string, any> = {};
-                    learningInfo.learning_achievements.forEach((achievement: any) => {
-                      const courseName = achievement.related_course || achievement.title?.split(' - ')[0] || '未分类';
-                      courseGroups[courseName] = true;
-                    });
-                    learningInfo.learning_outcomes.forEach((outcome: any) => {
-                      const courseName = outcome.related_course || outcome.outcome_title?.split(' - ')[0] || '未分类';
-                      courseGroups[courseName] = true;
-                    });
-                    return Object.keys(courseGroups).length;
-                  })()}
+                  ${learningInfo.courses.length}
                 </div>
-                <div style="font-size: 12px; color: #666;">涉及课程数</div>
+                <div style="font-size: 12px; color: #666;">总课程数</div>
               </div>
               <div>
                 <div style="font-size: 24px; font-weight: bold; color: #27ae60; margin-bottom: 5px;">
-                  ${learningInfo.learning_achievements.length}
+                  ${learningInfo.courses.filter(c => c.status === 'completed').length}
                 </div>
-                <div style="font-size: 12px; color: #666;">收获记录</div>
+                <div style="font-size: 12px; color: #666;">已完成</div>
               </div>
               <div>
                 <div style="font-size: 24px; font-weight: bold; color: #f39c12; margin-bottom: 5px;">
-                  ${learningInfo.learning_outcomes.length}
+                  ${learningInfo.courses.filter(c => c.status === 'in_progress').length}
                 </div>
-                <div style="font-size: 12px; color: #666;">成果记录</div>
+                <div style="font-size: 12px; color: #666;">进行中</div>
               </div>
               <div>
                 <div style="font-size: 24px; font-weight: bold; color: #e74c3c; margin-bottom: 5px;">
-                  ${[...new Set(learningInfo.technical_tags.map((tag: any) => tag.tag_name))].length}
+                  ${learningInfo.courses.reduce((sum, c) => sum + (c.credits || 0), 0)}
                 </div>
-                <div style="font-size: 12px; color: #666;">技术技能</div>
+                <div style="font-size: 12px; color: #666;">总学分</div>
               </div>
             </div>
           </div>
@@ -454,7 +433,7 @@ const StudentDashboard: React.FC = () => {
     navigate(path);
   };
 
-  return (
+ return (
     <div className={styles.pageWrapper}>
       {/* 顶部导航栏 */}
       <header className="fixed top-0 left-0 right-0 bg-white border-b border-border-light h-16 z-50">
@@ -665,14 +644,8 @@ const StudentDashboard: React.FC = () => {
                 </div>
               </div>
             </div>
-
-
-
-
           </div>
         </section>
-
-
 
         {/* 快捷操作区 */}
         <section className="mb-8">
@@ -744,7 +717,7 @@ const StudentDashboard: React.FC = () => {
             
             {/* 导出档案 */}
             <div 
-              onClick={() => handleExportProfile()}
+              onClick={handleExportProfile}
               className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300 cursor-pointer`}
             >
               <div className="flex items-center space-x-4">
@@ -760,11 +733,9 @@ const StudentDashboard: React.FC = () => {
           </div>
         </section>
 
-
       </main>
     </div>
   );
 };
 
 export default StudentDashboard;
-

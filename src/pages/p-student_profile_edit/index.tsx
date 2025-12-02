@@ -594,7 +594,7 @@ const StudentProfileEdit: React.FC = () => {
       {/* 主内容区 */}
       <main className="ml-64 mt-16 p-6 min-h-screen">
         {/* 首次登录提示 */}
-        {(!studentProfile || studentProfile.profile_status === 'incomplete') && (
+        {!studentProfile && (
           <div className="mb-6 bg-gradient-to-r from-blue-50 to-indigo-100 border-l-4 border-blue-500 p-6 rounded-lg">
             <div className="flex items-center space-x-4">
               <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center">
@@ -625,18 +625,7 @@ const StudentProfileEdit: React.FC = () => {
               </nav>
             </div>
             <div className="flex items-center space-x-2">
-              {studentProfile && (
-                <span className={`px-3 py-1 rounded-full text-sm font-medium ${
-                  studentProfile.profile_status === 'approved' 
-                    ? 'bg-green-100 text-green-800' 
-                    : studentProfile.profile_status === 'pending'
-                    ? 'bg-yellow-100 text-yellow-800'
-                    : 'bg-red-100 text-red-800'
-                }`}>
-                  {studentProfile.profile_status === 'approved' ? '已审核' : 
-                   studentProfile.profile_status === 'pending' ? '待审核' : '未完善'}
-                </span>
-              )}
+
               
             </div>
           </div>

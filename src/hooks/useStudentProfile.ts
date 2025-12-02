@@ -32,8 +32,8 @@ export const useStudentProfile = (userId: string) => {
       }
     }
     
-    // 检查状态是否为已审核通过
-    return profile.profile_status === 'approved'
+    // 移除审核状态要求，只要必填字段完整即可
+    return true
   }
 
   /**
