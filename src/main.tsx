@@ -23,8 +23,8 @@ window.onerror = function(message, source, lineno, colno, error) {
     window.parent.postMessage({
       type: 'chux:error',
       error: {
-        message: error.message || error.statusText,
-        stack: error.stack,
+        message: event.reason?.message || event.reason?.statusText,
+        stack: event.reason?.stack,
       },
     }, 'https://www.coze.cn');
   }
