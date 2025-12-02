@@ -384,21 +384,7 @@
   transition: width 0.3s ease;
 }
 
-/* 文件上传区域样式 - 仿照毕业去向填报 */
-.fileUploadArea {
-  border: 2px dashed #d1d5db;
-  transition: all 0.3s ease;
-}
 
-.fileUploadArea:hover {
-  border-color: #745ab8;
-  background-color: #f9fafb;
-}
-
-.fileUploadAreaDragover {
-  border-color: #745ab8;
-  background-color: #e1daf0;
-}
 
 /* 响应式设计 */
 @media (max-width: 768px) {

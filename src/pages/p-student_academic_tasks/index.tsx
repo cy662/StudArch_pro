@@ -3,8 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { useAuth } from '../../hooks/useAuth';
 import useStudentProfile from '../../hooks/useStudentProfile';
-import { Button, Upload, Textarea, Progress, Divider } from 'tdesign-react';
-import { UploadIcon, AssignmentIcon, CalendarIcon, CheckCircleIcon } from 'tdesign-icons-react';
+import { Button, Textarea, Progress, Divider } from 'tdesign-react';
+import { UploadIcon, AssignmentIcon, CalendarIcon } from 'tdesign-icons-react';
 
 // 类型定义
 interface Course {
@@ -16,7 +16,6 @@ interface Course {
   tags: string[];
   outcomes: string;
   achievements: string;
-  proofFiles: File[];
   startDate: string;
   endDate: string;
   description: string;
@@ -240,7 +239,6 @@ const StudentAcademicTasks: React.FC = () => {
             tags: ['数据结构', '算法', 'C++', 'Python'],
             outcomes: '掌握了基本数据结构，理解了算法复杂度分析',
             achievements: '完成了所有实验项目，期中成绩85分',
-            proofFiles: [],
             startDate: '2024-02-26',
             endDate: '2024-07-15',
             description: '本课程主要讲授数据结构的基本概念和算法设计与分析方法'
@@ -275,7 +273,6 @@ const StudentAcademicTasks: React.FC = () => {
             tags: [], // 标签可以从课程性质或分类中提取
             outcomes: '',
             achievements: '',
-            proofFiles: [],
             startDate: '2024-02-26', // 可以从实际数据中获取
             endDate: '2024-07-15',   // 可以从实际数据中获取
             description: course.course_description || `${course.course_name} - ${course.course_nature}`,
@@ -309,7 +306,6 @@ const StudentAcademicTasks: React.FC = () => {
           tags: [],
           outcomes: '',
           achievements: '',
-          proofFiles: [],
           startDate: '',
           endDate: '',
           description: '无法加载培养方案数据，请检查网络连接或联系管理员'
@@ -465,39 +461,7 @@ const StudentAcademicTasks: React.FC = () => {
         console.warn('学习成果同步API调用失败:', error);
       }
 
-      // 4. 保存证明材料（这部分暂时保持不变，因为证明材料通常是新增的）
-      if (course.proofFiles.length > 0) {
-        for (const file of course.proofFiles) {
-          try {
-            // 这里应该先上传文件到服务器获取URL，暂时使用文件名
-            const materialResponse = await fetch('/api/student-learning/add-proof-material', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                student_profile_id: currentStudentId,
-                material_name: file.name,
-                material_description: `${course.name} - 证明材料`,
-                material_type: 'course_certificate',
-                material_url: `/uploads/${file.name}`, // 临时URL，需要实际的上传逻辑
-                upload_date: new Date().toISOString().split('T')[0],
-                verification_status: 'pending'
-              })
-            });
 
-            if (materialResponse.ok) {
-              const result = await materialResponse.json();
-              console.log('证明材料保存成功:', file.name, result);
-            } else {
-              const errorData = await materialResponse.json().catch(() => ({}));
-              console.warn('证明材料保存失败:', file.name, errorData);
-            }
-          } catch (error) {
-            console.warn('证明材料API调用失败:', error);
-          }
-        }
-      }
 
       alert('课程信息同步成功！已更新现有数据，不会产生重复记录。');
       setEditingCourse(null);
@@ -526,12 +490,7 @@ const StudentAcademicTasks: React.FC = () => {
     ));
   };
 
-  // 文件上传处理
-  const handleFileUpload = (courseId: string, files: File[]) => {
-    setCourses(prev => prev.map(course => 
-      course.id === courseId ? { ...course, proofFiles: [...course.proofFiles, ...files] } : course
-    ));
-  };
+
 
   // 添加标签
   const handleAddTag = (courseId: string, tag: string) => {
@@ -1045,120 +1004,7 @@ const StudentAcademicTasks: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* 证明材料上传 */}
-                  <div className="mb-6 space-y-4">
-                    <h3 className="text-lg font-semibold text-text-primary border-b border-border-light pb-2">证明材料上传</h3>
-                    
-                    <div className="space-y-4">
-                      <div className="space-y-2">
-                        <label className="block text-sm font-medium text-text-primary">
-                          上传证明材料 <span className="text-text-secondary">(支持PDF、JPG、PNG、DOC、DOCX格式，单个文件不超过10MB)</span>
-                        </label>
-                        
-                        {editingCourse === course.id ? (
-                          <div className={`${styles.fileUploadArea} rounded-lg p-8 text-center cursor-pointer`}
-                               onClick={() => document.getElementById(`file-input-${course.id}`)?.click()}
-                               onDragOver={(e) => e.preventDefault()}
-                               onDragLeave={(e) => e.currentTarget.classList.remove(styles.fileUploadAreaDragover)}
-                               onDrop={(e) => {
-                                 e.preventDefault();
-                                 e.currentTarget.classList.remove(styles.fileUploadAreaDragover);
-                                 const files = Array.from(e.dataTransfer.files);
-                                 handleFileUpload(course.id, files);
-                               }}>
-                            <input 
-                              id={`file-input-${course.id}`}
-                              type="file" 
-                              multiple 
-                              accept=".pdf,.jpg,.jpeg,.png,.doc,.docx" 
-                              onChange={(e) => {
-                                const files = Array.from(e.target.files || []);
-                                handleFileUpload(course.id, files);
-                              }}
-                              className="hidden" 
-                            />
-                            
-                            {/* 上传占位符 */}
-                            {course.proofFiles.length === 0 && (
-                              <div className="space-y-4">
-                                <div className="w-16 h-16 bg-gradient-to-br from-secondary to-accent rounded-full flex items-center justify-center mx-auto">
-                                  <i className="fas fa-cloud-upload-alt text-white text-2xl"></i>
-                                </div>
-                                <div>
-                                  <p className="text-lg font-medium text-text-primary">点击或拖拽文件到此处上传</p>
-                                  <p className="text-sm text-text-secondary mt-1">支持多文件上传</p>
-                                </div>
-                              </div>
-                            )}
-                            
-                            {/* 已上传文件列表 */}
-                            {course.proofFiles.length > 0 && (
-                              <div className="space-y-2">
-                                {course.proofFiles.map((file, index) => (
-                                  <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                    <div className="flex items-center space-x-3">
-                                      <CheckCircleIcon className="text-green-500" />
-                                      <i className="fas fa-file-alt text-gray-400"></i>
-                                      <span className="text-sm text-gray-700">{file.name}</span>
-                                    </div>
-                                    <div className="flex items-center space-x-2">
-                                      <span className="text-xs text-gray-500">{Math.round(file.size / 1024)}KB</span>
-                                      <button 
-                                        type="button" 
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          // 这里可以添加删除文件的逻辑
-                                        }}
-                                        className="text-red-500 hover:text-red-700 transition-colors"
-                                      >
-                                        <i className="fas fa-times"></i>
-                                      </button>
-                                    </div>
-                                  </div>
-                                ))}
-                                
-                                {/* 继续上传提示 */}
-                                <div className="text-center pt-4">
-                                  <p className="text-sm text-text-secondary">点击或拖拽更多文件到此处继续上传</p>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        ) : (
-                          <div className="bg-white rounded-xl shadow-card border border-gray-100 p-6">
-                            {course.proofFiles.length > 0 ? (
-                              <div>
-                                <div className="flex items-center justify-between mb-4">
-                                  <h4 className="text-sm font-medium text-gray-800">已上传文件</h4>
-                                  <span className="text-xs text-gray-500">共 {course.proofFiles.length} 个文件</span>
-                                </div>
-                                <div className="space-y-3">
-                                  {course.proofFiles.map((file, index) => (
-                                    <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                                      <div className="flex items-center space-x-3">
-                                        <CheckCircleIcon className="text-green-500" />
-                                        <i className="fas fa-file-alt text-gray-400"></i>
-                                        <span className="text-sm text-gray-700">{file.name}</span>
-                                      </div>
-                                      <span className="text-xs text-gray-500">{Math.round(file.size / 1024)}KB</span>
-                                    </div>
-                                  ))}
-                                </div>
-                              </div>
-                            ) : (
-                              <div className="text-center py-8">
-                                <div className="w-16 h-16 bg-gradient-to-br from-gray-100 to-gray-200 rounded-full flex items-center justify-center mx-auto mb-4">
-                                  <i className="fas fa-folder-open text-2xl text-gray-400"></i>
-                                </div>
-                                <h4 className="text-sm font-medium text-gray-600 mb-1">暂未上传证明材料</h4>
-                                <p className="text-xs text-gray-500">点击编辑按钮上传相关证明文件</p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </div>
+
 
                   {editingCourse === course.id && (
                     <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100">

@@ -62,11 +62,7 @@ const createMissingTables = async () => {
       console.warn('创建student_learning_outcomes表失败:', outcomeError.message);
     }
     
-    // 创建学生证明材料表
-    const { error: materialError } = await supabase.rpc('create_student_proof_materials_table');
-    if (materialError && materialError.code !== 'PGRST116') {
-      console.warn('创建student_proof_materials表失败:', materialError.message);
-    }
+
   } catch (error) {
     console.warn('创建表的过程中出错:', error.message);
   }
@@ -299,78 +295,7 @@ router.post('/student-learning/add-learning-outcome', async (req, res) => {
   }
 });
 
-// 4. 添加证明材料
-router.post('/student-learning/add-proof-material', async (req, res) => {
-  try {
-    const {
-      student_profile_id,
-      material_name,
-      material_description,
-      material_type = 'course_certificate',
-      material_url,
-      upload_date,
-      verification_status = 'pending',
-      verification_date,
-      verifier_id,
-      verification_notes,
-      access_permissions,
-      file_hash
-    } = req.body;
 
-    // 验证必填字段
-    if (!student_profile_id || !material_name) {
-      return res.status(400).json({
-        success: false,
-        message: '缺少必填字段：student_profile_id, material_name'
-      });
-    }
-
-    // 验证学生档案
-    const validation = await validateStudentProfile(student_profile_id);
-    if (!validation.valid) {
-      return res.status(400).json({
-        success: false,
-        message: validation.error
-      });
-    }
-
-    // 直接插入到数据库
-    const { data, error } = await supabase
-      .from('student_proof_materials')
-      .insert({
-        student_profile_id,
-        material_name,
-        material_description,
-        material_type,
-        material_url,
-        upload_date: upload_date || new Date().toISOString().split('T')[0],
-        verification_status,
-        verification_date,
-        verifier_id,
-        verification_notes,
-        access_permissions,
-        file_hash,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-      .select()
-      .single();
-
-    if (error) {
-      return handleApiError(error, res, '添加证明材料失败');
-    }
-
-    console.log('✅ 证明材料已保存到数据库:', material_name);
-    res.json({
-      success: true,
-      message: '证明材料添加成功',
-      data
-    });
-
-  } catch (error) {
-    handleApiError(error, res, '添加证明材料时发生错误');
-  }
-});
 
 // 5. 获取学生学习信息汇总
 router.get('/student-learning/get-summary/:student_profile_id', async (req, res) => {
@@ -414,11 +339,7 @@ router.get('/student-learning/get-summary/:student_profile_id', async (req, res)
       .eq('student_profile_id', student_profile_id)
       .eq('status', 'active');
 
-    // 获取证明材料
-    const { data: materials } = await supabase
-      .from('student_proof_materials')
-      .select('*')
-      .eq('student_profile_id', student_profile_id);
+
 
     res.json({
       success: true,
@@ -427,8 +348,7 @@ router.get('/student-learning/get-summary/:student_profile_id', async (req, res)
         student_info: validation.student,
         technical_tags: tags || [],
         learning_achievements: achievements || [],
-        learning_outcomes: outcomes || [],
-        proof_materials: materials || []
+        learning_outcomes: outcomes || []
       }
     });
 

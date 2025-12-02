@@ -18,7 +18,7 @@ async function testDatabaseConnection() {
   
   try {
     // 检查表是否存在
-    const tables = ['student_profiles', 'student_technical_tags', 'student_learning_achievements', 'student_learning_outcomes', 'student_proof_materials'];
+    const tables = ['student_profiles', 'student_technical_tags', 'student_learning_achievements', 'student_learning_outcomes'];
     
     for (const tableName of tables) {
       const { data, error } = await supabase
