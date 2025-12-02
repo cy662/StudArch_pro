@@ -6,6 +6,8 @@ import cors from 'cors';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import trainingProgramRoutes from './src/api/trainingProgramSimple.js';
+import studentLearningRoutes from './src/api/studentLearning.js';
+import quickFixStudentRoutes from './quick_fix_student_api.js';
 
 // 获取当前目录路径
 const __filename = fileURLToPath(import.meta.url);
@@ -30,6 +32,9 @@ app.get('/api/health', (req, res) => {
 
 // 培养方案相关API
 app.use('/api', trainingProgramRoutes);
+
+// 学生学习信息相关API（只使用修复后的版本）
+app.use('/api', studentLearningRoutes);
 
 // 静态文件服务（用于前端）
 app.use(express.static(join(__dirname, 'dist')));
