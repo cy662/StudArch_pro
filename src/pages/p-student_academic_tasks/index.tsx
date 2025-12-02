@@ -58,6 +58,7 @@ const StudentAcademicTasks: React.FC = () => {
   const [courses, setCourses] = useState<Course[]>([]);
   const [coursesLoading, setCoursesLoading] = useState(false);
   const [trainingProgramName, setTrainingProgramName] = useState<string>('');
+  const [learningDataLoaded, setLearningDataLoaded] = useState(false);
 
   // 编辑状态
   const [editingCourse, setEditingCourse] = useState<string | null>(null);
@@ -101,6 +102,114 @@ const StudentAcademicTasks: React.FC = () => {
     
     // 默认分类
     return 'other';
+  };
+
+  // 加载学生已保存的学习数据
+  const fetchStudentLearningData = async () => {
+    if (!studentProfile?.id) {
+      console.log('学生档案ID不存在，无法加载学习数据');
+      return;
+    }
+
+    try {
+      console.log('开始加载学生已保存的学习数据，学生档案ID:', studentProfile.id);
+      
+      const response = await fetch(`/api/student-learning/get-summary/${studentProfile.id}`);
+      
+      if (!response.ok) {
+        console.warn('获取学习数据失败，响应状态:', response.status);
+        return;
+      }
+      
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        console.log('获取到的学习数据:', result.data);
+        
+        // 将保存的学习数据合并到现有课程中
+        if (result.data.technical_tags && result.data.technical_tags.length > 0) {
+          // 将技术标签按相关课程分组
+          const tagsByCourse: Record<string, string[]> = {};
+          result.data.technical_tags.forEach((tag: any) => {
+            const courseName = tag.description?.replace('课程: ', '') || '未分类';
+            if (!tagsByCourse[courseName]) {
+              tagsByCourse[courseName] = [];
+            }
+            tagsByCourse[courseName].push(tag.tag_name);
+          });
+          
+          // 更新课程中的标签（只在没有标签时更新）
+          setCourses(prevCourses => 
+            prevCourses.map(course => ({
+              ...course,
+              tags: (!course.tags || course.tags.length === 0) ? (tagsByCourse[course.name] || []) : course.tags
+            }))
+          );
+        }
+        
+        if (result.data.learning_achievements && result.data.learning_achievements.length > 0) {
+          // 将学习收获按相关课程分组
+          const achievementsByCourse: Record<string, string> = {};
+          result.data.learning_achievements.forEach((achievement: any) => {
+            const courseName = achievement.related_course || '未分类';
+            achievementsByCourse[courseName] = achievement.content;
+          });
+          
+          // 更新课程中的学习收获（只在没有内容时更新）
+          setCourses(prevCourses => 
+            prevCourses.map(course => ({
+              ...course,
+              outcomes: (!course.outcomes || course.outcomes.trim() === '') ? (achievementsByCourse[course.name] || '') : course.outcomes
+            }))
+          );
+        }
+        
+        if (result.data.learning_outcomes && result.data.learning_outcomes.length > 0) {
+          // 将学习成果按相关课程分组，但只取最新的一个
+          const outcomesByCourse: Record<string, any> = {};
+          result.data.learning_outcomes.forEach((outcome: any) => {
+            let courseName = outcome.related_course;
+            
+            // 如果没有相关课程，尝试从标题中提取课程名
+            if (!courseName && outcome.outcome_title) {
+              const match = outcome.outcome_title.match(/^(.+?)\s*-\s*学习成果$/);
+              if (match) {
+                courseName = match[1];
+              }
+            }
+            
+            // 如果仍然没有找到，使用默认值
+            if (!courseName) {
+              courseName = '未分类';
+            }
+            
+            // 只保留最新的学习成果（根据创建时间）
+            if (!outcomesByCourse[courseName] || new Date(outcome.created_at) > new Date(outcomesByCourse[courseName].created_at)) {
+              outcomesByCourse[courseName] = outcome;
+            }
+            
+            console.log(`学习成果映射: ${courseName} -> ${outcome.outcome_description}`);
+          });
+          
+          // 更新课程中的学习成果（只显示最新的一条）
+          setCourses(prevCourses => 
+            prevCourses.map(course => {
+              const matchedOutcome = outcomesByCourse[course.name];
+              console.log(`课程 ${course.name} 匹配到学习成果:`, matchedOutcome);
+              return {
+                ...course,
+                achievements: matchedOutcome ? matchedOutcome.outcome_description : (course.achievements || '')
+              };
+            })
+          );
+        }
+        
+        console.log('✅ 学生学习数据加载并合并成功');
+        setLearningDataLoaded(true);
+      }
+    } catch (error) {
+      console.error('加载学生学习数据失败:', error);
+    }
   };
 
   // 加载学生的培养方案课程
@@ -218,12 +327,19 @@ const StudentAcademicTasks: React.FC = () => {
     return () => { document.title = originalTitle; };
   }, []);
 
-  // 页面加载时获取培养方案课程
+  // 页面加载时获取培养方案课程和学习数据
   useEffect(() => {
     if (studentProfile?.id) {
       fetchStudentTrainingProgramCourses();
     }
   }, [studentProfile?.id, selectedSemester]);
+
+  // 在课程加载完成后，加载已保存的学习数据
+  useEffect(() => {
+    if (studentProfile?.id && courses.length > 0 && !learningDataLoaded) {
+      fetchStudentLearningData();
+    }
+  }, [studentProfile?.id, courses, learningDataLoaded]);
 
   const handleLogoutClick = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -253,7 +369,7 @@ const StudentAcademicTasks: React.FC = () => {
     setEditingCourse(courseId);
   };
 
-  // 保存课程信息
+  // 保存课程信息（使用同步API，更新而非新增）
   const handleSaveCourse = async (courseId: string) => {
     // 使用固定的测试学生ID来确保API调用成功
     const testStudentId = 'f1c1aa0d-2169-4369-af14-3cadc6aa22b4';
@@ -261,11 +377,6 @@ const StudentAcademicTasks: React.FC = () => {
     
     console.log('保存课程信息，学生ID:', currentStudentId);
     
-    // if (!studentProfile?.id) {
-    //   alert('无法获取学生档案信息，请刷新页面重试');
-    //   return;
-    // }
-
     try {
       const course = courses.find(c => c.id === courseId);
       if (!course) {
@@ -273,105 +384,88 @@ const StudentAcademicTasks: React.FC = () => {
         return;
       }
 
-      console.log('开始保存课程信息:', course);
+      console.log('开始同步课程信息:', course);
       
-      // 1. 保存技术标签
+      // 1. 同步技术标签（使用新的sync接口）
       if (course.tags.length > 0) {
-        for (const tagName of course.tags) {
-          try {
-            const tagResponse = await fetch('/api/student-learning/add-technical-tag', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                student_profile_id: currentStudentId,
-                tag_name: tagName,
-                tag_category: getTagCategory(tagName), // 根据标签名称判断分类
-                proficiency_level: 'intermediate', // 默认中级
-                learned_at: new Date().toISOString().split('T')[0],
-                description: `课程: ${course.name}`
-              })
-            });
+        try {
+          const tagResponse = await fetch('/api/student-learning/sync-technical-tags', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              student_profile_id: currentStudentId,
+              course_name: course.name,
+              tags: course.tags
+            })
+          });
 
-          if (!tagResponse.ok) {
-            const errorData = await tagResponse.json().catch(() => ({}));
-            console.warn('保存技术标签失败:', tagName, errorData);
-          } else {
+          if (tagResponse.ok) {
             const result = await tagResponse.json();
-            console.log('技术标签保存成功:', tagName, result);
-          }
-          } catch (error) {
-            console.warn('技术标签API调用失败:', error);
-          }
-        }
-      }
-
-      // 2. 保存学习收获
-      if (course.outcomes.trim()) {
-        try {
-          const achievementResponse = await fetch('/api/student-learning/add-learning-achievement', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-              body: JSON.stringify({
-                student_profile_id: currentStudentId,
-                title: `${course.name} - 学习收获`,
-                content: course.outcomes,
-                achievement_type: 'skill',
-                achieved_at: new Date().toISOString().split('T')[0],
-                impact_level: 'medium',
-                related_course: course.name
-              })
-          });
-
-          if (achievementResponse.ok) {
-            const result = await achievementResponse.json();
-            console.log('学习收获保存成功:', result);
+            console.log('技术标签同步成功:', result);
           } else {
-            const errorData = await achievementResponse.json().catch(() => ({}));
-            console.warn('学习收获保存失败:', errorData);
+            const errorData = await tagResponse.json().catch(() => ({}));
+            console.warn('技术标签同步失败:', errorData);
           }
         } catch (error) {
-          console.warn('学习收获API调用失败:', error);
+          console.warn('技术标签同步API调用失败:', error);
         }
       }
 
-      // 3. 保存学习成果
-      if (course.achievements.trim()) {
-        try {
-          const outcomeResponse = await fetch('/api/student-learning/add-learning-outcome', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-              body: JSON.stringify({
-                student_profile_id: currentStudentId,
-                outcome_title: `${course.name} - 学习成果`,
-                outcome_description: course.achievements,
-                outcome_type: 'project',
-                start_date: course.startDate || new Date().toISOString().split('T')[0],
-                completion_date: course.endDate || new Date().toISOString().split('T')[0],
-                difficulty_level: 'medium',
-                completion_status: 'completed',
-                quality_rating: 3
-              })
-          });
+      // 2. 同步学习收获（使用新的sync接口）
+      try {
+        const achievementResponse = await fetch('/api/student-learning/sync-learning-achievement', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            student_profile_id: currentStudentId,
+            course_name: course.name,
+            content: course.outcomes
+          })
+        });
 
-          if (outcomeResponse.ok) {
-            const result = await outcomeResponse.json();
-            console.log('学习成果保存成功:', result);
-          } else {
-            const errorData = await outcomeResponse.json().catch(() => ({}));
-            console.warn('学习成果保存失败:', errorData);
-          }
-        } catch (error) {
-          console.warn('学习成果API调用失败:', error);
+        if (achievementResponse.ok) {
+          const result = await achievementResponse.json();
+          console.log('学习收获同步成功:', result);
+        } else {
+          const errorData = await achievementResponse.json().catch(() => ({}));
+          console.warn('学习收获同步失败:', errorData);
         }
+      } catch (error) {
+        console.warn('学习收获同步API调用失败:', error);
       }
 
-      // 4. 保存证明材料
+      // 3. 同步学习成果（使用新的sync接口）
+      try {
+        const outcomeResponse = await fetch('/api/student-learning/sync-learning-outcome', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            student_profile_id: currentStudentId,
+            course_name: course.name,
+            description: course.achievements,
+            start_date: course.startDate || new Date().toISOString().split('T')[0],
+            end_date: course.endDate || new Date().toISOString().split('T')[0]
+          })
+        });
+
+        if (outcomeResponse.ok) {
+          const result = await outcomeResponse.json();
+          console.log('学习成果同步成功:', result);
+        } else {
+          const errorData = await outcomeResponse.json().catch(() => ({}));
+          console.warn('学习成果同步失败:', errorData);
+        }
+      } catch (error) {
+        console.warn('学习成果同步API调用失败:', error);
+      }
+
+      // 4. 保存证明材料（这部分暂时保持不变，因为证明材料通常是新增的）
       if (course.proofFiles.length > 0) {
         for (const file of course.proofFiles) {
           try {
@@ -405,8 +499,14 @@ const StudentAcademicTasks: React.FC = () => {
         }
       }
 
-      alert('课程信息保存成功！');
+      alert('课程信息同步成功！已更新现有数据，不会产生重复记录。');
       setEditingCourse(null);
+      
+      // 重新加载学习数据以确保显示最新内容
+      setTimeout(() => {
+        setLearningDataLoaded(false); // 重置状态
+        fetchStudentLearningData();
+      }, 500);
       
     } catch (error) {
       console.error('保存课程信息失败:', error);
@@ -513,7 +613,7 @@ const StudentAcademicTasks: React.FC = () => {
               className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
             >
               <img 
-                src={studentProfile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/DQIklNDlQyw/"} 
+                src={studentProfile?.profile_photo || "https://s.coze.cn/image/DQIklNDlQyw/"} 
                 alt="学生头像" 
                 className="w-8 h-8 rounded-full object-cover" 
               />

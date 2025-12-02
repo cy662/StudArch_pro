@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>更新功能测试</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .test-section { margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 5px; }
+        .result { margin: 10px 0; padding: 10px; background: #f5f5f5; border-radius: 3px; }
+        .success { background: #d4edda; color: #155724; }
+        .error { background: #f8d7da; color: #721c24; }
+        button { padding: 10px 20px; margin: 5px; cursor: pointer; }
+        pre { white-space: pre-wrap; word-wrap: break-word; }
+    </style>
+</head>
+<body>
+    <h1>🧪 更新功能测试页面</h1>
+    <p>这个页面测试新的同步API功能，确保不会产生重复数据。</p>
+
+    <div class="test-section">
+        <h3>📝 测试1: 技术标签同步</h3>
+        <button onclick="testSyncTags()">第一次同步（应该创建）</button>
+        <button onclick="testSyncTagsUpdate()">第二次同步（应该跳过已存在）</button>
+        <div id="tagResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>📝 测试2: 学习收获同步</h3>
+        <button onclick="testSyncAchievement()">第一次同步（应该创建）</button>
+        <button onclick="testSyncAchievementUpdate()">第二次同步（应该更新）</button>
+        <div id="achievementResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>📝 测试3: 学习成果同步</h3>
+        <button onclick="testSyncOutcome()">第一次同步（应该创建）</button>
+        <button onclick="testSyncOutcomeUpdate()">第二次同步（应该更新）</button>
+        <div id="outcomeResult" class="result"></div>
+    </div>
+
+    <div class="test-section">
+        <h3>🔍 验证数据状态</h3>
+        <button onclick="checkDataStatus()">检查数据库状态</button>
+        <div id="statusResult" class="result"></div>
+    </div>
+
+    <script>
+        const TEST_STUDENT_ID = 'f1c1aa0d-2169-4369-af14-3cadc6aa22b4';
+        const TEST_COURSE = '数据结构与算法';
+
+        async function testSyncTags() {
+            showResult('tagResult', '正在测试第一次技术标签同步...', 'info');
+            try {
+                const response = await fetch('/api/student-learning/sync-technical-tags', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_profile_id: TEST_STUDENT_ID,
+                        course_name: TEST_COURSE,
+                        tags: ['JavaScript', 'React', 'Node.js']
+                    })
+                });
+                
+                const result = await response.json();
+                showResult('tagResult', `第一次同步结果: ${JSON.stringify(result, null, 2)}`, result.success ? 'success' : 'error');
+            } catch (error) {
+                showResult('tagResult', `错误: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSyncTagsUpdate() {
+            showResult('tagResult', '正在测试第二次技术标签同步...', 'info');
+            try {
+                const response = await fetch('/api/student-learning/sync-technical-tags', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_profile_id: TEST_STUDENT_ID,
+                        course_name: TEST_COURSE,
+                        tags: ['JavaScript', 'React', 'Node.js', 'TypeScript', 'Vue'] // 添加新标签
+                    })
+                });
+                
+                const result = await response.json();
+                showResult('tagResult', `第二次同步结果: ${JSON.stringify(result, null, 2)}`, result.success ? 'success' : 'error');
+            } catch (error) {
+                showResult('tagResult', `错误: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSyncAchievement() {
+            showResult('achievementResult', '正在测试第一次学习收获同步...', 'info');
+            try {
+                const response = await fetch('/api/student-learning/sync-learning-achievement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_profile_id: TEST_STUDENT_ID,
+                        course_name: TEST_COURSE,
+                        content: '掌握了基本数据结构，理解了算法复杂度分析'
+                    })
+                });
+                
+                const result = await response.json();
+                showResult('achievementResult', `第一次学习收获同步结果: ${JSON.stringify(result, null, 2)}`, result.success ? 'success' : 'error');
+            } catch (error) {
+                showResult('achievementResult', `错误: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSyncAchievementUpdate() {
+            showResult('achievementResult', '正在测试第二次学习收获同步...', 'info');
+            try {
+                const response = await fetch('/api/student-learning/sync-learning-achievement', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_profile_id: TEST_STUDENT_ID,
+                        course_name: TEST_COURSE,
+                        content: '掌握了基本数据结构，理解了算法复杂度分析，能够独立实现常见算法'
+                    })
+                });
+                
+                const result = await response.json();
+                showResult('achievementResult', `第二次学习收获同步结果: ${JSON.stringify(result, null, 2)}`, result.success ? 'success' : 'error');
+            } catch (error) {
+                showResult('achievementResult', `错误: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSyncOutcome() {
+            showResult('outcomeResult', '正在测试第一次学习成果同步...', 'info');
+            try {
+                const response = await fetch('/api/student-learning/sync-learning-outcome', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_profile_id: TEST_STUDENT_ID,
+                        course_name: TEST_COURSE,
+                        description: '完成了所有实验项目，期中成绩85分',
+                        start_date: '2024-02-26',
+                        end_date: '2024-07-15'
+                    })
+                });
+                
+                const result = await response.json();
+                showResult('outcomeResult', `第一次学习成果同步结果: ${JSON.stringify(result, null, 2)}`, result.success ? 'success' : 'error');
+            } catch (error) {
+                showResult('outcomeResult', `错误: ${error.message}`, 'error');
+            }
+        }
+
+        async function testSyncOutcomeUpdate() {
+            showResult('outcomeResult', '正在测试第二次学习成果同步...', 'info');
+            try {
+                const response = await fetch('/api/student-learning/sync-learning-outcome', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_profile_id: TEST_STUDENT_ID,
+                        course_name: TEST_COURSE,
+                        description: '完成了所有实验项目，期中成绩85分，期末成绩90分，获得优秀学生称号',
+                        start_date: '2024-02-26',
+                        end_date: '2024-07-15'
+                    })
+                });
+                
+                const result = await response.json();
+                showResult('outcomeResult', `第二次学习成果同步结果: ${JSON.stringify(result, null, 2)}`, result.success ? 'success' : 'error');
+            } catch (error) {
+                showResult('outcomeResult', `错误: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkDataStatus() {
+            showResult('statusResult', '正在检查数据库状态...', 'info');
+            try {
+                const response = await fetch(`/api/student-learning/get-summary/${TEST_STUDENT_ID}`);
+                const result = await response.json();
+                
+                if (result.success) {
+                    const data = result.data;
+                    const courseTags = data.technical_tags.filter(tag => tag.description === `课程: ${TEST_COURSE}`);
+                    const courseAchievements = data.learning_achievements.filter(a => a.related_course === TEST_COURSE);
+                    const courseOutcomes = data.learning_outcomes.filter(o => o.related_course === TEST_COURSE);
+                    
+                    let statusHTML = `
+                        <h4>📊 数据状态检查结果</h4>
+                        <p><strong>总技术标签:</strong> ${data.technical_tags.length}</p>
+                        <p><strong>总学习收获:</strong> ${data.learning_achievements.length}</p>
+                        <p><strong>总学习成果:</strong> ${data.learning_outcomes.length}</p>
+                        
+                        <h5>${TEST_COURSE} 相关数据:</h5>
+                        <p><strong>技术标签记录数:</strong> ${courseTags.length}</p>
+                        <p><strong>学习收获记录数:</strong> ${courseAchievements.length}</p>
+                        <p><strong>学习成果记录数:</strong> ${courseOutcomes.length}</p>
+                    `;
+                    
+                    if (courseTags.length <= 5 && courseAchievements.length <= 1 && courseOutcomes.length <= 1) {
+                        statusHTML += '<p class="success">✅ 更新功能正常！没有产生重复数据。</p>';
+                    } else {
+                        statusHTML += '<p class="error">❌ 警告：可能存在重复数据！</p>';
+                    }
+                    
+                    showResult('statusResult', statusHTML, 'success');
+                } else {
+                    showResult('statusResult', `获取数据失败: ${result.message}`, 'error');
+                }
+            } catch (error) {
+                showResult('statusResult', `错误: ${error.message}`, 'error');
+            }
+        }
+
+        function showResult(elementId, message, type) {
+            const element = document.getElementById(elementId);
+            element.innerHTML = `<pre>${message}</pre>`;
+            element.className = `result ${type}`;
+        }
+    </script>
+</body>
+</html>

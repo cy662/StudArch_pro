@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>直接测试同步API</title>
+</head>
+<body>
+    <h1>测试同步API功能</h1>
+    <button onclick="testSync()">测试同步学习成果</button>
+    <div id="result"></div>
+
+    <script>
+        async function testSync() {
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '测试中...';
+
+            try {
+                // 测试同步学习成果API
+                const response = await fetch('http://localhost:3001/api/student-learning/sync-learning-outcome', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        student_profile_id: 'f1c1aa0d-2169-4369-af14-3cadc6aa22b4',
+                        course_name: '数据结构与算法',
+                        description: '第一次测试：完成了算法练习',
+                        start_date: '2024-02-26',
+                        end_date: '2024-07-15'
+                    })
+                });
+
+                const result = await response.json();
+                resultDiv.innerHTML = '<pre>' + JSON.stringify(result, null, 2) + '</pre>';
+
+                // 立即再次测试相同的课程，应该更新
+                setTimeout(async () => {
+                    const updateResponse = await fetch('http://localhost:3001/api/student-learning/sync-learning-outcome', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            student_profile_id: 'f1c1aa0d-2169-4369-af14-3cadc6aa22b4',
+                            course_name: '数据结构与算法',
+                            description: '第二次测试：完成了算法练习，并且掌握了高级数据结构',
+                            start_date: '2024-02-26',
+                            end_date: '2024-07-15'
+                        })
+                    });
+
+                    const updateResult = await updateResponse.json();
+                    resultDiv.innerHTML += '<h3>更新结果：</h3><pre>' + JSON.stringify(updateResult, null, 2) + '</pre>';
+                }, 1000);
+
+            } catch (error) {
+                resultDiv.innerHTML = '错误: ' + error.message;
+            }
+        }
+    </script>
+</body>
+</html>
