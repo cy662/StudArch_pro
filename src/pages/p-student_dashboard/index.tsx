@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
+import { message } from 'antd';
 import styles from './styles.module.css';
 import { UserWithRole } from '../../types/user';
 import { useAuth } from '../../hooks/useAuth';
@@ -55,7 +56,192 @@ const StudentDashboard: React.FC = () => {
     }
   };
 
-
+  const handleExportProfile = async () => {
+    try {
+      // 显示导出提示
+      message.loading('档案导出中，请稍候...', 0);
+      
+      // 获取学生信息
+      const studentProfile = profile || {};
+      const userInfo = currentUser || {};
+      
+      // 获取学生学习信息（包含课程相关数据）
+      let learningInfo = {
+        technical_tags: [],
+        learning_achievements: [],
+        learning_outcomes: []
+      };
+      
+      if (studentProfile.id) {
+        try {
+          const response = await fetch(`/api/student-learning/get-summary/${studentProfile.id}`);
+          if (response.ok) {
+            const result = await response.json();
+            learningInfo = {
+              technical_tags: result.data.technical_tags || [],
+              learning_achievements: result.data.learning_achievements || [],
+              learning_outcomes: result.data.learning_outcomes || []
+            };
+          }
+        } catch (learningError) {
+          console.warn('获取学习信息失败，将不包含课程相关数据:', learningError);
+          // 继续导出基础信息，即使学习信息获取失败
+        }
+      }
+      
+      // 创建PDF内容的HTML元素
+      const pdfContent = document.createElement('div');
+      pdfContent.id = 'pdf-export-content';
+      pdfContent.style.position = 'fixed';
+      pdfContent.style.top = '0';
+      pdfContent.style.left = '0';
+      pdfContent.style.width = '100%';
+      pdfContent.style.height = '100%';
+      pdfContent.style.zIndex = '-1';
+      pdfContent.style.visibility = 'hidden';
+      pdfContent.style.padding = '2cm';
+      pdfContent.style.backgroundColor = 'white';
+      pdfContent.style.fontFamily = 'Arial, sans-serif';
+      
+      // 构建PDF内容
+      const exportDate = new Date();
+      const formattedDate = exportDate.toLocaleDateString('zh-CN');
+      
+      pdfContent.innerHTML = `
+        <div style="max-width: 210mm; margin: 0 auto;">
+          <!-- 标题部分 -->
+          <div style="text-align: center; margin-bottom: 30px;">
+            <h1 style="font-size: 24px; color: #333; margin-bottom: 10px;">学生档案</h1>
+            <p style="font-size: 14px; color: #666;">导出日期: ${formattedDate}</p>
+          </div>
+          
+          <!-- 个人信息部分 -->
+          <div style="margin-bottom: 30px;">
+            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">个人基本信息</h2>
+            <table style="width: 100%; border-collapse: collapse;">
+              <tbody>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">姓名:</td>
+                  <td style="width: 75%; padding: 8px 0;">${userInfo.name || userInfo.full_name || studentProfile.name || '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">学号:</td>
+                  <td style="width: 75%; padding: 8px 0;">${userInfo.username || studentProfile.student_id || '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">班级:</td>
+                  <td style="width: 75%; padding: 8px 0;">${userInfo.class_name || studentProfile.class_name || '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">专业:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.major || '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">性别:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.gender === 'male' ? '男' : studentProfile.gender === 'female' ? '女' : '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">出生日期:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.date_of_birth ? new Date(studentProfile.date_of_birth).toLocaleDateString('zh-CN') : '未知'}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          
+          <!-- 技术标签部分 -->
+          <div style="margin-bottom: 30px;">
+            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">技术标签</h2>
+            <div style="display: flex; flex-wrap: wrap; gap: 10px;">
+              ${learningInfo.technical_tags.length > 0 
+                ? learningInfo.technical_tags.map(tag => 
+                    `<span style="background-color: #f0f0f0; padding: 5px 10px; border-radius: 4px; font-size: 14px;">${tag}</span>`
+                  ).join('')
+                : '<p style="color: #999;">暂无技术标签信息</p>'
+              }
+            </div>
+          </div>
+          
+          <!-- 学习收获部分 -->
+          <div style="margin-bottom: 30px;">
+            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">学习收获</h2>
+            <div>
+              ${learningInfo.learning_achievements.length > 0 
+                ? learningInfo.learning_achievements.map((achievement, index) => 
+                    `<div style="margin-bottom: 10px;">
+                      <p style="font-weight: bold; margin-bottom: 5px;">${index + 1}. ${achievement.title || '学习收获'}</p>
+                      <p style="padding-left: 20px;">${achievement.description || ''}</p>
+                    </div>`
+                  ).join('')
+                : '<p style="color: #999;">暂无学习收获信息</p>'
+              }
+            </div>
+          </div>
+          
+          <!-- 学习成果部分 -->
+          <div style="margin-bottom: 30px;">
+            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">学习成果</h2>
+            <div>
+              ${learningInfo.learning_outcomes.length > 0 
+                ? learningInfo.learning_outcomes.map((outcome, index) => 
+                    `<div style="margin-bottom: 10px;">
+                      <p style="font-weight: bold; margin-bottom: 5px;">${index + 1}. ${outcome.title || '学习成果'}</p>
+                      <p style="padding-left: 20px;">${outcome.description || ''}</p>
+                    </div>`
+                  ).join('')
+                : '<p style="color: #999;">暂无学习成果信息</p>'
+              }
+            </div>
+          </div>
+        </div>
+      `;
+      
+      // 添加到DOM
+      document.body.appendChild(pdfContent);
+      
+      // 保存原始打印样式
+      const originalTitle = document.title;
+      document.title = `学生档案_${userInfo.name || userInfo.full_name || studentProfile.name || '未命名'}_${formattedDate}`;
+      
+      // 打印样式
+      const printStyle = document.createElement('style');
+      printStyle.id = 'print-style';
+      printStyle.textContent = `
+        @media print {
+          body > :not(#pdf-export-content) {
+            display: none !important;
+          }
+          
+          #pdf-export-content {
+            visibility: visible !important;
+            z-index: 9999 !important;
+            position: static !important;
+            padding: 0 !important;
+          }
+          
+          @page {
+            margin: 2cm;
+          }
+        }
+      `;
+      document.head.appendChild(printStyle);
+      
+      // 显示打印预览对话框
+      setTimeout(() => {
+        window.print();
+        
+        // 清理
+        document.body.removeChild(pdfContent);
+        document.head.removeChild(printStyle);
+        document.title = originalTitle;
+        
+        // 显示导出完成提示
+        message.success('档案已准备好导出，请在打印对话框中选择「保存为PDF」完成导出！');
+      }, 100);
+    } catch (error) {
+      console.error('导出档案失败:', error);
+      message.error('导出档案失败，请重试');
+    }
+  };
 
   const handleQuickActionClick = (path: string) => {
     navigate(path);
@@ -345,6 +531,22 @@ const StudentDashboard: React.FC = () => {
                 <div>
                   <h4 className="font-medium text-text-primary">下载证明</h4>
                   <p className="text-sm text-text-secondary">获取成绩单、在校证明等</p>
+                </div>
+              </div>
+            </div>
+            
+            {/* 导出档案 */}
+            <div 
+              onClick={() => handleExportProfile()}
+              className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300 cursor-pointer`}
+            >
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-purple-400 to-purple-600 rounded-lg flex items-center justify-center">
+                  <i className="fas fa-file-export text-white text-xl"></i>
+                </div>
+                <div>
+                  <h4 className="font-medium text-text-primary">导出档案</h4>
+                  <p className="text-sm text-text-secondary">导出完整个人档案信息</p>
                 </div>
               </div>
             </div>
