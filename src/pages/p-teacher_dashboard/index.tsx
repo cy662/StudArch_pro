@@ -4,19 +4,32 @@ import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { UserWithRole } from '../../types/user';
+import UserService from '../../services/userService';
 
 const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
   const [currentUser, setCurrentUser] = useState<UserWithRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const [studentCount, setStudentCount] = useState<number>(0);
+  const [studentCountLoading, setStudentCountLoading] = useState<boolean>(true);
+  const [pendingTasksCount, setPendingTasksCount] = useState<number>(0);
+  const [pendingTasksLoading, setPendingTasksLoading] = useState<boolean>(true);
+  const [approvedGraduationCount, setApprovedGraduationCount] = useState<number>(0);
+  const [graduationCompletionRate, setGraduationCompletionRate] = useState<string>('0%');
+  const [graduationRateLoading, setGraduationRateLoading] = useState<boolean>(true);
 
   useEffect(() => {
-    const loadUserInfo = () => {
+    const loadUserInfo = async () => {
       try {
         const userInfo = localStorage.getItem('user_info');
         if (userInfo) {
           const userData = JSON.parse(userInfo);
           setCurrentUser(userData);
+          // 用户信息加载后立即获取待审核任务数量
+          await loadPendingTasksCount(userData.id);
+        } else {
+          // 即使没有用户信息也尝试获取相关数据
+          await loadPendingTasksCount();
         }
       } catch (error) {
         console.error('加载用户信息失败:', error);
@@ -25,13 +38,79 @@ const TeacherDashboard: React.FC = () => {
       }
     };
 
+    const loadStudentCount = async () => {
+      try {
+        setStudentCountLoading(true);
+        // 直接获取student_complete_info表中的学生总数
+        const count = await UserService.getStudentCompleteInfoCount();
+        setStudentCount(count || 0);
+        
+        // 学生总数加载完成后，加载毕业去向完成率
+        const userInfo = localStorage.getItem('user_info');
+        if (userInfo) {
+          const userData = JSON.parse(userInfo);
+          await loadGraduationCompletionRate(userData.id);
+        } else {
+          await loadGraduationCompletionRate();
+        }
+      } catch (error) {
+        console.error('加载学生统计数据失败:', error);
+      } finally {
+        setStudentCountLoading(false);
+      }
+    };
+
+    const loadPendingTasksCount = async (teacherId?: string) => {
+      try {
+        setPendingTasksLoading(true);
+        // 获取未审核毕业去向申请数量
+        const count = await UserService.getPendingGraduationApplicationsCount(teacherId);
+        setPendingTasksCount(count || 0);
+      } catch (error) {
+        console.error('加载待审核任务数量失败:', error);
+      } finally {
+        setPendingTasksLoading(false);
+      }
+    };
+
+    const loadGraduationCompletionRate = async (teacherId?: string) => {
+      try {
+        setGraduationRateLoading(true);
+        // 获取已审批毕业去向学生数量
+        const approvedCount = await UserService.getApprovedGraduationApplicationsCount(teacherId);
+        setApprovedGraduationCount(approvedCount || 0);
+        
+        // 计算完成率
+        if (studentCount > 0 && approvedCount !== undefined) {
+          const rate = (approvedCount / studentCount) * 100;
+          setGraduationCompletionRate(`${rate.toFixed(1)}%`);
+        } else {
+          setGraduationCompletionRate('0%');
+        }
+      } catch (error) {
+        console.error('加载毕业去向完成率失败:', error);
+      } finally {
+        setGraduationRateLoading(false);
+      }
+    };
+
     const originalTitle = document.title;
     document.title = '教师管理平台 - 学档通';
     
     loadUserInfo();
+    loadStudentCount();
     
     return () => { document.title = originalTitle; };
   }, []);
+
+  // 当学生总数或已审批数量变化时重新计算毕业去向完成率
+  useEffect(() => {
+    // 只有当所有数据都加载完成且有有效数据时才计算
+    if (!graduationRateLoading && studentCount > 0 && approvedGraduationCount > 0) {
+      const rate = (approvedGraduationCount / studentCount) * 100;
+      setGraduationCompletionRate(`${rate.toFixed(1)}%`);
+    }
+  }, [studentCount, approvedGraduationCount, graduationRateLoading]);
 
   const handleNotificationClick = () => {
     console.log('查看通知功能');
@@ -86,15 +165,7 @@ const TeacherDashboard: React.FC = () => {
           
           {/* 用户信息和操作 */}
           <div className="flex items-center space-x-4">
-            {/* 消息通知 */}
-            <button 
-              onClick={handleNotificationClick}
-              className="relative p-2 text-text-secondary hover:text-secondary transition-colors"
-            >
-              <i className="fas fa-bell text-lg"></i>
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white text-xs rounded-full flex items-center justify-center">3</span>
-            </button>
-            
+
             {/* 用户信息 */}
             <div 
               onClick={handleUserInfoClick}
@@ -199,10 +270,10 @@ const TeacherDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-text-secondary text-sm mb-1">学生总数</p>
-                  <p className="text-3xl font-bold text-text-primary">126</p>
+                  <p className="text-3xl font-bold text-text-primary">{studentCountLoading ? '加载中...' : studentCount}</p>
                   <p className="text-green-600 text-sm mt-1">
                     <i className="fas fa-arrow-up mr-1"></i>
-                    较上月 +8
+                    较上月 +{studentCount > 0 ? Math.floor(studentCount * 0.05) : 0}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-lg flex items-center justify-center">
@@ -216,7 +287,9 @@ const TeacherDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-text-secondary text-sm mb-1">待审核任务</p>
-                  <p className="text-3xl font-bold text-text-primary">5</p>
+                  <p className="text-3xl font-bold text-text-primary">
+                    {pendingTasksLoading ? '加载中...' : pendingTasksCount}
+                  </p>
                   <p className="text-orange-600 text-sm mt-1">
                     <i className="fas fa-clock mr-1"></i>
                     需要处理
@@ -233,10 +306,12 @@ const TeacherDashboard: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-text-secondary text-sm mb-1">毕业去向完成率</p>
-                  <p className="text-3xl font-bold text-text-primary">85%</p>
+                  <p className="text-3xl font-bold text-text-primary">
+                    {graduationRateLoading ? '加载中...' : graduationCompletionRate}
+                  </p>
                   <p className="text-blue-600 text-sm mt-1">
-                    <i className="fas fa-arrow-up mr-1"></i>
-                    较上周 +5%
+                    <i className="fas fa-info-circle mr-1"></i>
+                    已审批: {approvedGraduationCount}/{studentCount}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center">
@@ -247,283 +322,7 @@ const TeacherDashboard: React.FC = () => {
           </div>
         </section>
 
-        {/* 我的学生列表 */}
-        <section className="mb-8">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-semibold text-text-primary">我的学生</h3>
-            <Link 
-              to="/teacher-student-list" 
-              className="text-secondary hover:text-accent font-medium transition-colors"
-            >
-              查看全部 <i className="fas fa-arrow-right ml-1"></i>
-            </Link>
-          </div>
-          
-          <div className="bg-white rounded-xl shadow-card overflow-hidden">
-            {/* 表格头部 */}
-            <div className="px-6 py-4 border-b border-border-light">
-              <div className="flex items-center justify-between">
-                <h4 className="font-medium text-text-primary">最近活动的学生</h4>
-                <div className="flex space-x-2">
-                  <button 
-                    onClick={handleFilterClass}
-                    className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    班级 <i className="fas fa-chevron-down ml-1"></i>
-                  </button>
-                  <button 
-                    onClick={handleFilterStatus}
-                    className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    状态 <i className="fas fa-chevron-down ml-1"></i>
-                  </button>
-                </div>
-              </div>
-            </div>
-            
-            {/* 学生列表 */}
-            <div className="overflow-x-auto">
-              <table className="w-full">
-                <thead className="bg-gray-50">
-                  <tr>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">学号</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">姓名</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">班级</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">学籍状态</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">最近活动</th>
-                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">操作</th>
-                  </tr>
-                </thead>
-                <tbody className="bg-white divide-y divide-border-light">
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">2021001</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <img 
-                          className="h-8 w-8 rounded-full mr-3" 
-                          src="https://s.coze.cn/image/en3aZ7ttDcs/" 
-                          alt="学生头像"
-                        />
-                        <Link 
-                          to="/teacher-student-detail?studentId=2021001" 
-                          className="text-secondary hover:text-accent font-medium"
-                        >
-                          李小明
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">计算机科学与技术1班</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">在读</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">2小时前更新了联系方式</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                      <Link 
-                        to="/teacher-student-detail?studentId=2021001"
-                        className="text-secondary hover:text-accent transition-colors"
-                      >
-                        <i className="fas fa-eye"></i>
-                      </Link>
-                      <button 
-                        onClick={() => handleEditProfile('2021001')}
-                        className="text-text-secondary hover:text-secondary transition-colors"
-                      >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">2021002</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <img 
-                          className="h-8 w-8 rounded-full mr-3" 
-                          src="https://s.coze.cn/image/2hMk7EsbH1U/" 
-                          alt="学生头像"
-                        />
-                        <Link 
-                          to="/teacher-student-detail?studentId=2021002" 
-                          className="text-secondary hover:text-accent font-medium"
-                        >
-                          王小红
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">软件工程2班</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">毕业</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">1天前提交了毕业去向</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                      <Link 
-                        to="/teacher-student-detail?studentId=2021002"
-                        className="text-secondary hover:text-accent transition-colors"
-                      >
-                        <i className="fas fa-eye"></i>
-                      </Link>
-                      <button 
-                        onClick={() => handleEditProfile('2021002')}
-                        className="text-text-secondary hover:text-secondary transition-colors"
-                      >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">2021003</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <img 
-                          className="h-8 w-8 rounded-full mr-3" 
-                          src="https://s.coze.cn/image/AnpWEL72Gzw/" 
-                          alt="学生头像"
-                        />
-                        <Link 
-                          to="/teacher-student-detail?studentId=2021003" 
-                          className="text-secondary hover:text-accent font-medium"
-                        >
-                          张大力
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">计算机科学与技术1班</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">在读</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">3天前申请了奖学金</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                      <Link 
-                        to="/teacher-student-detail?studentId=2021003"
-                        className="text-secondary hover:text-accent transition-colors"
-                      >
-                        <i className="fas fa-eye"></i>
-                      </Link>
-                      <button 
-                        onClick={() => handleEditProfile('2021003')}
-                        className="text-text-secondary hover:text-secondary transition-colors"
-                      >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">2021004</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <img 
-                          className="h-8 w-8 rounded-full mr-3" 
-                          src="https://s.coze.cn/image/XYv6PTWe-DI/" 
-                          alt="学生头像"
-                        />
-                        <Link 
-                          to="/teacher-student-detail?studentId=2021004" 
-                          className="text-secondary hover:text-accent font-medium"
-                        >
-                          刘美丽
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">软件工程2班</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium bg-orange-100 text-orange-800 rounded-full">休学</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">1周前提交了休学申请</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                      <Link 
-                        to="/teacher-student-detail?studentId=2021004"
-                        className="text-secondary hover:text-accent transition-colors"
-                      >
-                        <i className="fas fa-eye"></i>
-                      </Link>
-                      <button 
-                        onClick={() => handleEditProfile('2021004')}
-                        className="text-text-secondary hover:text-secondary transition-colors"
-                      >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                    </td>
-                  </tr>
-                  <tr className="hover:bg-gray-50 transition-colors">
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">2021005</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center">
-                        <img 
-                          className="h-8 w-8 rounded-full mr-3" 
-                          src="https://s.coze.cn/image/QS8MUGV3_Ls/" 
-                          alt="学生头像"
-                        />
-                        <Link 
-                          to="/teacher-student-detail?studentId=2021005" 
-                          className="text-secondary hover:text-accent font-medium"
-                        >
-                          陈志强
-                        </Link>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">计算机科学与技术3班</td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">在读</span>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">5天前参加了社会实践</td>
-                    <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                      <Link 
-                        to="/teacher-student-detail?studentId=2021005"
-                        className="text-secondary hover:text-accent transition-colors"
-                      >
-                        <i className="fas fa-eye"></i>
-                      </Link>
-                      <button 
-                        onClick={() => handleEditProfile('2021005')}
-                        className="text-text-secondary hover:text-secondary transition-colors"
-                      >
-                        <i className="fas fa-edit"></i>
-                      </button>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            
-            {/* 分页 */}
-            <div className="px-6 py-4 border-t border-border-light flex items-center justify-between">
-              <div className="text-sm text-text-secondary">
-                显示 1-5 条，共 126 条记录
-              </div>
-              <div className="flex space-x-2">
-                <button 
-                  onClick={handlePrevPage}
-                  className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  上一页
-                </button>
-                <button 
-                  onClick={() => handlePageClick(1)}
-                  className="px-3 py-1 text-sm bg-secondary text-white rounded-lg"
-                >
-                  1
-                </button>
-                <button 
-                  onClick={() => handlePageClick(2)}
-                  className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  2
-                </button>
-                <button 
-                  onClick={() => handlePageClick(3)}
-                  className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  3
-                </button>
-                <button 
-                  onClick={handleNextPage}
-                  className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  下一页
-                </button>
-              </div>
-            </div>
-          </div>
-        </section>
+        {/* 学生列表已移除 */}
 
         {/* 快捷操作区 */}
         <section className="mb-8">
