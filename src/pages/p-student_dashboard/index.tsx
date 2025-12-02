@@ -115,34 +115,77 @@ const StudentDashboard: React.FC = () => {
             <p style="font-size: 14px; color: #666;">导出日期: ${formattedDate}</p>
           </div>
           
-          <!-- 个人信息部分 -->
+          <!-- 个人信息部分 (含证件照) -->
           <div style="margin-bottom: 30px;">
             <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">个人基本信息</h2>
-            <table style="width: 100%; border-collapse: collapse;">
+            <div style="display: flex; gap: 30px; margin-bottom: 20px;">
+              <!-- 证件照 -->
+              <div style="flex-shrink: 0;">
+                <img 
+                  src="${profile?.profile_photo || currentUser?.avatar || 'https://via.placeholder.com/150x200?text=无照片'}" 
+                  alt="学生证件照" 
+                  style="width: 150px; height: 200px; object-fit: cover; border: 1px solid #ddd;"
+                />
+                <div style="text-align: center; margin-top: 5px; font-size: 12px; color: #666;">证件照</div>
+              </div>
+              
+              <!-- 基本信息表格 -->
+              <table style="flex: 1; border-collapse: collapse;">
+                <tbody>
+                  <tr>
+                    <td style="width: 25%; padding: 8px 0; font-weight: bold;">姓名:</td>
+                    <td style="width: 75%; padding: 8px 0;">${studentProfile.full_name || userInfo.name || userInfo.full_name || studentProfile.name || '未知'}</td>
+                  </tr>
+                  <tr>
+                    <td style="width: 25%; padding: 8px 0; font-weight: bold;">学号:</td>
+                    <td style="width: 75%; padding: 8px 0;">${userInfo.username || studentProfile.student_id || '未知'}</td>
+                  </tr>
+                  <tr>
+                    <td style="width: 25%; padding: 8px 0; font-weight: bold;">班级:</td>
+                    <td style="width: 75%; padding: 8px 0;">${userInfo.class_name || studentProfile.class_name || '未知'}</td>
+                  </tr>
+                  <tr>
+                    <td style="width: 25%; padding: 8px 0; font-weight: bold;">专业:</td>
+                    <td style="width: 75%; padding: 8px 0;">${studentProfile.major || '未知'}</td>
+                  </tr>
+                  <tr>
+                    <td style="width: 25%; padding: 8px 0; font-weight: bold;">性别:</td>
+                    <td style="width: 75%; padding: 8px 0;">${studentProfile.gender === 'male' ? '男' : studentProfile.gender === 'female' ? '女' : '未知'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            
+            <!-- 更多详细信息 -->
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;">
               <tbody>
                 <tr>
-                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">姓名:</td>
-                  <td style="width: 75%; padding: 8px 0;">${userInfo.name || userInfo.full_name || studentProfile.name || '未知'}</td>
-                </tr>
-                <tr>
-                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">学号:</td>
-                  <td style="width: 75%; padding: 8px 0;">${userInfo.username || studentProfile.student_id || '未知'}</td>
-                </tr>
-                <tr>
-                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">班级:</td>
-                  <td style="width: 75%; padding: 8px 0;">${userInfo.class_name || studentProfile.class_name || '未知'}</td>
-                </tr>
-                <tr>
-                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">专业:</td>
-                  <td style="width: 75%; padding: 8px 0;">${studentProfile.major || '未知'}</td>
-                </tr>
-                <tr>
-                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">性别:</td>
-                  <td style="width: 75%; padding: 8px 0;">${studentProfile.gender === 'male' ? '男' : studentProfile.gender === 'female' ? '女' : '未知'}</td>
-                </tr>
-                <tr>
                   <td style="width: 25%; padding: 8px 0; font-weight: bold;">出生日期:</td>
-                  <td style="width: 75%; padding: 8px 0;">${studentProfile.date_of_birth ? new Date(studentProfile.date_of_birth).toLocaleDateString('zh-CN') : '未知'}</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.birth_date ? new Date(studentProfile.birth_date).toLocaleDateString('zh-CN') : '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">入学时间:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.admission_date ? new Date(studentProfile.admission_date).toLocaleDateString('zh-CN') : '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">联系电话:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.phone || userInfo.phone || '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">电子邮箱:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.email || userInfo.email || '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">身份证号:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.id_card || '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">籍贯:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.native_place || studentProfile.home_address || '未知'}</td>
+                </tr>
+                <tr>
+                  <td style="width: 25%; padding: 8px 0; font-weight: bold;">政治面貌:</td>
+                  <td style="width: 75%; padding: 8px 0;">${studentProfile.political_status || '未知'}</td>
                 </tr>
               </tbody>
             </table>
@@ -163,15 +206,35 @@ const StudentDashboard: React.FC = () => {
           
           <!-- 学习收获部分 -->
           <div style="margin-bottom: 30px;">
-            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">学习收获</h2>
+            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">课程学习收获</h2>
             <div>
               ${learningInfo.learning_achievements.length > 0 
-                ? learningInfo.learning_achievements.map((achievement, index) => 
-                    `<div style="margin-bottom: 10px;">
-                      <p style="font-weight: bold; margin-bottom: 5px;">${index + 1}. ${achievement.title || '学习收获'}</p>
-                      <p style="padding-left: 20px;">${achievement.description || ''}</p>
-                    </div>`
-                  ).join('')
+                ? learningInfo.learning_achievements.map((achievement, index) => {
+                    // 假设每个achievement包含course_name字段
+                    const courseName = achievement.course_name || '未命名课程';
+                    const tags = achievement.tags || [];
+                    return `
+                    <div style="margin-bottom: 20px; padding: 15px; background-color: #f9f9f9; border-radius: 8px;">
+                      <p style="font-weight: bold; margin-bottom: 10px; font-size: 16px; color: #2c3e50;">
+                        ${index + 1}. ${courseName}
+                      </p>
+                      ${tags.length > 0 ? `
+                        <div style="margin-bottom: 10px;">
+                          <span style="font-weight: bold;">相关标签: </span>
+                          <div style="display: inline-flex; flex-wrap: wrap; gap: 8px; margin-top: 5px;">
+                            ${tags.map(tag => 
+                              `<span style="background-color: #e3f2fd; padding: 3px 10px; border-radius: 15px; font-size: 12px; color: #1976d2;">${tag}</span>`
+                            ).join('')}
+                          </div>
+                        </div>
+                      ` : ''}
+                      <div style="margin-top: 10px;">
+                        <p style="font-weight: bold; margin-bottom: 5px;">主要收获:</p>
+                        <p style="padding-left: 20px; line-height: 1.6;">${achievement.description || '暂无详细描述'}</p>
+                      </div>
+                    </div>
+                    `;
+                  }).join('')
                 : '<p style="color: #999;">暂无学习收获信息</p>'
               }
             </div>
@@ -179,15 +242,41 @@ const StudentDashboard: React.FC = () => {
           
           <!-- 学习成果部分 -->
           <div style="margin-bottom: 30px;">
-            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">学习成果</h2>
+            <h2 style="font-size: 18px; color: #333; border-bottom: 1px solid #ddd; padding-bottom: 5px; margin-bottom: 15px;">课程学习成果</h2>
             <div>
               ${learningInfo.learning_outcomes.length > 0 
-                ? learningInfo.learning_outcomes.map((outcome, index) => 
-                    `<div style="margin-bottom: 10px;">
-                      <p style="font-weight: bold; margin-bottom: 5px;">${index + 1}. ${outcome.title || '学习成果'}</p>
-                      <p style="padding-left: 20px;">${outcome.description || ''}</p>
-                    </div>`
-                  ).join('')
+                ? learningInfo.learning_outcomes.map((outcome, index) => {
+                    // 假设每个outcome包含course_name字段
+                    const courseName = outcome.course_name || '未命名课程';
+                    const tags = outcome.tags || [];
+                    return `
+                    <div style="margin-bottom: 20px; padding: 15px; background-color: #f1f8e9; border-radius: 8px;">
+                      <p style="font-weight: bold; margin-bottom: 10px; font-size: 16px; color: #2e7d32;">
+                        ${index + 1}. ${courseName}
+                      </p>
+                      ${tags.length > 0 ? `
+                        <div style="margin-bottom: 10px;">
+                          <span style="font-weight: bold;">技能标签: </span>
+                          <div style="display: inline-flex; flex-wrap: wrap; gap: 8px; margin-top: 5px;">
+                            ${tags.map(tag => 
+                              `<span style="background-color: #c8e6c9; padding: 3px 10px; border-radius: 15px; font-size: 12px; color: #2e7d32;">${tag}</span>`
+                            ).join('')}
+                          </div>
+                        </div>
+                      ` : ''}
+                      <div style="margin-top: 10px;">
+                        <p style="font-weight: bold; margin-bottom: 5px;">具体成果:</p>
+                        <p style="padding-left: 20px; line-height: 1.6;">${outcome.description || '暂无详细描述'}</p>
+                      </div>
+                      ${outcome.project_name ? `
+                        <div style="margin-top: 8px;">
+                          <p style="font-weight: bold; margin-bottom: 3px;">相关项目:</p>
+                          <p style="padding-left: 20px;">${outcome.project_name}</p>
+                        </div>
+                      ` : ''}
+                    </div>
+                    `;
+                  }).join('')
                 : '<p style="color: #999;">暂无学习成果信息</p>'
               }
             </div>
