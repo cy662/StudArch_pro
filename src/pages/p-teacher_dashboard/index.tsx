@@ -226,13 +226,7 @@ const TeacherDashboard: React.FC = () => {
             <span className="font-medium">毕业去向管理</span>
           </Link>
           
-          <Link 
-            to="/teacher-report" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
-          >
-            <i className="fas fa-chart-bar text-lg"></i>
-            <span className="font-medium">统计报表</span>
-          </Link>
+
         </nav>
       </aside>
 
@@ -346,21 +340,7 @@ const TeacherDashboard: React.FC = () => {
               </div>
             </Link>
 
-            {/* 生成报表 */}
-            <Link 
-              to="/teacher-report"
-              className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300 cursor-pointer block`}
-            >
-              <div className="flex items-center space-x-4">
-                <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-file-alt text-white text-xl"></i>
-                </div>
-                <div>
-                  <h4 className="font-medium text-text-primary">生成报表</h4>
-                  <p className="text-sm text-text-secondary">生成班级统计分析报表</p>
-                </div>
-              </div>
-            </Link>
+
           </div>
         </section>
       </main>

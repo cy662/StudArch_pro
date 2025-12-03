@@ -226,12 +226,9 @@ router.post('/student/:studentId/assign-training-program', async (req, res) => {
     const { studentId } = req.params;
     const { programId, teacherId, notes } = req.body;
 
-    // 验证ID格式 - 支持标准UUID和占位符格式
-    const standardUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const placeholderUuidRegex = /^00000000-0000-0000-0000-000000000\d{3}$/i;
+    const basicUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     
-    if (!(standardUuidRegex.test(studentId) || placeholderUuidRegex.test(studentId)) || 
-        !(standardUuidRegex.test(programId) || placeholderUuidRegex.test(programId))) {
+    if (!basicUuidRegex.test(studentId) || !basicUuidRegex.test(programId)) {
       return res.status(400).json({
         success: false,
         message: '无效的ID格式'
@@ -349,12 +346,9 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
     const { teacherId } = req.params;
     const { programId, studentIds, notes } = req.body;
 
-    // 验证ID格式 - 支持标准UUID和占位符格式
-    const standardUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-    const placeholderUuidRegex = /^00000000-0000-0000-0000-000000000\d{3}$/i;
+    const basicUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     
-    if (!(standardUuidRegex.test(teacherId) || placeholderUuidRegex.test(teacherId)) || 
-        !(standardUuidRegex.test(programId) || placeholderUuidRegex.test(programId))) {
+    if (!basicUuidRegex.test(teacherId) || !basicUuidRegex.test(programId)) {
       return res.status(400).json({
         success: false,
         message: '无效的ID格式'
@@ -368,9 +362,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
       });
     }
 
-    const invalidStudentIds = studentIds.filter(id => 
-      !(standardUuidRegex.test(id) || placeholderUuidRegex.test(id))
-    );
+    const invalidStudentIds = studentIds.filter(id => !basicUuidRegex.test(id));
     
     if (invalidStudentIds.length > 0) {
       return res.status(400).json({
@@ -401,41 +393,27 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
 
     for (const studentId of studentIds) {
       try {
-        // 验证学生存在 - 支持档案ID和用户ID
-        let { data: student, error: studentError } = await supabase
+        // 验证学生存在
+        const { data: student, error: studentError } = await supabase
           .from('student_profiles')
           .select('id')
           .eq('id', studentId)
           .single();
 
-        let actualStudentId = studentId; // 默认使用传入的ID
-
-        // 如果按档案ID没找到，尝试按用户ID查找
         if (studentError || !student) {
-          const { data: studentByUserId, error: userError } = await supabase
-            .from('student_profiles')
-            .select('id')
-            .eq('user_id', studentId)
-            .single();
-
-          if (userError || !studentByUserId) {
-            failureCount++;
-            details.push({
-              student_id: studentId,
-              error: '学生不存在'
-            });
-            continue;
-          }
-          
-          student = studentByUserId;
-          actualStudentId = studentByUserId.id; // 使用找到的档案ID
+          failureCount++;
+          details.push({
+            student_id: studentId,
+            error: '学生不存在'
+          });
+          continue;
         }
 
-        // 创建学生培养方案关联（使用实际的档案ID）
+        // 创建学生培养方案关联（使用简单的直接插入）
         const { error: assignmentError } = await supabase
           .from('student_training_programs')
           .upsert({
-            student_id: actualStudentId,
+            student_id: studentId,
             program_id: programId,
             enrollment_date: new Date().toISOString().split('T')[0],
             status: 'active',
@@ -476,7 +454,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
 
         if (!coursesError && courses && courses.length > 0) {
           const courseProgressData = courses.map(course => ({
-            student_id: actualStudentId,
+            student_id: studentId,
             course_id: course.id,
             status: 'not_started',
             created_at: new Date().toISOString(),

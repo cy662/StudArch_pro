@@ -721,13 +721,7 @@ ${errorDetails}${moreErrors}`);
             <span className="font-medium">毕业去向管理</span>
           </Link>
           
-          <Link 
-            to="/teacher-report" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
-          >
-            <i className="fas fa-chart-bar text-lg"></i>
-            <span className="font-medium">统计报表</span>
-          </Link>
+
         </nav>
       </aside>
 
