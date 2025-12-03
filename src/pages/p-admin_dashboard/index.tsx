@@ -145,7 +145,13 @@ const AdminDashboard: React.FC = () => {
           </Link>
           
 
-
+          <Link 
+            to="/admin-system-settings" 
+            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
+          >
+            <i className="fas fa-cog text-lg"></i>
+            <span className="font-medium">系统设置</span>
+          </Link>
           
 
         </nav>
@@ -265,7 +271,21 @@ const AdminDashboard: React.FC = () => {
 
 
 
-
+            {/* 系统设置 */}
+            <div 
+              onClick={() => handleQuickActionClick('/admin-system-settings')}
+              className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300 cursor-pointer`}
+            >
+              <div className="flex items-center space-x-4">
+                <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-lg flex items-center justify-center">
+                  <i className="fas fa-cog text-white text-xl"></i>
+                </div>
+                <div>
+                  <h4 className="font-medium text-text-primary">系统设置</h4>
+                  <p className="text-sm text-text-secondary">系统状态和备份管理</p>
+                </div>
+              </div>
+            </div>
 
 
           </div>

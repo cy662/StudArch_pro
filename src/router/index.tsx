@@ -7,14 +7,14 @@ import P_login from '../pages/p-login';
 import P_admin_dashboard from '../pages/p-admin_dashboard';
 import P_admin_user_management from '../pages/p-admin_user_management';
 
-
+import P_admin_class_management from '../pages/p-admin_class_management';
 
 import P_teacher_dashboard from '../pages/p-teacher_dashboard';
 import P_teacher_student_list from '../pages/p-teacher_student_list';
 import P_teacher_student_detail from '../pages/p-teacher_student_detail';
 
 import P_teacher_graduation_management from '../pages/p-teacher_graduation_management';
-import P_teacher_report from '../pages/p-teacher_report';
+
 import P_student_dashboard from '../pages/p-student_dashboard';
 import P_student_my_profile from '../pages/p-student_my_profile';
 import P_student_profile_edit from '../pages/p-student_profile_edit';
@@ -84,7 +84,17 @@ const router = createBrowserRouter([
     errorElement: <ErrorPage />,
   },
 
-
+      {
+    path: '/admin-system-settings',
+    element: (
+      <ErrorBoundary>
+        <AuthGuard requiredRole="super_admin">
+          <P_admin_class_management />
+        </AuthGuard>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
 
       {
     path: '/teacher-dashboard',
@@ -131,17 +141,7 @@ const router = createBrowserRouter([
     ),
     errorElement: <ErrorPage />,
   },
-      {
-    path: '/teacher-report',
-    element: (
-      <ErrorBoundary>
-        <AuthGuard requiredRole="teacher">
-          <P_teacher_report />
-        </AuthGuard>
-      </ErrorBoundary>
-    ),
-    errorElement: <ErrorPage />,
-  },
+
       {
     path: '/student-dashboard',
     element: (

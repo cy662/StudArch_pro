@@ -101,7 +101,15 @@ export interface ClassInfo {
   updated_at: string
 }
 
-
+export interface SystemSetting {
+  id: string
+  setting_key: string
+  setting_value: string
+  setting_description?: string
+  is_editable: boolean
+  created_at: string
+  updated_at: string
+}
 
 export interface ProfileEditLog {
   id: string

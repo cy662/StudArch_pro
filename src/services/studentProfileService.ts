@@ -2,6 +2,7 @@ import { supabase } from '../lib/supabase'
 import {
   StudentProfile,
   ClassInfo,
+  SystemSetting,
   StudentCompleteInfo,
   StudentProfileFormData,
   StudentSearchParams,
@@ -640,7 +641,64 @@ export class StudentProfileService {
     return data || []
   }
 
+  // 获取系统设置
+  static async getSystemSettings(): Promise<SystemSetting[]> {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('*')
+      
+      if (error) {
+        console.warn('获取系统设置失败，使用默认设置:', error)
+        return []
+      }
+      
+      return data || []
+    } catch (error) {
+      console.error('获取系统设置异常:', error)
+      return []
+    }
+  }
 
+  // 获取个人信息维护功能开关状态
+  static async isProfileEditEnabled(): Promise<boolean> {
+    try {
+      const { data, error } = await supabase
+        .from('system_settings')
+        .select('setting_value')
+        .eq('setting_key', 'student_profile_edit_enabled')
+        .single()
+      
+      if (error) {
+        if (error.status === 406 || error.message?.includes('406')) {
+          console.warn('系统设置查询返回406错误，默认启用编辑功能')
+          return true
+        }
+        console.warn('获取系统设置失败，默认启用编辑功能:', error)
+        return true
+      }
+      
+      return data?.setting_value === 'true'
+    } catch (error) {
+      console.error('获取系统设置异常:', error)
+      return true
+    }
+  }
+
+  // 更新系统设置
+  static async updateSystemSetting(
+    settingKey: string,
+    settingValue: string
+  ): Promise<boolean> {
+    const { error } = await supabase
+      .from('system_settings')
+      .update({ setting_value: settingValue, updated_at: new Date().toISOString() })
+      .eq('setting_key', settingKey)
+    
+    if (error) throw error
+    
+    return true
+  }
 
   // 搜索学生列表（教师和管理员使用）
   static async searchStudents(params: StudentSearchParams): Promise<StudentListResponse> {
