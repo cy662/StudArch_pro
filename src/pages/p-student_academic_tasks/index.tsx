@@ -93,7 +93,7 @@ const StudentAcademicTasks: React.FC = () => {
       return 'tool';
     }
     
-    // 技术领域
+    // 进一步
     const techAreas = ['机器学习', '深度学习', '数据结构', '算法', '前端开发', '后端开发', '全栈开发', '移动开发', '数据库设计', '系统设计', '云计算', '微服务'];
     if (techAreas.some(area => lowerTagName.includes(area.toLowerCase()))) {
       return 'technical_area';
@@ -958,7 +958,7 @@ const StudentAcademicTasks: React.FC = () => {
                 <div className="border-t pt-6">
 
                   {/* 收获与成果编辑区域 */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+                  <div className="grid grid-cols-1 gap-6 mb-6">
                     <div>
                       <label className="block text-sm font-medium text-text-primary mb-3 flex items-center">
                         <i className="fas fa-lightbulb text-yellow-500 mr-2"></i>
