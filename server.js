@@ -1,10 +1,12 @@
 // 简单的API服务器
-// 用于处理培养方案导入等API请求
+// 用于处理培养方案导入、图片上传等API请求
 
 import express from 'express';
 import cors from 'cors';
+import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import fs from 'fs';
 import trainingProgramRoutes from './src/api/trainingProgramSimple.js';
 import studentLearningRoutes from './src/api/studentLearning.js';
 import quickFixStudentRoutes from './quick_fix_student_api.js';
@@ -12,6 +14,27 @@ import quickFixStudentRoutes from './quick_fix_student_api.js';
 // 获取当前目录路径
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
+
+// 创建uploads目录（如果不存在）
+const uploadsDir = join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir);
+}
+
+// 配置multer存储
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, uploadsDir);
+  },
+  filename: (req, file, cb) => {
+    // 使用时间戳和原始文件名确保唯一性
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, uniqueSuffix + '-' + file.originalname);
+  }
+});
+
+// 创建multer实例
+const upload = multer({ storage: storage });
 
 const app = express();
 const PORT = process.env.API_PORT || 3001;
@@ -36,8 +59,26 @@ app.use('/api', trainingProgramRoutes);
 // 学生学习信息相关API（只使用修复后的版本）
 app.use('/api', studentLearningRoutes);
 
-// 静态文件服务（用于前端）
+// 静态文件服务（用于前端和上传的图片）
 app.use(express.static(join(__dirname, 'dist')));
+app.use('/uploads', express.static(uploadsDir));
+
+// 图片上传API端点
+app.post('/api/upload', upload.single('file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({
+      success: false,
+      message: '请选择要上传的图片'
+    });
+  }
+
+  // 返回图片的URL
+  const imageUrl = `/uploads/${req.file.filename}`;
+  res.json({
+    success: true,
+    location: imageUrl
+  });
+});
 
 // 处理前端路由 - 所有其他请求都返回index.html
 app.get('*', (req, res) => {

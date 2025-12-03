@@ -3,8 +3,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { useAuth } from '../../hooks/useAuth';
 import useStudentProfile from '../../hooks/useStudentProfile';
-import { Button, Textarea, Progress, Divider } from 'tdesign-react';
+import { Button, Progress, Divider } from 'tdesign-react';
 import { UploadIcon, AssignmentIcon, CalendarIcon } from 'tdesign-icons-react';
+import { Editor } from '@tinymce/tinymce-react';
 
 // 类型定义
 interface Course {
@@ -965,18 +966,36 @@ const StudentAcademicTasks: React.FC = () => {
                         学习收获
                       </label>
                       {editingCourse === course.id ? (
-                        <Textarea
-                          value={course.outcomes}
-                          onChange={(value) => handleCourseChange(course.id, 'outcomes', value)}
-                          placeholder="请描述您在本课程中的学习收获和体会..."
-                          rows={4}
-                          className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-accent focus:border-transparent"
-                        />
+                        <div className="border border-gray-300 rounded-lg overflow-hidden" key={`editor-${course.id}-outcomes`}>
+                          <Editor
+                            apiKey="v7u2eeph1xc44mcmwau59v5hxylkje773o14063m3bc0b5k1"
+                            initialValue={course.outcomes || ''}
+                            init={{
+                              height: 300,
+                              menubar: true,
+                              plugins: [
+                                'advlist', 'autolink', 'lists', 'link', 'image', 'charmap',
+                                'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+                                'insertdatetime', 'media', 'table', 'code', 'help', 'wordcount',
+                                'emoticons', 'codesample', 'textcolor', 'colorpicker'
+                              ],
+                              toolbar: 'undo redo | formatselect | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image | code codesample | emoticons | fullscreen',
+                              content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px; }',
+                              language: 'zh_CN',
+                              images_upload_url: '/api/upload',
+                              images_upload_credentials: true,
+                              setup: (editor) => {
+                                editor.on('blur', () => {
+                                  const content = editor.getContent();
+                                  handleCourseChange(course.id, 'outcomes', content);
+                                });
+                              }
+                            }}
+                          />
+                        </div>
                       ) : (
                         <div className="min-h-[100px] p-4 bg-gray-50 rounded-lg border border-gray-200">
-                          <p className="text-sm text-gray-600">
-                            {course.outcomes || '暂未填写学习收获'}
-                          </p>
+                          <div className="text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: course.outcomes || '<i>暂未填写学习收获</i>' }} />
                         </div>
                       )}
                     </div>
@@ -987,18 +1006,36 @@ const StudentAcademicTasks: React.FC = () => {
                         学习成果
                       </label>
                       {editingCourse === course.id ? (
-                        <Textarea
-                          value={course.achievements}
-                          onChange={(value) => handleCourseChange(course.id, 'achievements', value)}
-                          placeholder="请描述您在本课程中取得的具体成果和成就..."
-                          rows={4}
-                          className="w-full border border-gray-300 rounded-lg p-3 focus:ring-2 focus:ring-accent focus:border-transparent"
-                        />
+                        <div className="border border-gray-300 rounded-lg overflow-hidden" key={`editor-${course.id}-achievements`}>
+                          <Editor
+                            apiKey="v7u2eeph1xc44mcmwau59v5hxylkje773o14063m3bc0b5k1"
+                            initialValue={course.achievements || ''}
+                            init={{
+                              height: 300,
+                              menubar: true,
+                              plugins: [
+                                'advlist', 'autolink', 'lists', 'link', 'image', 'charmap',
+                                'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+                                'insertdatetime', 'media', 'table', 'code', 'help', 'wordcount',
+                                'emoticons', 'codesample', 'textcolor', 'colorpicker'
+                              ],
+                              toolbar: 'undo redo | formatselect | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image | code codesample | emoticons | fullscreen',
+                              content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px; }',
+                              language: 'zh_CN',
+                              images_upload_url: '/api/upload',
+                              images_upload_credentials: true,
+                              setup: (editor) => {
+                                editor.on('blur', () => {
+                                  const content = editor.getContent();
+                                  handleCourseChange(course.id, 'achievements', content);
+                                });
+                              }
+                            }}
+                          />
+                        </div>
                       ) : (
                         <div className="min-h-[100px] p-4 bg-gray-50 rounded-lg border border-gray-200">
-                          <p className="text-sm text-gray-600">
-                            {course.achievements || '暂未填写学习成果'}
-                          </p>
+                          <div className="text-sm text-gray-600" dangerouslySetInnerHTML={{ __html: course.achievements || '<i>暂未填写学习成果</i>' }} />
                         </div>
                       )}
                     </div>

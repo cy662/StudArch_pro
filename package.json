@@ -21,6 +21,7 @@
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.4.0",
     "@supabase/supabase-js": "^2.49.1",
+    "@tinymce/tinymce-react": "^6.3.0",
     "antd": "^6.0.0",
     "chart.js": "^4.5.0",
     "concurrently": "^9.1.0",
@@ -31,12 +32,14 @@
     "jspdf": "^3.0.4",
     "jszip": "^3.10.1",
     "less": "^4.3.0",
+    "multer": "^2.0.2",
     "node-fetch": "^3.3.2",
     "react": "19.1.0",
     "react-dom": "19.1.0",
     "react-router-dom": "^7.6.3",
     "tdesign-icons-react": "^0.5.0",
     "tdesign-react": "^1.12.0",
+    "tinymce": "^8.2.2",
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
