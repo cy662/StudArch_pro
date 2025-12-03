@@ -1139,13 +1139,7 @@ const AdminUserManagement: React.FC = () => {
           </Link>
           
 
-          <Link 
-            to="/admin-system-settings" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
-          >
-            <i className="fas fa-cog text-lg"></i>
-            <span className="font-medium">系统设置</span>
-          </Link>
+
           
 
         </nav>

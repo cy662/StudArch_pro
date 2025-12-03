@@ -7,7 +7,7 @@ import P_login from '../pages/p-login';
 import P_admin_dashboard from '../pages/p-admin_dashboard';
 import P_admin_user_management from '../pages/p-admin_user_management';
 
-import P_admin_system_settings from '../pages/p-admin_system_settings';
+
 
 import P_teacher_dashboard from '../pages/p-teacher_dashboard';
 import P_teacher_student_list from '../pages/p-teacher_student_list';
@@ -84,17 +84,7 @@ const router = createBrowserRouter([
     errorElement: <ErrorPage />,
   },
 
-      {
-    path: '/admin-system-settings',
-    element: (
-      <ErrorBoundary>
-        <AuthGuard requiredRole="super_admin">
-          <P_admin_system_settings />
-        </AuthGuard>
-      </ErrorBoundary>
-    ),
-    errorElement: <ErrorPage />,
-  },
+
 
       {
     path: '/teacher-dashboard',
