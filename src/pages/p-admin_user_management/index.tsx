@@ -1139,13 +1139,7 @@ const AdminUserManagement: React.FC = () => {
           </Link>
           
 
-          <Link 
-            to="/admin-system-settings" 
-            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
-          >
-            <i className="fas fa-cog text-lg"></i>
-            <span className="font-medium">系统设置</span>
-          </Link>
+
           
 
         </nav>
@@ -1190,8 +1184,8 @@ const AdminUserManagement: React.FC = () => {
         {/* 工具栏区域 */}
         <div className="bg-white rounded-xl shadow-card p-4 mb-6">
           <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between space-y-4 lg:space-y-0">
-            {/* 搜索框 */}
-            <div className="flex items-center space-x-4">
+            <div className="flex flex-col lg:flex-row lg:items-center space-y-4 lg:space-y-0 lg:space-x-4">
+              {/* 搜索框 */}
               <div className="relative">
                 <input 
                   type="text" 
@@ -1202,33 +1196,35 @@ const AdminUserManagement: React.FC = () => {
                 />
                 <i className="fas fa-search absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary"></i>
               </div>
+              
+              {/* 筛选条件 */}
+              <div className="flex items-center space-x-4">
+                <select 
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className={`px-3 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
+                >
+                  <option value="">全部角色</option>
+                  {getAvailableRoles().map(role => (
+                    <option key={role.id} value={role.id}>
+                      {role.role_description}
+                    </option>
+                  ))}
+                </select>
+                
+                <select 
+                  value={statusFilter}
+                  onChange={(e) => setStatusFilter(e.target.value)}
+                  className={`px-3 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
+                >
+                  <option value="">全部状态</option>
+                  <option value="active">启用</option>
+                  <option value="inactive">停用</option>
+                </select>
+              </div>
             </div>
             
-            {/* 筛选条件 */}
             <div className="flex items-center space-x-4">
-              <select 
-                value={roleFilter}
-                onChange={(e) => setRoleFilter(e.target.value)}
-                className={`px-3 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
-              >
-                <option value="">全部角色</option>
-                {getAvailableRoles().map(role => (
-                  <option key={role.id} value={role.id}>
-                    {role.role_description}
-                  </option>
-                ))}
-              </select>
-              
-              <select 
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className={`px-3 py-2 border border-border-light rounded-lg ${styles.formInputFocus}`}
-              >
-                <option value="">全部状态</option>
-                <option value="active">启用</option>
-                <option value="inactive">停用</option>
-              </select>
-              
               <div className="flex items-center space-x-2">
                 <input 
                   type="checkbox" 

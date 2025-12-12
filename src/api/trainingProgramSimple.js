@@ -9,9 +9,9 @@ dotenv.config();
 
 const router = Router();
 
-// Supabase配置
-const supabaseUrl = process.env.VITE_SUPABASE_URL;
-const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+// Supabase配置 - 使用真实的数据库配置
+const supabaseUrl = 'https://mddpbyibesqewcktlqle.supabase.co';
+const supabaseServiceKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHBieWliZXNxZXdja3RscWxlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzM1NDM0OSwiZXhwIjoyMDc4OTMwMzQ5fQ.P2Y3IaRqJn6Tf7NjaHztGSd__3bTb_aBVioKoIK9Rq8';
 
 if (!supabaseUrl || !supabaseServiceKey) {
   console.error('Supabase配置缺失');
@@ -346,9 +346,12 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
     const { teacherId } = req.params;
     const { programId, studentIds, notes } = req.body;
 
+    console.log('开始批量分配培养方案:', { teacherId, programId, studentIds, notes });
+
     const basicUuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
     
     if (!basicUuidRegex.test(teacherId) || !basicUuidRegex.test(programId)) {
+      console.log('无效的ID格式:', { teacherId, programId });
       return res.status(400).json({
         success: false,
         message: '无效的ID格式'
@@ -356,6 +359,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
     }
 
     if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      console.log('无效的学生ID列表:', studentIds);
       return res.status(400).json({
         success: false,
         message: '请提供有效的学生ID列表'
@@ -365,6 +369,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
     const invalidStudentIds = studentIds.filter(id => !basicUuidRegex.test(id));
     
     if (invalidStudentIds.length > 0) {
+      console.log('发现无效的学生ID格式:', invalidStudentIds);
       return res.status(400).json({
         success: false,
         message: '发现无效的学生ID格式'
@@ -372,6 +377,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
     }
 
     // 验证培养方案存在
+    console.log('验证培养方案是否存在:', programId);
     const { data: program, error: programError } = await supabase
       .from('training_programs')
       .select('*')
@@ -380,6 +386,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
       .single();
 
     if (programError || !program) {
+      console.log('培养方案不存在或已停用:', { programError, program });
       return res.status(404).json({
         success: false,
         message: '培养方案不存在或已停用'
@@ -393,14 +400,37 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
 
     for (const studentId of studentIds) {
       try {
-        // 验证学生存在
-        const { data: student, error: studentError } = await supabase
+        console.log('处理学生分配:', studentId);
+        // 验证学生存在 - 修复：同时检查档案ID和用户ID
+        let studentProfile = null;
+        let studentError = null;
+        
+        // 首先尝试按档案ID查找
+        const profileResult = await supabase
           .from('student_profiles')
           .select('id')
           .eq('id', studentId)
           .single();
+          
+        if (profileResult.data) {
+          studentProfile = profileResult.data;
+        } else {
+          // 如果按档案ID找不到，尝试按用户ID查找
+          const userResult = await supabase
+            .from('student_profiles')
+            .select('id')
+            .eq('user_id', studentId)
+            .single();
+            
+          if (userResult.data) {
+            studentProfile = userResult.data;
+          } else {
+            studentError = profileResult.error || userResult.error;
+          }
+        }
 
-        if (studentError || !student) {
+        if (studentError || !studentProfile) {
+          console.log('学生不存在:', { studentId, studentError });
           failureCount++;
           details.push({
             student_id: studentId,
@@ -408,12 +438,15 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
           });
           continue;
         }
+        
+        // 使用找到的档案ID进行后续操作
+        const profileId = studentProfile.id;
 
         // 创建学生培养方案关联（使用简单的直接插入）
         const { error: assignmentError } = await supabase
           .from('student_training_programs')
           .upsert({
-            student_id: studentId,
+            student_id: profileId, // 使用档案ID而不是传入的ID
             program_id: programId,
             enrollment_date: new Date().toISOString().split('T')[0],
             status: 'active',
@@ -426,7 +459,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
 
         if (assignmentError) {
           console.log('分配失败（可能是重复）:', assignmentError.message);
-          console.log('学生ID:', studentId);
+          console.log('学生ID:', profileId);
           console.log('培养方案ID:', programId);
           // 检查是否是因为已经存在而失败
           if (assignmentError.message.includes('duplicate')) {
@@ -454,7 +487,7 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
 
         if (!coursesError && courses && courses.length > 0) {
           const courseProgressData = courses.map(course => ({
-            student_id: studentId,
+            student_id: profileId, // 使用档案ID
             course_id: course.id,
             status: 'not_started',
             created_at: new Date().toISOString(),
@@ -491,6 +524,8 @@ router.post('/teacher/:teacherId/batch-assign-training-program', async (req, res
       total_count: successCount + failureCount,
       details: details
     };
+
+    console.log('批量分配完成:', resultData);
 
     res.json({
       success: successCount > 0,

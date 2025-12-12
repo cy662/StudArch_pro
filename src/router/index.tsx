@@ -84,17 +84,7 @@ const router = createBrowserRouter([
     errorElement: <ErrorPage />,
   },
 
-      {
-    path: '/admin-system-settings',
-    element: (
-      <ErrorBoundary>
-        <AuthGuard requiredRole="super_admin">
-          <P_admin_class_management />
-        </AuthGuard>
-      </ErrorBoundary>
-    ),
-    errorElement: <ErrorPage />,
-  },
+
 
       {
     path: '/teacher-dashboard',

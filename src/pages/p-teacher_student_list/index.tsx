@@ -202,11 +202,6 @@ const TeacherStudentList: React.FC = () => {
     }
   };
 
-  const handleAddStudent = () => {
-    setEditingStudent(null);
-    setIsStudentModalOpen(true);
-  };
-
   const handleEditStudent = (student: UserWithRole) => {
     setEditingStudent(student);
     setIsStudentModalOpen(true);
@@ -218,34 +213,7 @@ const TeacherStudentList: React.FC = () => {
       setStudentsData(prev => prev.map(student => 
         student.id === editingStudent.id ? { ...student, ...formData } : student
       ));
-    } else {
-      // 新增学生
-      const newStudent: UserWithRole = {
-        id: Date.now().toString(),
-        username: formData.username || '',
-        email: formData.email || '',
-        user_number: formData.user_number || '',
-        full_name: formData.full_name || '',
-        role_id: '3',
-        status: 'active',
-        phone: formData.phone,
-        department: formData.department,
-        grade: formData.grade,
-        class_name: formData.class_name,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        role: {
-          id: '3',
-          role_name: 'student',
-          role_description: '学生',
-          permissions: {},
-          is_system_default: true,
-          created_at: '2021-01-01',
-          updated_at: '2021-01-01'
-        }
-      };
-      setStudentsData(prev => [...prev, newStudent]);
-    }
+    } 
 
     setIsStudentModalOpen(false);
     setEditingStudent(null);
@@ -443,8 +411,9 @@ ${errorDetails}${moreErrors}`);
       setAssigningProgram(true);
       // 假设当前教师的ID是固定的，实际应用中应该从认证状态中获取
       const teacherId = '00000000-0000-0000-0000-000000000001';
-      // 修复：selectedStudents中已经是档案ID，直接使用不需要映射
-      const studentIds = Array.from(selectedStudents);
+      // 修复：将档案ID映射为用户ID
+      const profileIds = Array.from(selectedStudents);
+      const studentIds = await mapProfileIdsToUserIds(profileIds);
 
       console.log('开始分配培养方案:', { programId: selectedProgram, studentIds, teacherId });
 
@@ -517,11 +486,14 @@ ${errorDetails}${moreErrors}`);
           }, 1000);
         }
       } else {
-        alert(`❌ 分配失败: ${result.message}`);
+        // 修复：添加更详细的错误信息显示
+        const errorMessage = result.message || '未知错误';
+        console.error('分配失败详情:', result);
+        alert(`❌ 分配失败: ${errorMessage}`);
       }
     } catch (error) {
       console.error('分配培养方案失败:', error);
-      alert('分配培养方案失败，请检查网络连接');
+      alert(`分配培养方案失败: ${error instanceof Error ? error.message : '网络连接异常'}`);
     } finally {
       setAssigningProgram(false);
     }
@@ -745,13 +717,6 @@ ${errorDetails}${moreErrors}`);
               >
                 <i className="fas fa-upload text-secondary"></i>
                 <span className="text-text-primary">批量导入</span>
-              </button>
-              <button 
-                onClick={handleAddStudent}
-                className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors flex items-center space-x-2"
-              >
-                <i className="fas fa-plus"></i>
-                <span>新增学生</span>
               </button>
             </div>
           </div>
@@ -978,40 +943,6 @@ ${errorDetails}${moreErrors}`);
           </div>
         </div>
       </main>
-
-      {/* 新增/编辑学生模态弹窗 */}
-      {isStudentModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
-          <div className="flex items-center justify-center min-h-screen p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-              <div className="p-6 border-b border-border-light">
-                <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-semibold text-text-primary">
-                    {editingStudent ? '编辑学生' : '新增学生'}
-                  </h3>
-                  <button 
-                    onClick={() => {
-                      setIsStudentModalOpen(false);
-                      setEditingStudent(null);
-                    }}
-                    className="text-text-secondary hover:text-text-primary transition-colors"
-                  >
-                    <i className="fas fa-times text-xl"></i>
-                  </button>
-                </div>
-              </div>
-              <StudentForm 
-                student={editingStudent}
-                onSave={handleSaveStudent}
-                onCancel={() => {
-                  setIsStudentModalOpen(false);
-                  setEditingStudent(null);
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* 批量导入模态弹窗 */}
       {isImportModalOpen && (
@@ -1492,146 +1423,25 @@ ${errorDetails}${moreErrors}`);
   );
 };
 
-// 学生表单组件
-interface StudentFormProps {
-  student: UserWithRole | null;
-  onSave: (data: Partial<UserWithRole>) => void;
-  onCancel: () => void;
-}
-
-const StudentForm: React.FC<StudentFormProps> = ({ student, onSave, onCancel }) => {
-  const [formData, setFormData] = useState({
-    username: student?.username || '',
-    email: student?.email || '',
-    user_number: student?.user_number || '',
-    full_name: student?.full_name || '',
-    phone: student?.phone || '',
-    department: student?.department || '',
-    grade: student?.grade || '',
-    class_name: student?.class_name || '',
-    status: student?.status || 'active'
-  });
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    onSave(formData);
-  };
-
-  return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="student-number" className="block text-sm font-medium text-text-primary mb-2">学号 *</label>
-          <input 
-            type="text" 
-            id="student-number" 
-            value={formData.user_number}
-            onChange={(e) => setFormData(prev => ({ ...prev, user_number: e.target.value }))}
-            required
-            className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-          />
-        </div>
-        <div>
-          <label htmlFor="student-name" className="block text-sm font-medium text-text-primary mb-2">姓名 *</label>
-          <input 
-            type="text" 
-            id="student-name" 
-            value={formData.full_name}
-            onChange={(e) => setFormData(prev => ({ ...prev, full_name: e.target.value }))}
-            required
-            className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="student-email" className="block text-sm font-medium text-text-primary mb-2">邮箱 *</label>
-          <input 
-            type="email" 
-            id="student-email" 
-            value={formData.email}
-            onChange={(e) => setFormData(prev => ({ ...prev, email: e.target.value }))}
-            required
-            className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-          />
-        </div>
-        <div>
-          <label htmlFor="student-department" className="block text-sm font-medium text-text-primary mb-2">院系</label>
-          <input 
-            type="text" 
-            id="student-department" 
-            value={formData.department}
-            onChange={(e) => setFormData(prev => ({ ...prev, department: e.target.value }))}
-            className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="student-grade" className="block text-sm font-medium text-text-primary mb-2">年级</label>
-          <input 
-            type="text" 
-            id="student-grade" 
-            value={formData.grade}
-            onChange={(e) => setFormData(prev => ({ ...prev, grade: e.target.value }))}
-            className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-          />
-        </div>
-        <div>
-          <label htmlFor="student-class" className="block text-sm font-medium text-text-primary mb-2">班级</label>
-          <input 
-            type="text" 
-            id="student-class" 
-            value={formData.class_name}
-            onChange={(e) => setFormData(prev => ({ ...prev, class_name: e.target.value }))}
-            className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-          />
-        </div>
-      </div>
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div>
-          <label htmlFor="student-phone" className="block text-sm font-medium text-text-primary mb-2">联系方式</label>
-          <input 
-            type="tel" 
-            id="student-phone" 
-            value={formData.phone}
-            onChange={(e) => setFormData(prev => ({ ...prev, phone: e.target.value }))}
-            className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-          />
-        </div>
-        <div>
-          <label htmlFor="student-status" className="block text-sm font-medium text-text-primary mb-2">状态</label>
-          <select 
-            id="student-status" 
-            value={formData.status}
-            onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as UserWithRole['status'] }))}
-            className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-          >
-            <option value="active">在读</option>
-            <option value="inactive">离校</option>
-          </select>
-        </div>
-      </div>
-      <div className="p-6 border-t border-border-light flex justify-end space-x-3">
-        <button 
-          type="button"
-          onClick={onCancel}
-          className="px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-        >
-          取消
-        </button>
-        <button 
-          type="submit"
-          className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
-        >
-          保存
-        </button>
-      </div>
-    </form>
-  );
-};
-
 export default TeacherStudentList;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 

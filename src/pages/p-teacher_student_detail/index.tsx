@@ -407,7 +407,6 @@ const TeacherStudentDetail: React.FC = () => {
 
   // 筛选奖惩信息
   const handleRewardFilterChange = (filterType: string, value: any) => {
-    setRewardPunishmentLoading(prev => prev);
     setRewardFilters(prev => ({
       ...prev,
       [filterType]: value || undefined

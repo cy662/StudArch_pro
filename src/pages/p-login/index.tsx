@@ -417,7 +417,7 @@ const LoginPage: React.FC = () => {
 
         {/* 版权信息 */}
         <div className={`text-center mt-8 ${styles.fadeIn}`}>
-          <p className="text-text-secondary text-sm">© 2024 学档通. 保留所有权利.</p>
+          <p className="text-text-secondary text-sm">© 2025 学档通. 所有权利归比奇堡员工海绵宝宝派大星所有.</p>
         </div>
       </div>
 
