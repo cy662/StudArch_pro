@@ -5,9 +5,12 @@ import { UserService } from '../../services/userService';
 import { TrainingProgramService } from '../../services/trainingProgramService';
 import { UserWithRole } from '../../types/user';
 import { TrainingProgramCourse, TrainingProgramImportResult } from '../../types/trainingProgram';
+import { useAuth } from '../../hooks/useAuth'; // 添加这行导入
+import { supabase } from '../../lib/supabase'; // 导入supabase客户端
 
 const TeacherStudentList: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth(); // 获取当前登录用户信息
   
   // 教师管理的学生数据
   const [studentsData, setStudentsData] = useState<UserWithRole[]>([]);
@@ -76,8 +79,16 @@ const TeacherStudentList: React.FC = () => {
   const fetchTeacherStudents = async () => {
     try {
       setStudentsLoading(true);
-      // 这里应该从认证状态中获取当前教师的ID，暂时使用固定的UUID
-      const currentTeacherId = '00000000-0000-0000-0000-000000000001';
+      // 从认证状态中获取当前教师的ID
+      const currentTeacherId = user?.id;
+      
+      // 如果没有获取到教师ID，不执行查询
+      if (!currentTeacherId) {
+        console.warn('未获取到当前教师ID');
+        setStudentsData([]);
+        setStudentsTotal(0);
+        return;
+      }
       
       console.log('获取教师学生列表:', { currentTeacherId, searchTerm, currentPage, pageSize });
       
@@ -103,42 +114,93 @@ const TeacherStudentList: React.FC = () => {
   const fetchAvailableStudents = async () => {
     try {
       setImportLoading(true);
-      // 假设当前教师的ID是固定的，实际应用中应该从认证状态中获取
-      const teacherId = '00000000-0000-0000-0000-000000000001';
+      // 从认证状态中获取当前教师的ID
+      const teacherId = user?.id;
       
+      // 如果没有获取到教师ID，不执行查询
+      if (!teacherId) {
+        console.warn('未获取到当前教师ID');
+        setAvailableStudents([]);
+        setImportTotalCount(0);
+        return;
+      }
+      
+      console.log('尝试调用数据库函数获取可导入学生列表，教师ID:', teacherId);
       const result = await UserService.getAvailableStudentsForImport(teacherId, {
         keyword: importSearchTerm,
         page: importPage,
         limit: 20
       });
-      setAvailableStudents(result.students);
-      setImportTotalCount(result.total);
+      console.log('数据库函数返回结果:', result);
+      
+      // 确保返回的数据有效
+      if (result && Array.isArray(result.students)) {
+        setAvailableStudents(result.students);
+        setImportTotalCount(result.total || 0);
+      } else {
+        // 如果数据库函数返回无效数据，使用备用方案
+        console.log('数据库函数返回无效数据，使用备用方案');
+        await fetchAvailableStudentsFallback(teacherId);
+      }
     } catch (error) {
-      console.error('获取可导入学生失败:', error);
+      console.error('获取可导入学生失败，使用备用方案:', error);
       // 如果数据库函数调用失败，使用备用方案获取所有学生
-      try {
-        const teacherId = '00000000-0000-0000-0000-000000000001'; // 重新定义teacherId
-        const allStudents = await UserService.getUsers({
-          role_id: '3', // 学生角色
-          keyword: importSearchTerm,
-          page: importPage,
-          limit: 20
-        });
-        
-        // 过滤掉已经关联的学生
-        const teacherStudents = await UserService.getTeacherStudents(teacherId);
-        const importedStudentIds = new Set(teacherStudents.students.map(s => s.id));
-        const availableStudents = allStudents.users.filter(student => !importedStudentIds.has(student.id));
-        
-        setAvailableStudents(availableStudents);
-        setImportTotalCount(allStudents.total);
-      } catch (fallbackError) {
-        console.error('备用方案也失败了:', fallbackError);
+      const teacherId = user?.id;
+      if (teacherId) {
+        await fetchAvailableStudentsFallback(teacherId);
+      } else {
         setAvailableStudents([]);
         setImportTotalCount(0);
       }
     } finally {
       setImportLoading(false);
+    }
+  };
+
+  // 备用方案：获取可导入的学生列表
+  const fetchAvailableStudentsFallback = async (teacherId: string) => {
+    try {
+      // 获取所有学生
+      const allStudents = await UserService.getUsers({
+        role_id: '3', // 学生角色
+        keyword: importSearchTerm,
+        page: importPage,
+        limit: 20
+      });
+      
+      console.log('获取所有学生:', allStudents);
+      
+      // 获取所有已有关联关系的学生ID
+      const { data: existingRelations, error: relationsError } = await supabase
+        .from('teacher_students')
+        .select('student_id');
+        
+      if (relationsError) {
+        console.error('获取师生关联关系失败:', relationsError);
+        // 如果无法获取关联关系，则至少过滤掉当前教师已导入的学生
+        const teacherStudents = await UserService.getTeacherStudents(teacherId);
+        const importedStudentIds = new Set(teacherStudents.students.map(s => s.id));
+        const availableStudents = allStudents.users.filter(student => !importedStudentIds.has(student.id));
+        console.log('备用方案1 - 过滤当前教师已导入学生:', availableStudents);
+        setAvailableStudents(availableStudents);
+        setImportTotalCount(availableStudents.length);
+        return;
+      }
+      
+      console.log('已有关联关系的学生ID:', existingRelations);
+      
+      // 创建已关联学生ID的集合
+      const importedStudentIds = new Set(existingRelations.map((relation: { student_id: string }) => relation.student_id));
+      // 过滤掉已关联的学生
+      const availableStudents = allStudents.users.filter(student => !importedStudentIds.has(student.id));
+      
+      console.log('备用方案2 - 过滤所有已导入学生:', availableStudents);
+      setAvailableStudents(availableStudents);
+      setImportTotalCount(availableStudents.length);
+    } catch (fallbackError) {
+      console.error('备用方案也失败了:', fallbackError);
+      setAvailableStudents([]);
+      setImportTotalCount(0);
     }
   };
 
@@ -152,12 +214,12 @@ const TeacherStudentList: React.FC = () => {
   // 页面加载时获取教师学生数据
   useEffect(() => {
     fetchTeacherStudents();
-  }, [searchTerm, currentPage, pageSize]);
+  }, [searchTerm, currentPage, pageSize, user]); // 添加user依赖
 
   // 当筛选条件改变时，重新获取数据
   useEffect(() => {
     fetchTeacherStudents();
-  }, [searchTerm, classFilter, statusFilter]);
+  }, [searchTerm, classFilter, statusFilter, user]); // 添加user依赖
 
   // 设置页面标题
   useEffect(() => {
@@ -257,7 +319,12 @@ const TeacherStudentList: React.FC = () => {
       for (const studentId of selectedStudents) {
         try {
           // 首先从教师管理列表中移除
-          const currentTeacherId = '00000000-0000-0000-0000-000000000001';
+          const currentTeacherId = user?.id;
+          // 如果没有获取到教师ID，跳过当前学生
+          if (!currentTeacherId) {
+            console.warn('未获取到当前教师ID，跳过学生删除:', studentId);
+            continue;
+          }
           await UserService.removeStudentFromTeacher(currentTeacherId, studentId);
           
           // 然后完全删除学生数据
@@ -288,7 +355,9 @@ const TeacherStudentList: React.FC = () => {
 失败详情:
 ${errorDetails}${moreErrors}`);
       } else {
-        alert(`❌ 删除失败，共 ${failedCount} 个学生删除失败\n\n${errors.slice(0, 2).join('\n')}`);
+        alert(`❌ 删除失败，共 ${failedCount} 个学生删除失败
+
+${errors.slice(0, 2).join('\n')}`);
       }
     } catch (error) {
       console.error('批量删除学生失败:', error);
@@ -328,8 +397,14 @@ ${errorDetails}${moreErrors}`);
 
     try {
       setImportLoading(true);
-      // 假设当前教师的ID是固定的，实际应用中应该从认证状态中获取
-      const teacherId = '00000000-0000-0000-0000-000000000001';
+      // 从认证状态中获取当前教师的ID
+      const teacherId = user?.id;
+      
+      // 如果没有获取到教师ID，不执行查询
+      if (!teacherId) {
+        console.warn('未获取到当前教师ID');
+        return;
+      }
       
       console.log('开始导入学生:', Array.from(selectedAvailableStudents));
       const result = await UserService.teacherAddStudents(
@@ -409,8 +484,8 @@ ${errorDetails}${moreErrors}`);
 
     try {
       setAssigningProgram(true);
-      // 假设当前教师的ID是固定的，实际应用中应该从认证状态中获取
-      const teacherId = '00000000-0000-0000-0000-000000000001';
+      // 从认证状态中获取当前教师的ID
+      const teacherId = user?.id;
       // 修复：将档案ID映射为用户ID
       const profileIds = Array.from(selectedStudents);
       const studentIds = await mapProfileIdsToUserIds(profileIds);
@@ -436,32 +511,22 @@ ${errorDetails}${moreErrors}`);
         const { success_count, failure_count, total_count } = result.data;
         
         if (failure_count === 0) {
-          alert(`✅ 成功为 ${success_count} 名学生分配培养方案！\
-\
-💡 学生可以在"教学任务与安排"页面查看分配的课程。`);
+          alert(`✅ 成功为 ${success_count} 名学生分配培养方案！\n\n💡 学生可以在"教学任务与安排"页面查看分配的课程。`);
         } else {
           const details = result.data.details || [];
           let detailsMessage = '';
           
           if (details.length > 0) {
-            detailsMessage = '\
-\
-失败详情:\
-' + details.slice(0, 3).map((d: any) => 
+            detailsMessage = '\n\n失败详情:\n' + details.slice(0, 3).map((d: any) => 
               `• 学生ID ${d.student_id}: ${d.error}`
-            ).join('\
-');
+            ).join('\n');
             
             if (details.length > 3) {
-              detailsMessage += `\
-...还有 ${details.length - 3} 个错误`;
+              detailsMessage += `\n...还有 ${details.length - 3} 个错误`;
             }
           }
           
-          alert(`⚠️ 培养方案分配完成\
-\
-✅ 成功分配: ${success_count} 名学生\
-❌ 分配失败: ${failure_count} 名学生${detailsMessage}`);
+          alert(`⚠️ 培养方案分配完成\n\n✅ 成功分配: ${success_count} 名学生\n❌ 分配失败: ${failure_count} 名学生${detailsMessage}`);
           console.log('分配详情:', result.data.details);
         }
         
@@ -478,10 +543,10 @@ ${errorDetails}${moreErrors}`);
         // 如果有成功的分配，显示额外提示
         if (success_count > 0) {
           setTimeout(() => {
-            alert(`📚 培养方案分配成功！\
-\
-分配的 ${success_count} 名学生现在可以在他们的"教学任务与安排"页面中看到相关课程。\
-\
+            alert(`📚 培养方案分配成功！
+
+分配的 ${success_count} 名学生现在可以在他们的"教学任务与安排"页面中看到相关课程。
+
 请通知学生登录系统查看。`);
           }, 1000);
         }
@@ -648,7 +713,7 @@ ${errorDetails}${moreErrors}`);
                 className="w-8 h-8 rounded-full" 
               />
               <div className="text-sm">
-                <div className="font-medium text-text-primary">张老师</div>
+                <div className="font-medium text-text-primary">{user?.full_name || '教师'}</div>
                 <div className="text-text-secondary">辅导员</div>
               </div>
               <i className="fas fa-chevron-down text-xs text-text-secondary"></i>
@@ -693,7 +758,6 @@ ${errorDetails}${moreErrors}`);
             <span className="font-medium">毕业去向管理</span>
           </Link>
           
-
         </nav>
       </aside>
 
@@ -998,46 +1062,49 @@ ${errorDetails}${moreErrors}`);
                   <div className="text-sm text-text-secondary">
                     已选择 <span className="font-semibold text-secondary">{selectedAvailableStudents.size}</span> 个学生
                   </div>
-                  <div className="text-sm text-text-secondary">
-                    共找到 <span className="font-semibold text-green-600">{importTotalCount}</span> 个可导入学生
-                  </div>
+                  
+                  <button 
+                    onClick={handleConfirmImport}
+                    disabled={selectedAvailableStudents.size === 0 || importLoading}
+                    className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center space-x-2"
+                  >
+                    <i className={`fas ${importLoading ? 'fa-spinner fa-spin' : 'fa-check'}`}></i>
+                    <span>{importLoading ? '导入中...' : '确认导入'}</span>
+                  </button>
                 </div>
-
+                
                 {/* 学生列表 */}
                 <div className="flex-1 overflow-y-auto border border-border-light rounded-lg">
                   {importLoading ? (
-                    <div className="flex items-center justify-center h-64">
-                      <div className="text-center">
-                        <i className="fas fa-spinner fa-spin text-3xl text-secondary mb-4"></i>
-                        <p className="text-text-secondary">加载中...</p>
-                      </div>
+                    <div className="py-12 text-center">
+                      <i className="fas fa-spinner fa-spin text-2xl text-secondary mb-4"></i>
+                      <p className="text-text-secondary">加载中...</p>
                     </div>
                   ) : availableStudents.length === 0 ? (
-                    <div className="flex items-center justify-center h-64">
-                      <div className="text-center">
-                        <i className="fas fa-check-circle text-5xl text-green-500 mb-4"></i>
-                        <p className="text-text-secondary mb-2">暂无可导入的学生</p>
-                        <p className="text-sm text-text-secondary">所有学生都已在您的管理名单中</p>
-                      </div>
+                    <div className="py-12 text-center">
+                      <i className="fas fa-user-plus text-4xl text-gray-300 mb-4"></i>
+                      <p className="text-text-secondary">暂无可导入的学生</p>
+                      <p className="text-sm text-text-secondary mt-2">请确保系统中已存在学生账户</p>
                     </div>
                   ) : (
-                    <table className="w-full">
+                    <table className="min-w-full divide-y divide-border-light">
                       <thead className="bg-gray-50 sticky top-0">
                         <tr>
                           <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
                             <input 
                               type="checkbox" 
-                              checked={availableStudents.length > 0 && availableStudents.every(s => selectedAvailableStudents.has(s.id))}
+                              checked={isAllSelected()}
+                              ref={(input) => {
+                                if (input) input.indeterminate = isIndeterminate();
+                              }}
                               onChange={(e) => handleSelectAllAvailable(e.target.checked)}
                               className="rounded border-border-light"
                             />
                           </th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">学号</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">姓名</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">邮箱</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">院系</th>
-                          <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">年级</th>
                           <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">班级</th>
+                          <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">联系方式</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-border-light">
@@ -1053,369 +1120,355 @@ ${errorDetails}${moreErrors}`);
                             </td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{student.user_number}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-text-primary">{student.full_name}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">{student.email}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{student.department}</td>
-                            <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{student.grade}</td>
                             <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{student.class_name}</td>
+                            <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">{student.phone}</td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
                   )}
                 </div>
-
+                
                 {/* 分页 */}
-                {availableStudents.length > 0 && (
-                  <div className="mt-4 flex items-center justify-between">
-                    <div className="text-sm text-text-secondary">
-                      显示第 {Math.min((importPage - 1) * 20 + 1, importTotalCount)} - {Math.min(importPage * 20, importTotalCount)} 条，共 {importTotalCount} 条
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <button 
-                        onClick={() => setImportPage(prev => Math.max(1, prev - 1))}
-                        disabled={importPage === 1}
-                        className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-                      >
-                        <i className="fas fa-chevron-left"></i>
-                      </button>
-                      <span className="px-3 py-1 text-sm text-text-primary">
-                        第 {importPage} 页
-                      </span>
-                      <button 
-                        onClick={() => setImportPage(prev => Math.min(Math.ceil(importTotalCount / 20), prev + 1))}
-                        disabled={importPage >= Math.ceil(importTotalCount / 20)}
-                        className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-                      >
-                        <i className="fas fa-chevron-right"></i>
-                      </button>
-                    </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <div className="text-sm text-text-secondary">
+                    共 {importTotalCount} 条记录
                   </div>
-                )}
-              </div>
-              
-              <div className="p-6 border-t border-border-light flex justify-end space-x-3">
-                <button 
-                  onClick={() => {
-                    setIsImportModalOpen(false);
-                    setSelectedAvailableStudents(new Set());
-                    setImportSearchTerm('');
-                    setImportPage(1);
-                  }}
-                  className="px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  取消
-                </button>
-                <button 
-                  onClick={handleConfirmImport}
-                  disabled={selectedAvailableStudents.size === 0 || importLoading}
-                  className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50"
-                >
-                  {importLoading ? '导入中...' : `确认导入 (${selectedAvailableStudents.size})`}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 导入培养方案模态弹窗 */}
-      {isTrainingProgramModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
-          <div className="flex items-center justify-center min-h-screen p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
-              <div className="p-6 border-b border-border-light">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-text-primary">导入培养方案</h3>
-                    <p className="text-sm text-text-secondary mt-1">支持Excel(.xlsx, .xls)和CSV格式文件</p>
-                  </div>
-                  <button 
-                    onClick={handleTrainingProgramModalClose}
-                    className="text-text-secondary hover:text-text-primary transition-colors"
-                  >
-                    <i className="fas fa-times text-xl"></i>
-                  </button>
-                </div>
-              </div>
-              
-              <div className="p-6 flex-1 overflow-hidden flex flex-col">
-                {/* 下载模板区域 */}
-                <div className="mb-6 p-4 bg-blue-50 rounded-lg">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium text-blue-900 mb-1">第一步：下载模板</h4>
-                      <p className="text-sm text-blue-700">请先下载官方模板，按照模板格式填写数据</p>
-                    </div>
+                  <div className="flex items-center space-x-2">
                     <button 
-                      onClick={handleDownloadTrainingProgramTemplate}
-                      className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center space-x-2"
+                      onClick={() => setImportPage(prev => Math.max(1, prev - 1))}
+                      disabled={importPage === 1}
+                      className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
                     >
-                      <i className="fas fa-download"></i>
-                      <span>下载模板</span>
+                      <i className="fas fa-chevron-left"></i>
+                    </button>
+                    <span className="text-sm text-text-primary">
+                      第 {importPage} 页
+                    </span>
+                    <button 
+                      onClick={() => setImportPage(prev => prev + 1)}
+                      disabled={importPage * 20 >= importTotalCount}
+                      className="px-3 py-1 text-sm border border-border-light rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                    >
+                      <i className="fas fa-chevron-right"></i>
                     </button>
                   </div>
                 </div>
-
-                {/* 文件上传区域 */}
-                <div className="mb-6">
-                  <h4 className="font-medium text-text-primary mb-3">第二步：上传文件</h4>
-                  <div className="border-2 border-dashed border-border-light rounded-lg p-6 text-center hover:border-secondary transition-colors">
-                    <input 
-                      type="file"
-                      id="training-program-file"
-                      accept=".xlsx,.xls,.csv"
-                      onChange={handleTrainingProgramFileSelect}
-                      className="hidden"
-                    />
-                    <label 
-                      htmlFor="training-program-file"
-                      className="cursor-pointer flex flex-col items-center"
-                    >
-                      <i className="fas fa-cloud-upload-alt text-4xl text-text-secondary mb-3"></i>
-                      <span className="text-text-primary font-medium">点击选择文件或拖拽到此处</span>
-                      <span className="text-sm text-text-secondary mt-1">支持 .xlsx, .xls, .csv 格式</span>
-                    </label>
-                  </div>
-                </div>
-
-                {/* 文件信息显示 */}
-                {trainingProgramFile && (
-                  <div className="mb-6 p-4 bg-green-50 rounded-lg">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center space-x-3">
-                        <i className="fas fa-file-excel text-green-600 text-xl"></i>
-                        <div>
-                          <p className="font-medium text-green-900">{trainingProgramFile.name}</p>
-                          <p className="text-sm text-green-700">
-                            {trainingProgramCourses.length} 条课程记录
-                          </p>
-                        </div>
-                      </div>
-                      <button 
-                        onClick={() => {
-                          setTrainingProgramFile(null);
-                          setTrainingProgramCourses([]);
-                          setTrainingProgramImportResult(null);
-                        }}
-                        className="text-red-500 hover:text-red-700 transition-colors"
-                      >
-                        <i className="fas fa-times-circle text-xl"></i>
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* 数据预览区域 */}
-                {trainingProgramCourses.length > 0 && (
-                  <div className="flex-1 overflow-hidden flex flex-col">
-                    <h4 className="font-medium text-text-primary mb-3">数据预览</h4>
-                    <div className="flex-1 overflow-auto border border-border-light rounded-lg">
-                      <table className="w-full">
-                        <thead className="bg-gray-50 sticky top-0">
-                          <tr>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase">课程号</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase">课程名称</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase">学分</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase">建议修读年级</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase">学期</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase">考试方式</th>
-                            <th className="px-4 py-2 text-left text-xs font-medium text-text-secondary uppercase">课程性质</th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-border-light">
-                          {trainingProgramCourses.slice(0, 10).map((course, index) => (
-                            <tr key={course.id} className="hover:bg-gray-50">
-                              <td className="px-4 py-2 text-sm text-text-primary">{course.course_number}</td>
-                              <td className="px-4 py-2 text-sm text-text-primary">{course.course_name}</td>
-                              <td className="px-4 py-2 text-sm text-text-primary">{course.credits}</td>
-                              <td className="px-4 py-2 text-sm text-text-primary">{course.recommended_grade}</td>
-                              <td className="px-4 py-2 text-sm text-text-primary">{course.semester}</td>
-                              <td className="px-4 py-2 text-sm text-text-primary">{course.exam_method}</td>
-                              <td className="px-4 py-2 text-sm text-text-primary">{course.course_nature}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {trainingProgramCourses.length > 10 && (
-                        <div className="p-3 text-center text-sm text-text-secondary bg-gray-50">
-                          显示前 10 条，共 {trainingProgramCourses.length} 条记录
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )}
-
-                {/* 导入结果显示 */}
-                {trainingProgramImportResult && (
-                  <div className="mt-4 p-4 bg-green-50 rounded-lg">
-                    <h4 className="font-medium text-green-900 mb-2">导入结果</h4>
-                    <div className="text-sm text-green-700">
-                      <p>✅ 成功导入: {trainingProgramImportResult.success} 条</p>
-                      {trainingProgramImportResult.failed > 0 && (
-                        <p>❌ 导入失败: {trainingProgramImportResult.failed} 条</p>
-                      )}
-                      <p>📊 总计: {trainingProgramImportResult.total} 条</p>
-                    </div>
-                  </div>
-                )}
-              </div>
-              
-              <div className="p-6 border-t border-border-light flex justify-end space-x-3">
-                <button 
-                  onClick={handleTrainingProgramModalClose}
-                  className="px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                >
-                  取消
-                </button>
-                <button 
-                  onClick={handleTrainingProgramImport}
-                  disabled={trainingProgramCourses.length === 0 || trainingProgramImporting}
-                  className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:bg-gray-300"
-                >
-                  {trainingProgramImporting ? '导入中...' : `确认导入 (${trainingProgramCourses.length})`}
-                </button>
               </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* 分配培养方案模态弹窗 */}
-      {isAssignProgramModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
-          <div className="flex items-center justify-center min-h-screen p-4">
-            <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
-              <div className="p-6 border-b border-border-light">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h3 className="text-lg font-semibold text-text-primary">分配培养方案</h3>
-                    <p className="text-sm text-text-secondary mt-1">
-                      为选中的 {selectedStudents.size} 名学生分配培养方案
-                    </p>
-                  </div>
+      {/* 培养方案导入模态框 */}
+      {isTrainingProgramModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl">
+            <div className="p-6 border-b border-border-light">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-text-primary">导入培养方案</h3>
+                <button 
+                  onClick={handleTrainingProgramModalClose}
+                  className="text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <i className="fas fa-times text-xl"></i>
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <div className="space-y-6">
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <h4 className="font-medium text-blue-800 mb-2">
+                    <i className="fas fa-info-circle mr-2"></i>使用说明
+                  </h4>
+                  <ul className="text-sm text-blue-700 space-y-1">
+                    <li>• 请下载最新的Excel模板并按照格式填写培养方案信息</li>
+                    <li>• 支持.xls和.xlsx格式的Excel文件</li>
+                    <li>• 文件大小不能超过10MB</li>
+                    <li>• 导入前请仔细检查数据准确性</li>
+                  </ul>
+                </div>
+                
+                <div className="space-y-4">
                   <button 
-                    onClick={() => {
-                      setIsAssignProgramModalOpen(false);
-                      setSelectedProgram('');
-                    }}
-                    className="text-text-secondary hover:text-text-primary transition-colors"
+                    onClick={handleDownloadTrainingProgramTemplate}
+                    className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
                   >
-                    <i className="fas fa-times text-xl"></i>
+                    <i className="fas fa-download"></i>
+                    <span>下载模板</span>
+                  </button>
+                  
+                  <div className="border-2 border-dashed border-border-light rounded-lg p-6 text-center hover:border-secondary transition-colors">
+                    <input 
+                      type="file" 
+                      accept=".xlsx,.xls,.csv" 
+                      onChange={handleTrainingProgramFileSelect}
+                      className="hidden" 
+                      id="training-program-file"
+                    />
+                    <label htmlFor="training-program-file" className="cursor-pointer">
+                      <i className="fas fa-cloud-upload-alt text-3xl text-secondary mb-3"></i>
+                      <p className="font-medium text-text-primary">点击选择文件或拖拽文件到这里</p>
+                      <p className="text-sm text-text-secondary mt-1">支持 Excel 文件 (.xlsx, .xls)</p>
+                    </label>
+                  </div>
+                  
+                  {trainingProgramFile && (
+                    <div className="p-4 bg-gray-50 rounded-lg">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center space-x-3">
+                          <i className="fas fa-file-excel text-green-500 text-xl"></i>
+                          <div>
+                            <p className="font-medium text-text-primary">{trainingProgramFile.name}</p>
+                            <p className="text-sm text-text-secondary">
+                              {(trainingProgramFile.size / 1024 / 1024).toFixed(2)} MB
+                            </p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => setTrainingProgramFile(null)}
+                          className="text-text-secondary hover:text-red-500 transition-colors"
+                        >
+                          <i className="fas fa-times"></i>
+                        </button>
+                      </div>
+                      
+                      {trainingProgramCourses.length > 0 && (
+                        <div className="mt-3 p-3 bg-white rounded border">
+                          <p className="text-sm text-text-primary">
+                            已解析 <span className="font-semibold">{trainingProgramCourses.length}</span> 条课程记录
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {trainingProgramImportResult && (
+                    <div className={`p-4 rounded-lg ${trainingProgramImportResult.success > 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
+                      <div className="flex items-start space-x-3">
+                        <i className={`fas ${trainingProgramImportResult.success > 0 ? 'fa-check-circle text-green-500' : 'fa-exclamation-circle text-red-500'} text-xl`}></i>
+                        <div>
+                          <h4 className={`font-medium ${trainingProgramImportResult.success > 0 ? 'text-green-800' : 'text-red-800'}`}>
+                            {trainingProgramImportResult.success > 0 ? '导入成功' : '导入失败'}
+                          </h4>
+                          <p className={`text-sm mt-1 ${trainingProgramImportResult.success > 0 ? 'text-green-700' : 'text-red-700'}`}>
+                            成功导入 {trainingProgramImportResult.success} 条记录
+                            {trainingProgramImportResult.failed > 0 && (
+                              <span>，失败 {trainingProgramImportResult.failed} 条</span>
+                            )}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+                
+                <div className="flex space-x-3">
+                  <button 
+                    onClick={handleTrainingProgramModalClose}
+                    className="flex-1 px-4 py-2 border border-border-light rounded-lg text-text-primary hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    onClick={handleTrainingProgramImport}
+                    disabled={!trainingProgramFile || trainingProgramImporting}
+                    className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                  >
+                    <i className={`fas ${trainingProgramImporting ? 'fa-spinner fa-spin' : 'fa-upload'}`}></i>
+                    <span>{trainingProgramImporting ? '导入中...' : '开始导入'}</span>
                   </button>
                 </div>
               </div>
-              
-              <div className="p-6 flex-1 overflow-hidden flex flex-col">
-                {/* 选中学生显示 */}
-                <div className="mb-4 p-4 bg-blue-50 rounded-lg">
-                  <h4 className="font-medium text-blue-900 mb-2">已选择的学生</h4>
-                  <div className="text-sm text-blue-700">
-                    共选择了 <span className="font-semibold">{selectedStudents.size}</span> 名学生
-                  </div>
-                </div>
+            </div>
+          </div>
+        </div>
+      )}
 
-                {/* 培养方案选择 */}
-                <div className="mb-4">
-                  <h4 className="font-medium text-text-primary mb-2">选择培养方案</h4>
-                  <div className="relative">
+      {/* 分配培养方案模态框 */}
+      {isAssignProgramModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-6 border-b border-border-light">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-text-primary">分配培养方案</h3>
+                <button 
+                  onClick={() => setIsAssignProgramModalOpen(false)}
+                  className="text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <i className="fas fa-times text-xl"></i>
+                </button>
+              </div>
+            </div>
+            
+            <div className="p-6">
+              <div className="space-y-6">
+                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                  <p className="text-sm text-blue-700">
+                    将为 <span className="font-semibold">{selectedStudents.size}</span> 名学生分配培养方案
+                  </p>
+                </div>
+                
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    选择培养方案
+                  </label>
+                  {programsLoading ? (
+                    <div className="py-4 text-center">
+                      <i className="fas fa-spinner fa-spin text-secondary"></i>
+                      <p className="text-sm text-text-secondary mt-2">加载中...</p>
+                    </div>
+                  ) : (
                     <select 
                       value={selectedProgram}
                       onChange={(e) => setSelectedProgram(e.target.value)}
-                      className="w-full px-4 py-2 border border-border-light rounded-lg focus:outline-none focus:border-secondary"
-                      disabled={programsLoading}
+                      className="w-full px-4 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
                     >
                       <option value="">请选择培养方案</option>
-                      {programsLoading ? (
-                        <option value="">加载中...</option>
-                      ) : availablePrograms.length === 0 ? (
-                        <option value="">暂无可用培养方案</option>
-                      ) : (
-                        availablePrograms.map(program => (
-                          <option key={program.id} value={program.id}>
-                            {program.program_name} ({program.program_code})
-                          </option>
-                        ))
-                      )}
+                      {availablePrograms.map(program => (
+                        <option key={program.id} value={program.id}>
+                          {program.program_name}
+                        </option>
+                      ))}
                     </select>
-                    {programsLoading && (
-                      <div className="absolute right-3 top-1/2 transform -translate-y-1/2">
-                        <i className="fas fa-spinner fa-spin text-secondary"></i>
-                      </div>
-                    )}
-                  </div>
+                  )}
                 </div>
-
-                {/* 培养方案详情显示 */}
-                {selectedProgram && availablePrograms.length > 0 && (
-                  <div className="flex-1 overflow-hidden flex flex-col">
-                    <h4 className="font-medium text-text-primary mb-2">培养方案详情</h4>
-                    {(() => {
-                      const selected = availablePrograms.find(p => p.id === selectedProgram);
-                      return selected ? (
-                        <div className="flex-1 overflow-auto p-4 bg-gray-50 rounded-lg">
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                            <div>
-                              <span className="font-medium text-text-primary">方案名称：</span>
-                              <span className="text-text-secondary ml-2">{selected.program_name}</span>
-                            </div>
-                            <div>
-                              <span className="font-medium text-text-primary">方案代码：</span>
-                              <span className="text-text-secondary ml-2">{selected.program_code}</span>
-                            </div>
-                            <div>
-                              <span className="font-medium text-text-primary">专业：</span>
-                              <span className="text-text-secondary ml-2">{selected.major}</span>
-                            </div>
-                            <div>
-                              <span className="font-medium text-text-primary">院系：</span>
-                              <span className="text-text-secondary ml-2">{selected.department}</span>
-                            </div>
-                            <div>
-                              <span className="font-medium text-text-primary">总学分：</span>
-                              <span className="text-text-secondary ml-2">{selected.total_credits}学分</span>
-                            </div>
-                            <div>
-                              <span className="font-medium text-text-primary">学制：</span>
-                              <span className="text-text-secondary ml-2">{selected.duration_years}年</span>
-                            </div>
-                          </div>
-                          {selected.description && (
-                            <div className="mt-4">
-                              <span className="font-medium text-text-primary">描述：</span>
-                              <p className="text-text-secondary mt-1 text-sm">{selected.description}</p>
-                            </div>
-                          )}
-                          <div className="mt-4">
-                            <span className="font-medium text-text-primary">课程数量：</span>
-                            <span className="text-text-secondary ml-2">{selected.course_count || 0}门课程</span>
-                          </div>
-                        </div>
-                      ) : null;
-                    })()}
-                  </div>
-                )}
+                
+                <div className="flex space-x-3">
+                  <button 
+                    onClick={() => setIsAssignProgramModalOpen(false)}
+                    className="flex-1 px-4 py-2 border border-border-light rounded-lg text-text-primary hover:bg-gray-50 transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button 
+                    onClick={handleAssignTrainingProgram}
+                    disabled={!selectedProgram || assigningProgram}
+                    className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
+                  >
+                    <i className={`fas ${assigningProgram ? 'fa-spinner fa-spin' : 'fa-check'}`}></i>
+                    <span>{assigningProgram ? '分配中...' : '确认分配'}</span>
+                  </button>
+                </div>
               </div>
-              
-              <div className="p-6 border-t border-border-light flex justify-end space-x-3">
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑学生模态框 */}
+      {isStudentModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
+            <div className="p-6 border-b border-border-light">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-text-primary">
+                  {editingStudent ? '编辑学生信息' : '新增学生'}
+                </h3>
                 <button 
                   onClick={() => {
-                    setIsAssignProgramModalOpen(false);
-                    setSelectedProgram('');
+                    setIsStudentModalOpen(false);
+                    setEditingStudent(null);
                   }}
-                  className="px-4 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors"
-                  disabled={assigningProgram}
+                  className="text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <i className="fas fa-times text-xl"></i>
+                </button>
+              </div>
+            </div>
+            
+            <form 
+              onSubmit={(e) => {
+                e.preventDefault();
+                const formData = new FormData(e.target as HTMLFormElement);
+                const data = Object.fromEntries(formData.entries());
+                handleSaveStudent(data);
+              }}
+              className="p-6 space-y-4"
+            >
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">
+                  姓名
+                </label>
+                <input 
+                  type="text" 
+                  name="full_name"
+                  defaultValue={editingStudent?.full_name || ''}
+                  className="w-full px-4 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">
+                  学号
+                </label>
+                <input 
+                  type="text" 
+                  name="user_number"
+                  defaultValue={editingStudent?.user_number || ''}
+                  className="w-full px-4 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">
+                  邮箱
+                </label>
+                <input 
+                  type="email" 
+                  name="email"
+                  defaultValue={editingStudent?.email || ''}
+                  className="w-full px-4 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
+                  required
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">
+                  联系电话
+                </label>
+                <input 
+                  type="tel" 
+                  name="phone"
+                  defaultValue={editingStudent?.phone || ''}
+                  className="w-full px-4 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
+                />
+              </div>
+              
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1">
+                  班级
+                </label>
+                <input 
+                  type="text" 
+                  name="class_name"
+                  defaultValue={editingStudent?.class_name || ''}
+                  className="w-full px-4 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
+                />
+              </div>
+              
+              <div className="flex space-x-3 pt-4">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setIsStudentModalOpen(false);
+                    setEditingStudent(null);
+                  }}
+                  className="flex-1 px-4 py-2 border border-border-light rounded-lg text-text-primary hover:bg-gray-50 transition-colors"
                 >
                   取消
                 </button>
                 <button 
-                  onClick={handleAssignTrainingProgram}
-                  disabled={!selectedProgram || assigningProgram}
-                  className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:bg-gray-300"
+                  type="submit"
+                  className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
                 >
-                  {assigningProgram ? '分配中...' : `确认分配 (${selectedStudents.size}名学生)`}
+                  保存
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
@@ -1424,12 +1477,6 @@ ${errorDetails}${moreErrors}`);
 };
 
 export default TeacherStudentList;
-
-
-
-
-
-
 
 
 

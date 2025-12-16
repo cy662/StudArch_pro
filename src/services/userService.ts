@@ -566,10 +566,27 @@ export class UserService {
       return { students: [], total: 0 }
     }
 
-    // 处理新的JSON返回格式
-    const result = data as any
-    const students = (result.students || []) as UserWithRole[]
-    const total = result.total_count || 0
+    console.log('数据库函数返回的原始数据:', data);
+    console.log('数据类型:', typeof data);
+    console.log('是否为数组:', Array.isArray(data));
+
+    // 处理数据库函数返回的表格格式
+    let students: UserWithRole[] = [];
+    let total = 0;
+
+    if (Array.isArray(data) && data.length > 0) {
+      // 数据库函数返回的格式: [{ students: [...], total_count: N }]
+      const firstRow = data[0];
+      students = (firstRow.students || []) as UserWithRole[];
+      total = firstRow.total_count || 0;
+    } else if (data.students && data.total_count !== undefined) {
+      // 直接对象格式（不太可能但备用）
+      students = (data.students || []) as UserWithRole[];
+      total = data.total_count || 0;
+    }
+
+    console.log('解析后的学生数据:', students);
+    console.log('解析后的总数:', total);
 
     return {
       students,

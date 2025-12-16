@@ -1,5 +1,3 @@
-
-
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './styles.module.css';
@@ -125,24 +123,24 @@ const TeacherStudentDetail: React.FC = () => {
         // 构造学生数据对象
         const newStudentData: StudentData = {
           id: studentId,
-          name: userInfo.full_name || '未知',
-          avatar: userInfo.profile_photo || 'https://s.coze.cn/image/vdcOni23j40/',
-          status: userInfo.profile_status_text || userInfo.user_status || '未知',
-          studentId: userInfo.user_number || '未知',
-          gender: userInfo.gender === 'male' ? '男' : userInfo.gender === 'female' ? '女' : userInfo.gender || '未知',
-          birthDate: formatDate(userInfo.birth_date) || '未知',
-          nationality: userInfo.nationality || '未知',
-          politicalStatus: userInfo.political_status || '未知',
-          phone: userInfo.profile_phone || userInfo.user_phone || '未知',
-          email: userInfo.email || '未知',
-          address: userInfo.home_address || '未知',
-          emergencyContact: userInfo.emergency_contact || '未知',
-          emergencyPhone: userInfo.emergency_phone || '未知',
-          college: userInfo.department || '未知',
-          major: completeInfo?.major || '未知',
-          className: userInfo.profile_class_name || userInfo.user_class_name || '未知',
-          enrollmentYear: userInfo.admission_date ? userInfo.admission_date.substring(0, 4) + '年' : '未知',
-          studyDuration: completeInfo?.academic_system || '4年'
+          name: (userInfo as any).full_name || '未知',
+          avatar: (userInfo as any).profile_photo || 'https://s.coze.cn/image/vdcOni23j40/',
+          status: (userInfo as any).profile_status_text || (userInfo as any).user_status || '未知',
+          studentId: (userInfo as any).user_number || '未知',
+          gender: (userInfo as any).gender === 'male' ? '男' : (userInfo as any).gender === 'female' ? '女' : (userInfo as any).gender || '未知',
+          birthDate: formatDate((userInfo as any).birth_date) || '未知',
+          nationality: (userInfo as any).nationality || '未知',
+          politicalStatus: (userInfo as any).political_status || '未知',
+          phone: (userInfo as any).profile_phone || (userInfo as any).user_phone || '未知',
+          email: (userInfo as any).email || '未知',
+          address: (userInfo as any).home_address || '未知',
+          emergencyContact: (userInfo as any).emergency_contact || '未知',
+          emergencyPhone: (userInfo as any).emergency_phone || '未知',
+          college: (userInfo as any).department || '未知',
+          major: (completeInfo as any)?.major || '未知',
+          className: (userInfo as any).profile_class_name || (userInfo as any).user_class_name || '未知',
+          enrollmentYear: (userInfo as any).admission_date ? (userInfo as any).admission_date.substring(0, 4) + '年' : '未知',
+          studyDuration: (completeInfo as any)?.academic_system || '4年'
         };
         
         setStudentData(newStudentData);
@@ -347,7 +345,7 @@ const TeacherStudentDetail: React.FC = () => {
         category: formData.category,
         description: formData.description || '',
         date: formData.date || new Date().toISOString().split('T')[0],
-        created_by: 'teacher001' // 实际项目中应该从认证状态获取
+        created_by: '00000000-0000-0000-0000-000000000001' // 实际项目中应该从认证状态获取
       };
 
       console.log('📦 准备保存的数据:', rewardData);
