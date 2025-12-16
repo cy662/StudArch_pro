@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>教师数据隔离测试</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .section {
+            margin-bottom: 30px;
+            padding: 20px;
+            border: 1px solid #e0e0e0;
+            border-radius: 6px;
+        }
+        .success { background-color: #f0f9f0; border-color: #4caf50; }
+        .warning { background-color: #fff8e1; border-color: #ff9800; }
+        .error { background-color: #fef2f2; border-color: #f44336; }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        .badge {
+            padding: 4px 8px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .badge-pending { background-color: #fff3cd; color: #856404; }
+        .badge-approved { background-color: #d4edda; color: #155724; }
+        .badge-rejected { background-color: #f8d7da; color: #721c24; }
+        button {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin: 5px;
+        }
+        button:hover {
+            background-color: #0056b3;
+        }
+        .log {
+            background-color: #f8f9fa;
+            padding: 10px;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎓 教师毕业去向数据隔离测试</h1>
+        
+        <div class="section">
+            <h3>🔍 测试说明</h3>
+            <p>此页面用于测试教师T0521是否能正确查看学生2022666的毕业去向申请。</p>
+            <button onclick="runTest()">🚀 开始测试</button>
+            <button onclick="clearLogs()">🗑️ 清除日志</button>
+        </div>
+
+        <div id="teacher-info" class="section" style="display: none;">
+            <h3>👨‍🏫 教师信息</h3>
+            <div id="teacher-details"></div>
+        </div>
+
+        <div id="student-info" class="section" style="display: none;">
+            <h3>👨‍🎓 学生2022666信息</h3>
+            <div id="student-details"></div>
+        </div>
+
+        <div id="graduation-data" class="section" style="display: none;">
+            <h3>📋 毕业去向数据</h3>
+            <div id="graduation-details"></div>
+        </div>
+
+        <div id="test-result" class="section" style="display: none;">
+            <h3>📊 测试结果</h3>
+            <div id="result-details"></div>
+        </div>
+
+        <div class="section">
+            <h3>📝 操作日志</h3>
+            <div id="log" class="log"></div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
+
+        // 配置Supabase客户端
+        const supabaseUrl = 'https://mddpbyibesqewcktlqle.supabase.co';
+        const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHBieWliZXNxZXdja3RscWxlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzM1NDM0OSwiZXhwIjoyMDc4OTMwMzQ5fQ.P2Y3IaRqJn6Tf7NjaHztGSd__3bTb_aBVioKoIK9Rq8';
+        const supabase = createClient(supabaseUrl, supabaseKey);
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const logDiv = document.getElementById('log');
+            const logEntry = document.createElement('div');
+            logEntry.innerHTML = `[${timestamp}] ${message}`;
+            logEntry.style.color = type === 'error' ? '#d32f2f' : type === 'success' ? '#388e3c' : '#333';
+            logDiv.appendChild(logEntry);
+            logDiv.scrollTop = logDiv.scrollHeight;
+        }
+
+        window.runTest = async function() {
+            try {
+                log('🚀 开始测试数据隔离功能...', 'info');
+                
+                // 1. 获取教师T0521信息
+                log('🔍 查询教师T0521信息...');
+                const { data: teacherData, error: teacherError } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('user_number', 'T0521')
+                    .single();
+
+                if (teacherError) {
+                    throw new Error(`获取教师信息失败: ${teacherError.message}`);
+                }
+
+                log(`✅ 找到教师: ${teacherData.full_name} (${teacherData.user_number})`, 'success');
+                
+                // 显示教师信息
+                document.getElementById('teacher-info').style.display = 'block';
+                document.getElementById('teacher-details').innerHTML = `
+                    <p><strong>姓名:</strong> ${teacherData.full_name}</p>
+                    <p><strong>工号:</strong> ${teacherData.user_number}</p>
+                    <p><strong>ID:</strong> ${teacherData.id}</p>
+                    <p><strong>角色:</strong> ${teacherData.role_id === 2 ? '教师' : '其他'}</p>
+                `;
+
+                // 2. 获取学生2022666信息
+                log('🔍 查询学生2022666信息...');
+                const { data: studentData, error: studentError } = await supabase
+                    .from('users')
+                    .select('*')
+                    .eq('user_number', '2022666')
+                    .single();
+
+                if (studentError) {
+                    throw new Error(`获取学生信息失败: ${studentError.message}`);
+                }
+
+                log(`✅ 找到学生: ${studentData.full_name} (${studentData.user_number})`, 'success');
+                
+                // 显示学生信息
+                document.getElementById('student-info').style.display = 'block';
+                document.getElementById('student-details').innerHTML = `
+                    <p><strong>姓名:</strong> ${studentData.full_name}</p>
+                    <p><strong>学号:</strong> ${studentData.user_number}</p>
+                    <p><strong>ID:</strong> ${studentData.id}</p>
+                    <p><strong>班级:</strong> ${studentData.class_name}</p>
+                `;
+
+                // 3. 检查教师-学生关系
+                log('🔍 检查教师-学生关系...');
+                const { data: relationData, error: relationError } = await supabase
+                    .from('teacher_students')
+                    .select('*')
+                    .eq('teacher_id', teacherData.id)
+                    .eq('student_id', studentData.id);
+
+                if (relationError) {
+                    throw new Error(`检查教师-学生关系失败: ${relationError.message}`);
+                }
+
+                if (relationData.length === 0) {
+                    throw new Error('教师T0521与学生2022666之间没有关联关系！');
+                }
+
+                log('✅ 教师与学生关联关系正常', 'success');
+
+                // 4. 检查学生是否有毕业去向记录
+                log('🔍 查询学生毕业去向记录...');
+                const { data: graduationData, error: graduationError } = await supabase
+                    .from('graduation_destinations')
+                    .select('*')
+                    .eq('student_id', studentData.id);
+
+                if (graduationError) {
+                    throw new Error(`查询毕业去向失败: ${graduationError.message}`);
+                }
+
+                if (graduationData.length === 0) {
+                    throw new Error('学生2022666没有毕业去向记录！');
+                }
+
+                log(`✅ 找到 ${graduationData.length} 条毕业去向记录`, 'success');
+                
+                // 显示毕业去向信息
+                document.getElementById('graduation-data').style.display = 'block';
+                let graduationTable = '<table><tr><th>去向类型</th><th>单位/学校</th><th>职位</th><th>状态</th><th>提交时间</th></tr>';
+                graduationData.forEach(record => {
+                    const statusClass = record.status === 'pending' ? 'badge-pending' : 
+                                       record.status === 'approved' ? 'badge-approved' : 'badge-rejected';
+                    const statusText = record.status === 'pending' ? '待审核' : 
+                                      record.status === 'approved' ? '已通过' : '已驳回';
+                    
+                    graduationTable += `
+                        <tr>
+                            <td>${record.destination_type}</td>
+                            <td>${record.company_name || record.school_name || '-'}</td>
+                            <td>${record.position || '-'}</td>
+                            <td><span class="badge ${statusClass}">${statusText}</span></td>
+                            <td>${new Date(record.submit_time).toLocaleString('zh-CN')}</td>
+                        </tr>
+                    `;
+                });
+                graduationTable += '</table>';
+                document.getElementById('graduation-details').innerHTML = graduationTable;
+
+                // 5. 测试数据隔离 - 使用数据库函数
+                log('🔍 测试数据隔离 - 调用数据库函数...');
+                const { data: isolatedData, error: isolatedError } = await supabase
+                    .rpc('get_teacher_graduation_destinations', {
+                        p_teacher_id: teacherData.id,
+                        p_destination_type: null,
+                        p_status: null,
+                        p_student_name: null,
+                        p_page: 1,
+                        p_limit: 50
+                    });
+
+                if (isolatedError) {
+                    throw new Error(`数据隔离查询失败: ${isolatedError.message}`);
+                }
+
+                log(`✅ 数据隔离查询成功，返回 ${isolatedData.length} 条记录`, 'success');
+
+                // 6. 检查是否能找到学生2022666的记录
+                const student2022666Record = isolatedData.find(item => item.student_number === '2022666');
+                
+                // 显示测试结果
+                document.getElementById('test-result').style.display = 'block';
+                const isSuccess = student2022666Record !== undefined;
+                const resultClass = isSuccess ? 'success' : 'error';
+                
+                document.getElementById('result-details').innerHTML = `
+                    <div class="section ${resultClass}">
+                        <h4>${isSuccess ? '✅ 测试通过' : '❌ 测试失败'}</h4>
+                        <p><strong>测试项目:</strong> 教师T0521查看学生2022666的毕业去向</p>
+                        <p><strong>预期结果:</strong> 教师应该能看到学生2022666的毕业去向记录</p>
+                        <p><strong>实际结果:</strong> ${isSuccess ? '教师成功查看到学生记录' : '教师无法查看到学生记录'}</p>
+                        <p><strong>记录总数:</strong> ${isolatedData.length}</p>
+                        ${isSuccess ? 
+                            `<p><strong>学生记录:</strong> ${student2022666Record.student_full_name} - ${student2022666Record.destination_type} (${student2022666Record.status})</p>` :
+                            '<p><strong>错误详情:</strong> 在数据隔离的查询结果中未找到学生2022666的记录</p>'
+                        }
+                    </div>
+                `;
+
+                if (isSuccess) {
+                    log('🎉 数据隔离测试成功！教师T0521可以正常查看学生2022666的毕业去向记录。', 'success');
+                    log('💡 如果前端页面仍看不到数据，请尝试：1. 硬刷新页面 (Ctrl+F5) 2. 清除浏览器缓存 3. 重新登录', 'info');
+                } else {
+                    log('❌ 数据隔离测试失败！', 'error');
+                }
+
+            } catch (error) {
+                log(`❌ 测试过程中发生错误: ${error.message}`, 'error');
+                
+                document.getElementById('test-result').style.display = 'block';
+                document.getElementById('result-details').innerHTML = `
+                    <div class="section error">
+                        <h4>❌ 测试失败</h4>
+                        <p><strong>错误信息:</strong> ${error.message}</p>
+                        <p><strong>建议:</strong> 请检查数据库连接和表结构是否正确</p>
+                    </div>
+                `;
+            }
+        };
+
+        window.clearLogs = function() {
+            document.getElementById('log').innerHTML = '';
+            log('日志已清除');
+        };
+
+        // 页面加载时的初始提示
+        log('👋 欢迎使用教师数据隔离测试工具');
+        log('📝 点击"开始测试"按钮开始测试');
+        log('🔧 此工具将验证教师T0521是否能正确查看学生2022666的毕业去向数据');
+    </script>
+</body>
+</html>
