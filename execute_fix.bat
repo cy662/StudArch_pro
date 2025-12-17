@@ -1,24 +1,18 @@
 @echo off
-echo 正在执行教师学生管理功能修复...
-echo.
+echo 正在执行培养方案分配功能修复...
 
-REM 切换到项目目录
-cd /d D:\workspace\PBL2\StudArch\StudArch
-
-REM 执行SQL修复脚本
-echo 正在应用数据库修复...
-npx supabase-cli@latest db reset --db-url postgresql://postgres:postgres@localhost:5432/postgres < complete_teacher_student_fix.sql
-
-if %errorlevel% == 0 (
-    echo.
-    echo ✅ 数据库修复成功完成!
-    echo.
-    echo 请重启您的开发服务器以使更改生效。
-) else (
-    echo.
-    echo ❌ 数据库修复过程中出现错误。
-    echo 请检查错误信息并确保Supabase CLI已正确安装。
-)
+echo 步骤1: 执行主要修复脚本...
+type fix_batch_assign_function.sql
 
 echo.
+echo 步骤2: 显示成功消息...
+type show_success_message.sql
+
+echo.
+echo 请将以上两个SQL脚本分别在Supabase SQL Editor中执行。
+echo 执行顺序：
+echo 1. 首先执行 fix_batch_assign_function.sql 中的内容
+echo 2. 然后执行 show_success_message.sql 中的内容
+echo.
+echo 修复完成后，培养方案分配功能应该就可以正常工作了。
 pause

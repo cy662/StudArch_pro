@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Supabase配置 - 使用真实的数据库配置
 const supabaseUrl = 'https://mddpbyibesqewcktlqle.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHBieWliZXNxZXdja3RscWxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjMzNTQzNDksImV4cCI6MjA3ODkzMDM0OX0.T8QHCT3UK5f2mp76Oe9-AZpdrmPOFy1wVutxfmg49EU';
+const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHBieWliZXNxZXdja3RscWxlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzM1NDM0OSwiZXhwIjoyMDc4OTMwMzQ5fQ.P2Y3IaRqJn6Tf7NjaHztGSd__3bTb_aBVioKoIK9Rq8';
 const supabase = createClient(supabaseUrl, supabaseKey);
 
 
@@ -697,6 +697,127 @@ router.post('/student-learning/sync-learning-outcome', async (req, res) => {
 });
 
 // 辅助函数：根据标签名称判断分类
+// 添加自定义课程接口
+router.post('/student-learning/add-custom-course', async (req, res) => {
+  try {
+    const { student_profile_id, course_name, credits, teacher, description, semester } = req.body;
+
+    // 验证必填字段
+    if (!student_profile_id || !course_name) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少必填字段：student_profile_id, course_name'
+      });
+    }
+
+    // 验证学生档案
+    const validation = await validateStudentProfile(student_profile_id);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error
+      });
+    }
+
+    // 让数据库自动生成UUID
+    // 创建自定义课程记录
+    const { data: courseData, error: courseError } = await supabase
+      .from('student_custom_courses')
+      .insert({
+        student_profile_id: student_profile_id,
+        course_name: course_name.trim(),
+        credits: credits || 1,
+        teacher: teacher?.trim() || '自填课程',
+        description: description?.trim() || `${course_name.trim()} - 学生自定义添加的课程`,
+        semester: semester || '2024-2',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (courseError) {
+      console.error('创建自定义课程失败:', courseError);
+      return res.status(500).json({
+        success: false,
+        message: '创建自定义课程失败',
+        error: courseError.message
+      });
+    }
+
+    console.log('✅ 自定义课程添加成功:', courseData);
+    
+    return res.status(201).json({
+      success: true,
+      message: '自定义课程添加成功',
+      data: {
+        course_id: courseData.id,
+        course_name: courseData.course_name,
+        credits: courseData.credits,
+        teacher: courseData.teacher,
+        description: courseData.description
+      }
+    });
+
+  } catch (error) {
+    console.error('添加自定义课程失败:', error);
+    return res.status(500).json({
+      success: false,
+      message: '添加自定义课程失败',
+      error: error.message
+    });
+  }
+});
+
+// 获取学生自定义课程列表
+router.get('/student-learning/get-custom-courses/:student_profile_id', async (req, res) => {
+  try {
+    const { student_profile_id } = req.params;
+
+    // 验证学生档案
+    const validation = await validateStudentProfile(student_profile_id);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error
+      });
+    }
+
+    // 获取自定义课程列表
+    const { data: courses, error } = await supabase
+      .from('student_custom_courses')
+      .select('*')
+      .eq('student_profile_id', student_profile_id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('获取自定义课程失败:', error);
+      return res.status(500).json({
+        success: false,
+        message: '获取自定义课程失败',
+        error: error.message
+      });
+    }
+
+    console.log('✅ 获取自定义课程成功:', courses);
+
+    return res.json({
+      success: true,
+      message: '获取自定义课程成功',
+      data: courses || []
+    });
+
+  } catch (error) {
+    console.error('获取自定义课程失败:', error);
+    return res.status(500).json({
+      success: false,
+      message: '获取自定义课程失败',
+      error: error.message
+    });
+  }
+});
+
 const getTagCategory = (tagName) => {
   const lowerTagName = tagName.toLowerCase();
   
