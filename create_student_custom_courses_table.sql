@@ -2,8 +2,10 @@
 CREATE TABLE IF NOT EXISTS student_custom_courses (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     student_profile_id UUID NOT NULL REFERENCES student_profiles(id) ON DELETE CASCADE,
+    course_code VARCHAR(20), -- 课程代码
     course_name VARCHAR(200) NOT NULL,
     credits INTEGER DEFAULT 1,
+    course_nature VARCHAR(20) DEFAULT '选修课' CHECK (course_nature IN ('必修课', '选修课')), -- 课程性质
     teacher VARCHAR(100) DEFAULT '自填课程',
     description TEXT,
     semester VARCHAR(20) DEFAULT '2024-2',

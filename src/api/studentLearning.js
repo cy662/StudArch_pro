@@ -419,12 +419,13 @@ router.put('/student-learning/update-technical-tag/:tag_id', async (req, res) =>
   }
 });
 
-// 8. 根据课程名称获取或创建技术标签
-router.post('/student-learning/sync-technical-tags', async (req, res) => {
+// 7. 同步技术标签（更新而非新增）
+router.post('/sync-technical-tags', async (req, res) => {
   try {
     const { student_profile_id, course_name, tags } = req.body;
-
-    if (!student_profile_id || !course_name || !Array.isArray(tags)) {
+    
+    // 验证必填字段
+    if (!student_profile_id || !course_name || !tags || !Array.isArray(tags)) {
       return res.status(400).json({
         success: false,
         message: '缺少必填字段：student_profile_id, course_name, tags'
@@ -441,8 +442,8 @@ router.post('/student-learning/sync-technical-tags', async (req, res) => {
     }
 
     const results = [];
-    
-    // 获取该学生该课程的现有标签
+
+    // 先查找已存在的标签
     const { data: existingTags, error: fetchError } = await supabase
       .from('student_technical_tags')
       .select('*')
@@ -503,12 +504,16 @@ router.post('/student-learning/sync-technical-tags', async (req, res) => {
   }
 });
 
-// 9. 根据课程获取或更新学习收获
-router.post('/student-learning/sync-learning-achievement', async (req, res) => {
+// 8. 根据课程获取或更新学习收获
+router.post('/sync-learning-achievement', async (req, res) => {
   try {
     const { student_profile_id, course_name, content } = req.body;
-
+    
+    console.log('📥 收到同步学习收获请求:', { student_profile_id, course_name, content });
+    
+    // 验证必填字段
     if (!student_profile_id || !course_name) {
+      console.log('❌ 缺少必填字段');
       return res.status(400).json({
         success: false,
         message: '缺少必填字段：student_profile_id, course_name'
@@ -524,68 +529,80 @@ router.post('/student-learning/sync-learning-achievement', async (req, res) => {
       });
     }
 
-    // 检查是否已存在该课程的学习收获
-    const { data: existingAchievement, error: checkError } = await supabase
+    let result;
+
+    console.log('🔍 查找现有学习收获:', { student_profile_id, course_name });
+    // 先查找是否已存在相同的学习收获
+    const { data: existingAchievements, error: fetchError } = await supabase
       .from('student_learning_achievements')
       .select('*')
       .eq('student_profile_id', student_profile_id)
       .eq('related_course', course_name)
-      .eq('status', 'active')
-      .single();
+      .eq('status', 'active');
 
-    let result;
-    if (existingAchievement) {
-      // 更新现有记录
-      const updateData = {
-        updated_at: new Date().toISOString()
-      };
-      
-      if (content !== undefined && content !== '') {
-        updateData.content = content;
-      }
+    if (fetchError) {
+      console.log('❌ 获取现有学习收获失败:', fetchError);
+      return handleApiError(fetchError, res, '获取现有学习收获失败');
+    }
+    console.log('📊 查找结果:', { existingCount: existingAchievements?.length || 0 });
 
-      const { data: updatedData, error: updateError } = await supabase
-        .from('student_learning_achievements')
-        .update(updateData)
-        .eq('id', existingAchievement.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        return handleApiError(updateError, res, '更新学习收获失败');
-      }
-      
-      result = { action: 'updated', data: updatedData };
-    } else {
-      // 创建新记录（仅当有内容时）
-      if (content && content.trim()) {
-        const { data: newData, error: insertError } = await supabase
+    if (content && content.trim()) {
+      if (existingAchievements && existingAchievements.length > 0) {
+        // 更新现有记录
+        console.log('🔄 更新现有学习收获记录:', { id: existingAchievements[0].id, content });
+        const { data: updatedData, error: updateError } = await supabase
           .from('student_learning_achievements')
-          .insert({
-            student_profile_id,
-            title: `${course_name} - 学习收获`,
+          .update({
             content: content,
-            achievement_type: 'skill',
-            achieved_at: new Date().toISOString().split('T')[0],
-            impact_level: 'medium',
-            related_course: course_name,
-            status: 'active',
-            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
+          .eq('id', existingAchievements[0].id)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.log('❌ 更新学习收获失败:', updateError);
+          return handleApiError(updateError, res, '更新学习收获失败');
+        }
+        
+        console.log('✅ 学习收获更新成功:', updatedData);
+        result = { action: 'updated', data: updatedData };
+      } else {
+        // 创建新记录
+        const insertData = {
+          student_profile_id,
+          title: `${course_name} - 学习收获`,
+          content: content,
+          achievement_type: 'study_reflection',
+          related_course: course_name,
+          status: 'active',
+          achieved_at: new Date().toISOString().split('T')[0],
+          impact_level: 'medium',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        console.log('💾 准备创建学习收获记录:', insertData);
+        
+        const { data: newData, error: insertError } = await supabase
+          .from('student_learning_achievements')
+          .insert(insertData)
           .select()
           .single();
 
         if (insertError) {
+          console.log('❌ 创建学习收获失败:', insertError);
           return handleApiError(insertError, res, '创建学习收获失败');
         }
         
+        console.log('✅ 学习收获创建成功:', newData);
         result = { action: 'created', data: newData };
-      } else {
-        result = { action: 'skipped', reason: '内容为空' };
       }
+    } else {
+      result = { action: 'skipped', reason: '内容为空' };
     }
 
+    console.log('📤 发送响应:', { success: true, message: '学习收获同步完成', data: result });
     res.json({
       success: true,
       message: '学习收获同步完成',
@@ -597,11 +614,12 @@ router.post('/student-learning/sync-learning-achievement', async (req, res) => {
   }
 });
 
-// 10. 根据课程获取或更新学习成果
-router.post('/student-learning/sync-learning-outcome', async (req, res) => {
+// 9. 根据课程获取或更新学习成果
+router.post('/sync-learning-outcome', async (req, res) => {
   try {
     const { student_profile_id, course_name, description, start_date, end_date } = req.body;
-
+    
+    // 验证必填字段
     if (!student_profile_id || !course_name) {
       return res.status(400).json({
         success: false,
@@ -618,43 +636,42 @@ router.post('/student-learning/sync-learning-outcome', async (req, res) => {
       });
     }
 
-    // 检查是否已存在该课程的学习成果
-    const { data: existingOutcome, error: checkError } = await supabase
+    let result;
+
+    // 先查找是否已存在相同的学习成果
+    const { data: existingOutcomes, error: fetchError } = await supabase
       .from('student_learning_outcomes')
       .select('*')
       .eq('student_profile_id', student_profile_id)
       .eq('related_course', course_name)
-      .eq('status', 'active')
-      .single();
+      .eq('status', 'active');
 
-    let result;
-    if (existingOutcome) {
-      // 更新现有记录
-      const updateData = {
-        updated_at: new Date().toISOString()
-      };
-      
-      if (description !== undefined && description !== '') {
-        updateData.outcome_description = description;
-      }
-      if (start_date) updateData.start_date = start_date;
-      if (end_date) updateData.completion_date = end_date;
+    if (fetchError) {
+      return handleApiError(fetchError, res, '获取现有学习成果失败');
+    }
 
-      const { data: updatedData, error: updateError } = await supabase
-        .from('student_learning_outcomes')
-        .update(updateData)
-        .eq('id', existingOutcome.id)
-        .select()
-        .single();
+    if (description && description.trim()) {
+      if (existingOutcomes && existingOutcomes.length > 0) {
+        // 更新现有记录
+        const { data: updatedData, error: updateError } = await supabase
+          .from('student_learning_outcomes')
+          .update({
+            outcome_description: description,
+            start_date: start_date || existingOutcomes[0].start_date,
+            completion_date: end_date || existingOutcomes[0].completion_date,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingOutcomes[0].id)
+          .select()
+          .single();
 
-      if (updateError) {
-        return handleApiError(updateError, res, '更新学习成果失败');
-      }
-      
-      result = { action: 'updated', data: updatedData };
-    } else {
-      // 创建新记录（仅当有内容时）
-      if (description && description.trim()) {
+        if (updateError) {
+          return handleApiError(updateError, res, '更新学习成果失败');
+        }
+        
+        result = { action: 'updated', data: updatedData };
+      } else {
+        // 创建新记录
         const { data: newData, error: insertError } = await supabase
           .from('student_learning_outcomes')
           .insert({
@@ -680,9 +697,9 @@ router.post('/student-learning/sync-learning-outcome', async (req, res) => {
         }
         
         result = { action: 'created', data: newData };
-      } else {
-        result = { action: 'skipped', reason: '内容为空' };
       }
+    } else {
+      result = { action: 'skipped', reason: '内容为空' };
     }
 
     res.json({
@@ -697,10 +714,47 @@ router.post('/student-learning/sync-learning-outcome', async (req, res) => {
 });
 
 // 辅助函数：根据标签名称判断分类
+const getTagCategory = (tagName) => {
+  const lowerTagName = tagName.toLowerCase();
+  
+  // 编程语言
+  const programmingLanguages = ['javascript', 'typescript', 'python', 'java', 'c++', 'go', 'html/css', 'sql'];
+  if (programmingLanguages.some(lang => lowerTagName.includes(lang))) {
+    return 'programming_language';
+  }
+  
+  // 框架
+  const frameworks = ['react', 'vue', 'angular', 'node.js'];
+  if (frameworks.some(framework => lowerTagName.includes(framework))) {
+    return 'framework';
+  }
+  
+  // 数据库
+  const databases = ['mongodb', 'redis', 'mysql', 'postgresql'];
+  if (databases.some(db => lowerTagName.includes(db))) {
+    return 'database';
+  }
+  
+  // 工具
+  const tools = ['git', 'linux', 'aws', 'docker'];
+  if (tools.some(tool => lowerTagName.includes(tool))) {
+    return 'tool';
+  }
+  
+  // 技术领域
+  const techAreas = ['机器学习', '深度学习', '数据结构', '算法', '前端开发', '后端开发', '全栈开发', '移动开发', '数据库设计', '系统设计', '云计算', '微服务'];
+  if (techAreas.some(area => lowerTagName.includes(area.toLowerCase()))) {
+    return 'technical_area';
+  }
+  
+  // 默认分类
+  return 'other';
+};
+
 // 添加自定义课程接口
-router.post('/student-learning/add-custom-course', async (req, res) => {
+router.post('/add-custom-course', async (req, res) => {
   try {
-    const { student_profile_id, course_name, credits, teacher, description, semester } = req.body;
+    const { student_profile_id, course_code, course_name, credits, course_nature, teacher, description, semester } = req.body;
 
     // 验证必填字段
     if (!student_profile_id || !course_name) {
@@ -725,8 +779,10 @@ router.post('/student-learning/add-custom-course', async (req, res) => {
       .from('student_custom_courses')
       .insert({
         student_profile_id: student_profile_id,
+        course_code: course_code || null,
         course_name: course_name.trim(),
         credits: credits || 1,
+        course_nature: course_nature || '选修课',
         teacher: teacher?.trim() || '自填课程',
         description: description?.trim() || `${course_name.trim()} - 学生自定义添加的课程`,
         semester: semester || '2024-2',
@@ -753,8 +809,10 @@ router.post('/student-learning/add-custom-course', async (req, res) => {
       message: '自定义课程添加成功',
       data: {
         course_id: courseData.id,
+        course_code: courseData.course_code,
         course_name: courseData.course_name,
         credits: courseData.credits,
+        course_nature: courseData.course_nature,
         teacher: courseData.teacher,
         description: courseData.description
       }
@@ -771,7 +829,7 @@ router.post('/student-learning/add-custom-course', async (req, res) => {
 });
 
 // 获取学生自定义课程列表
-router.get('/student-learning/get-custom-courses/:student_profile_id', async (req, res) => {
+router.get('/get-custom-courses/:student_profile_id', async (req, res) => {
   try {
     const { student_profile_id } = req.params;
 
@@ -817,42 +875,5 @@ router.get('/student-learning/get-custom-courses/:student_profile_id', async (re
     });
   }
 });
-
-const getTagCategory = (tagName) => {
-  const lowerTagName = tagName.toLowerCase();
-  
-  // 编程语言
-  const programmingLanguages = ['javascript', 'typescript', 'python', 'java', 'c++', 'go', 'html/css', 'sql'];
-  if (programmingLanguages.some(lang => lowerTagName.includes(lang))) {
-    return 'programming_language';
-  }
-  
-  // 框架
-  const frameworks = ['react', 'vue', 'angular', 'node.js'];
-  if (frameworks.some(framework => lowerTagName.includes(framework))) {
-    return 'framework';
-  }
-  
-  // 数据库
-  const databases = ['mongodb', 'redis', 'mysql', 'postgresql'];
-  if (databases.some(db => lowerTagName.includes(db))) {
-    return 'database';
-  }
-  
-  // 工具
-  const tools = ['git', 'linux', 'aws', 'docker'];
-  if (tools.some(tool => lowerTagName.includes(tool))) {
-    return 'tool';
-  }
-  
-  // 技术领域
-  const techAreas = ['机器学习', '深度学习', '数据结构', '算法', '前端开发', '后端开发', '全栈开发', '移动开发', '数据库设计', '系统设计', '云计算', '微服务'];
-  if (techAreas.some(area => lowerTagName.includes(area.toLowerCase()))) {
-    return 'technical_area';
-  }
-  
-  // 默认分类
-  return 'other';
-};
 
 export default router;
