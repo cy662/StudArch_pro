@@ -7,6 +7,7 @@ import multer from 'multer';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import fs from 'fs';
+import fetch from 'node-fetch';
 import trainingProgramRoutes from './src/api/trainingProgramSimple.js';
 import studentLearningRoutes from './src/api/studentLearning.js';
 import quickFixStudentRoutes from './quick_fix_student_api.js';
@@ -85,13 +86,92 @@ app.get('*', (req, res) => {
   res.sendFile(join(__dirname, 'dist', 'index.html'));
 });
 
-// 错误处理中间件
-app.use((error, req, res, next) => {
-  console.error('服务器错误:', error);
-  res.status(500).json({
-    success: false,
-    message: '服务器内部错误'
-  });
+// 通用n8n工作流调用API端点
+app.post('/api/n8n/workflow', async (req, res) => {
+  try {
+    const { workflow_id, webhook_url, params, api_key } = req.body;
+
+    if (!webhook_url) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少n8n工作流的Webhook URL'
+      });
+    }
+
+    // 构建请求头
+    const headers = {
+      'Content-Type': 'application/json',
+    };
+
+    // 如果提供了API密钥，添加到请求头
+    if (api_key) {
+      headers['x-n8n-api-key'] = api_key;
+    }
+
+    // 调用n8n工作流
+    console.log('调用n8n工作流:', {
+      webhook_url,
+      headers,
+      params: params || {}
+    });
+    
+    const response = await fetch(webhook_url, {
+      method: 'POST',
+      headers: headers,
+      body: JSON.stringify(params || {}),
+    });
+
+    console.log('n8n工作流响应状态:', response.status);
+    console.log('n8n工作流响应头:', response.headers);
+
+    // 处理响应
+    let result;
+    let responseText = '';
+    
+    try {
+      // 获取响应文本
+      responseText = await response.text();
+      console.log('n8n工作流响应内容:', responseText);
+      
+      // 尝试解析JSON响应
+      result = responseText ? JSON.parse(responseText) : {};
+    } catch (error) {
+      console.error('解析n8n工作流响应失败:', error, '响应文本:', responseText);
+      // 如果解析失败（如空响应或非JSON响应），创建默认结果
+      result = {};
+    }
+
+    if (!response.ok) {
+      console.error('n8n工作流调用失败:', {
+        status: response.status,
+        result,
+        responseText
+      });
+      
+      return res.status(response.status).json({
+        success: false,
+        message: '调用n8n工作流失败',
+        error: result.message || '未知错误',
+        status_code: response.status,
+        response_text: responseText
+      });
+    }
+
+    console.log('n8n工作流调用成功，返回数据:', result);
+    
+    res.json({
+      success: true,
+      message: 'n8n工作流调用成功',
+      data: result
+    });
+  } catch (error) {
+    console.error('调用n8n工作流时发生错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '调用n8n工作流时发生内部错误',
+      error: error.message
+    });
+  }
 });
 
 // 404处理
