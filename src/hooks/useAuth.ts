@@ -9,6 +9,22 @@ export const useAuth = () => {
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
+    // 首先检查localStorage中的用户信息作为备份
+    const storedUser = localStorage.getItem('user_info');
+    if (storedUser) {
+      try {
+        const parsedUser = JSON.parse(storedUser);
+        if (parsedUser.role?.role_name) {
+          console.log('从localStorage恢复用户信息:', parsedUser);
+          setUser(parsedUser);
+          setLoading(false);
+          return;
+        }
+      } catch (error) {
+        console.error('解析localStorage用户信息失败:', error);
+      }
+    }
+    
     // 检查真实数据库的认证状态
     checkAuthStatus()
   }, [])

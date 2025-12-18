@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>测试添加课程API</title>
+</head>
+<body>
+    <h1>测试添加自定义课程API</h1>
+    <button onclick="testAddCourse()">测试添加课程</button>
+    <div id="result"></div>
+
+    <script>
+        async function testAddCourse() {
+            const resultDiv = document.getElementById('result');
+            
+            try {
+                const response = await fetch('/api/student-learning/add-custom-course', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        student_profile_id: 'f1c1aa0d-2169-4369-af14-3cadc6aa22b4',
+                        course_name: '测试课程-' + Date.now(),
+                        credits: 3,
+                        teacher: '测试教师',
+                        description: '这是一个测试课程',
+                        semester: '2024-2'
+                    })
+                });
+
+                console.log('响应状态:', response.status);
+                
+                const result = await response.json();
+                console.log('响应数据:', result);
+                
+                resultDiv.innerHTML = `
+                    <h3>测试结果:</h3>
+                    <p>状态码: ${response.status}</p>
+                    <pre>${JSON.stringify(result, null, 2)}</pre>
+                `;
+                
+            } catch (error) {
+                console.error('请求失败:', error);
+                resultDiv.innerHTML = `
+                    <h3>请求失败:</h3>
+                    <p>${error.message}</p>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>

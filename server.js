@@ -11,6 +11,7 @@ import fetch from 'node-fetch';
 import trainingProgramRoutes from './src/api/trainingProgramSimple.js';
 import studentLearningRoutes from './src/api/studentLearning.js';
 import quickFixStudentRoutes from './quick_fix_student_api.js';
+import teacherTrainingProgramRoutes from './src/api/teacherTrainingProgramRoutesSimple.js';
 
 // 获取当前目录路径
 const __filename = fileURLToPath(import.meta.url);
@@ -59,6 +60,9 @@ app.use('/api', trainingProgramRoutes);
 
 // 学生学习信息相关API（只使用修复后的版本）
 app.use('/api', studentLearningRoutes);
+
+// 教师培养方案隔离API
+app.use('/api', teacherTrainingProgramRoutes);
 
 // 静态文件服务（用于前端和上传的图片）
 app.use(express.static(join(__dirname, 'dist')));

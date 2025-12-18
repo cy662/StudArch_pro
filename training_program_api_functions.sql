@@ -93,7 +93,10 @@ BEGIN
                 course_record->>'semester',
                 course_record->>'exam_method',
                 course_record->>'course_nature',
-                COALESCE(course_record->>'course_nature', '必修课') = '必修课' ? 'required' : 'elective',
+                CASE 
+                    WHEN COALESCE(course_record->>'course_nature', '必修课') = '必修课' THEN 'required' 
+                    ELSE 'elective' 
+                END,
                 row_number,
                 'active',
                 NOW(),

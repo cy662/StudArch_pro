@@ -289,9 +289,18 @@ export class TrainingProgramService {
   }
 
   /**
-   * 批量导入培养方案课程
+   * 批量导入培养方案课程（支持教师隔离）
    */
-  static async importTrainingProgram(courses: TrainingProgramCourse[]): Promise<TrainingProgramImportResult> {
+  static async importTrainingProgram(
+    courses: TrainingProgramCourse[], 
+    options?: {
+      programName?: string;
+      programCode?: string;
+      teacherId?: string;
+      major?: string;
+      department?: string;
+    }
+  ): Promise<TrainingProgramImportResult> {
     try {
       // 准备API数据格式
       const apiCourses = courses.map(course => ({
@@ -304,16 +313,21 @@ export class TrainingProgramService {
         course_nature: course.course_nature
       }));
 
-      const response = await fetch(`${this.BASE_URL}/training-program/import`, {
+      const response = await fetch(`${this.BASE_URL}/training-program/import-with-teacher`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
+          'X-User-ID': options?.teacherId || '', // 添加用户ID到请求头
         },
         body: JSON.stringify({ 
           courses: apiCourses,
-          programCode: 'CS_2021',
-          batchName: `培养方案导入_${new Date().toLocaleString('zh-CN')}`,
-          importedBy: null // UUID 类型，暂时为 null
+          programName: options?.programName || `培养方案_${new Date().toLocaleString('zh-CN')}`,
+          programCode: options?.programCode || 'CUSTOM_PROGRAM',
+          teacherId: options?.teacherId,
+          major: options?.major || '未指定专业',
+          department: options?.department || '未指定院系',
+          batchName: `${options?.programName || '培养方案'}_导入_${new Date().toLocaleString('zh-CN')}`,
+          importedBy: options?.teacherId // 使用教师ID作为导入者
         }),
       });
 
@@ -329,10 +343,10 @@ export class TrainingProgramService {
       }
 
       return {
-        success: result.data.success,
-        failed: result.data.failed,
-        total: result.data.total,
-        errors: result.data.failed > 0 ? [] : undefined // 可以从失败记录中获取详细错误
+        success: result.data?.success || 0,
+        failed: result.data?.failed || 0,
+        total: result.data?.total || 0,
+        errors: result.data?.failed > 0 ? [] : undefined // 可以从失败记录中获取详细错误
       };
     } catch (error) {
       console.error('导入培养方案失败:', error);
@@ -342,6 +356,132 @@ export class TrainingProgramService {
         throw new Error('无法连接到服务器，请确保API服务器已启动');
       }
       
+      throw error;
+    }
+  }
+
+  /**
+   * 获取教师的培养方案列表
+   */
+  static async getTeacherTrainingPrograms(
+    teacherId: string,
+    options?: {
+      programName?: string;
+      programCode?: string;
+      status?: string;
+      page?: number;
+      limit?: number;
+    }
+  ): Promise<{
+    programs: any[];
+    pagination: {
+      page: number;
+      limit: number;
+      total: number;
+      totalPages: number;
+    };
+  }> {
+    try {
+      const params = new URLSearchParams();
+      params.append('teacher_id', teacherId);
+      if (options?.programName) params.append('program_name', options.programName);
+      if (options?.programCode) params.append('program_code', options.programCode);
+      if (options?.status) params.append('status', options.status);
+      if (options?.page) params.append('page', options.page.toString());
+      if (options?.limit) params.append('limit', options.limit.toString());
+
+      const response = await fetch(`${this.BASE_URL}/training-programs/teacher-list?${params}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': teacherId, // 添加用户ID到请求头
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('获取教师培养方案失败');
+      }
+
+      const result = await response.json();
+      return result.data || { programs: [], pagination: { page: 1, limit: 20, total: 0, totalPages: 0 } };
+    } catch (error) {
+      console.error('获取教师培养方案失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 获取教师可用的培养方案（用于分配）
+   */
+  static async getTeacherAvailablePrograms(teacherId: string): Promise<any[]> {
+    try {
+      const response = await fetch(`${this.BASE_URL}/training-programs/teacher-available?teacher_id=${teacherId}`, {
+        method: 'GET',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': teacherId, // 添加用户ID到请求头
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error('获取可用培养方案失败');
+      }
+
+      const result = await response.json();
+      return result.data || [];
+    } catch (error) {
+      console.error('获取可用培养方案失败:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * 分配教师培养方案给学生
+   */
+  static async assignTeacherTrainingProgram(
+    teacherId: string,
+    programId: string,
+    studentIds: string[],
+    notes?: string
+  ): Promise<{
+    success: boolean;
+    message: string;
+    data: {
+      success_count: number;
+      failure_count: number;
+      total_count: number;
+      details: any[];
+    };
+  }> {
+    try {
+      const response = await fetch(`${this.BASE_URL}/training-programs/teacher-assign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-User-ID': teacherId, // 添加用户ID到请求头
+        },
+        body: JSON.stringify({
+          teacher_id: teacherId,
+          program_id: programId,
+          student_ids: studentIds,
+          notes: notes
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || '分配培养方案失败');
+      }
+
+      const result = await response.json();
+      
+      if (!result.success) {
+        throw new Error(result.message || '分配培养方案失败');
+      }
+
+      return result;
+    } catch (error) {
+      console.error('分配培养方案失败:', error);
       throw error;
     }
   }

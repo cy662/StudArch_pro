@@ -2,12 +2,14 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { GraduationDestinationService } from '../../services/graduationDestinationService';
 import { GraduationDestination } from '../../types/graduationDestination';
+import { useAuth } from '../../hooks/useAuth';
 import styles from './styles.module.css';
 
 
 
 const TeacherGraduationManagement: React.FC = () => {
   const navigate = useNavigate();
+  const { user } = useAuth(); // 获取当前登录用户信息
   
   // 状态管理
   const [searchKeyword, setSearchKeyword] = useState('');
@@ -41,18 +43,62 @@ const TeacherGraduationManagement: React.FC = () => {
   const loadGraduationData = async () => {
     setLoading(true);
     try {
+      // 获取当前教师的ID
+      const currentTeacherId = user?.id;
+      
+      // 如果没有获取到教师ID，不执行查询
+      if (!currentTeacherId) {
+        console.warn('未获取到当前教师ID，用户信息:', user);
+        setGraduationData([]);
+        setTotal(0);
+        return;
+      }
+      
+      console.log('=== 教师毕业去向数据加载 ===');
+      console.log('当前教师ID:', currentTeacherId);
+      console.log('教师用户信息:', {
+        id: user?.id,
+        username: user?.username,
+        user_number: user?.user_number,
+        full_name: user?.full_name
+      });
+      console.log('查询参数:', { typeFilter, statusFilter, searchKeyword });
+      
       const result = await GraduationDestinationService.getGraduationDestinations({
         destination_type: typeFilter,
         status: statusFilter,
         student_name: searchKeyword,
         page: 1,
-        limit: 100
+        limit: 100,
+        teacher_id: currentTeacherId  // 传递教师ID进行数据隔离
       });
+      
+      console.log('API调用结果:', {
+        成功: true,
+        返回记录数: result.destinations.length,
+        总记录数: result.total,
+        数据列表: result.destinations.map(item => ({
+          学生学号: item.student?.student_number,
+          学生姓名: item.student?.full_name,
+          去向类型: item.destination_type,
+          状态: item.status
+        }))
+      });
+      
+      // 特别检查学生2022666
+      const student2022666 = result.destinations.find(item => item.student?.student_number === '2022666');
+      if (student2022666) {
+        console.log('✅ 找到学生2022666的毕业去向记录:', student2022666);
+      } else {
+        console.log('❌ 未找到学生2022666的毕业去向记录');
+      }
       
       setGraduationData(result.destinations);
       setTotal(result.total);
     } catch (error) {
       console.error('加载毕业去向数据失败:', error);
+      setGraduationData([]);
+      setTotal(0);
     } finally {
       setLoading(false);
     }
@@ -66,12 +112,12 @@ const TeacherGraduationManagement: React.FC = () => {
     document.title = '毕业去向管理 - 学档通';
     loadGraduationData();
     return () => { document.title = originalTitle; };
-  }, []);
+  }, [user]); // 添加user依赖
 
   // 筛选条件变化时重新加载数据
   useEffect(() => {
     loadGraduationData();
-  }, [searchKeyword, classFilter, typeFilter, statusFilter]);
+  }, [searchKeyword, classFilter, typeFilter, statusFilter, user]); // 添加user依赖
 
   // 全选功能
   useEffect(() => {

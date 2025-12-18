@@ -20,6 +20,14 @@ interface Course {
   startDate: string;
   endDate: string;
   description: string;
+  isCustom?: boolean;
+  programName?: string;
+  programCode?: string;
+  semester?: string;
+  courseNature?: string;
+  examMethod?: string;
+  grade?: string;
+  completedAt?: string;
 }
 
 interface Semester {
@@ -65,6 +73,14 @@ const StudentAcademicTasks: React.FC = () => {
   
   // 标签输入相关状态
   const [tagInput, setTagInput] = useState<{ [courseId: string]: string }>({});
+  
+  // 添加课程相关状态
+  const [showAddCourseModal, setShowAddCourseModal] = useState(false);
+  const [newCourseName, setNewCourseName] = useState('');
+  const [newCourseCredits, setNewCourseCredits] = useState(1);
+  const [newCourseTeacher, setNewCourseTeacher] = useState('');
+  const [newCourseDescription, setNewCourseDescription] = useState('');
+  const [addCourseLoading, setAddCourseLoading] = useState(false);
 
   // 根据标签名称判断分类
   const getTagCategory = (tagName: string): string => {
@@ -106,8 +122,8 @@ const StudentAcademicTasks: React.FC = () => {
 
   // 加载学生已保存的学习数据
   const fetchStudentLearningData = async () => {
-    if (!studentProfile?.id) {
-      console.log('学生档案ID不存在，无法加载学习数据');
+    if (!studentProfile?.id || learningDataLoaded) {
+      console.log('学生档案ID不存在或数据已加载，跳过');
       return;
     }
 
@@ -118,6 +134,12 @@ const StudentAcademicTasks: React.FC = () => {
       
       if (!response.ok) {
         console.warn('获取学习数据失败，响应状态:', response.status);
+        if (response.status === 404) {
+          console.log('学习数据不存在，这是正常情况');
+        } else {
+          console.error('学习数据API调用失败');
+        }
+        setLearningDataLoaded(true); // 标记为已尝试加载，避免重复请求
         return;
       }
       
@@ -126,9 +148,11 @@ const StudentAcademicTasks: React.FC = () => {
       if (result.success && result.data) {
         console.log('获取到的学习数据:', result.data);
         
-        // 将保存的学习数据合并到现有课程中
+        // 收集所有需要更新的课程数据
+        const courseUpdates: Record<string, Partial<Course>> = {};
+        
+        // 处理技术标签
         if (result.data.technical_tags && result.data.technical_tags.length > 0) {
-          // 将技术标签按相关课程分组
           const tagsByCourse: Record<string, string[]> = {};
           result.data.technical_tags.forEach((tag: any) => {
             const courseName = tag.description?.replace('课程: ', '') || '未分类';
@@ -138,39 +162,41 @@ const StudentAcademicTasks: React.FC = () => {
             tagsByCourse[courseName].push(tag.tag_name);
           });
           
-          // 更新课程中的标签（只在没有标签时更新）
-          setCourses(prevCourses => 
-            prevCourses.map(course => ({
-              ...course,
-              tags: (!course.tags || course.tags.length === 0) ? (tagsByCourse[course.name] || []) : course.tags
-            }))
-          );
+          // 记录需要更新的标签
+          courses.forEach(course => {
+            if (!course.tags || course.tags.length === 0) {
+              const tags = tagsByCourse[course.name] || [];
+              if (tags.length > 0) {
+                courseUpdates[course.id] = { ...courseUpdates[course.id], tags };
+              }
+            }
+          });
         }
         
+        // 处理学习收获
         if (result.data.learning_achievements && result.data.learning_achievements.length > 0) {
-          // 将学习收获按相关课程分组
           const achievementsByCourse: Record<string, string> = {};
           result.data.learning_achievements.forEach((achievement: any) => {
             const courseName = achievement.related_course || '未分类';
             achievementsByCourse[courseName] = achievement.content;
           });
           
-          // 更新课程中的学习收获（只在没有内容时更新）
-          setCourses(prevCourses => 
-            prevCourses.map(course => ({
-              ...course,
-              outcomes: (!course.outcomes || course.outcomes.trim() === '') ? (achievementsByCourse[course.name] || '') : course.outcomes
-            }))
-          );
+          courses.forEach(course => {
+            if (!course.outcomes || course.outcomes.trim() === '') {
+              const outcome = achievementsByCourse[course.name] || '';
+              if (outcome) {
+                courseUpdates[course.id] = { ...courseUpdates[course.id], outcomes: outcome };
+              }
+            }
+          });
         }
         
+        // 处理学习成果
         if (result.data.learning_outcomes && result.data.learning_outcomes.length > 0) {
-          // 将学习成果按相关课程分组，但只取最新的一个
           const outcomesByCourse: Record<string, any> = {};
           result.data.learning_outcomes.forEach((outcome: any) => {
             let courseName = outcome.related_course;
             
-            // 如果没有相关课程，尝试从标题中提取课程名
             if (!courseName && outcome.outcome_title) {
               const match = outcome.outcome_title.match(/^(.+?)\s*-\s*学习成果$/);
               if (match) {
@@ -178,37 +204,96 @@ const StudentAcademicTasks: React.FC = () => {
               }
             }
             
-            // 如果仍然没有找到，使用默认值
             if (!courseName) {
               courseName = '未分类';
             }
             
-            // 只保留最新的学习成果（根据创建时间）
             if (!outcomesByCourse[courseName] || new Date(outcome.created_at) > new Date(outcomesByCourse[courseName].created_at)) {
               outcomesByCourse[courseName] = outcome;
             }
-            
-            console.log(`学习成果映射: ${courseName} -> ${outcome.outcome_description}`);
           });
           
-          // 更新课程中的学习成果（只显示最新的一条）
-          setCourses(prevCourses => 
-            prevCourses.map(course => {
-              const matchedOutcome = outcomesByCourse[course.name];
-              console.log(`课程 ${course.name} 匹配到学习成果:`, matchedOutcome);
-              return {
-                ...course,
-                achievements: matchedOutcome ? matchedOutcome.outcome_description : (course.achievements || '')
+          courses.forEach(course => {
+            const matchedOutcome = outcomesByCourse[course.name];
+            if (matchedOutcome) {
+              courseUpdates[course.id] = { 
+                ...courseUpdates[course.id], 
+                achievements: matchedOutcome.outcome_description || course.achievements 
               };
-            })
+            }
+          });
+        }
+        
+        // 一次性更新所有课程，避免多次setCourses调用
+        if (Object.keys(courseUpdates).length > 0) {
+          setCourses(prevCourses => 
+            prevCourses.map(course => 
+              courseUpdates[course.id] 
+                ? { ...course, ...courseUpdates[course.id] }
+                : course
+            )
           );
         }
         
         console.log('✅ 学生学习数据加载并合并成功');
         setLearningDataLoaded(true);
+      } else {
+        setLearningDataLoaded(true);
       }
     } catch (error) {
       console.error('加载学生学习数据失败:', error);
+      setLearningDataLoaded(true);
+    }
+  };
+
+  // 加载学生的自定义课程
+  const fetchStudentCustomCourses = async () => {
+    if (!studentProfile?.id) {
+      console.log('学生档案ID不存在，无法加载自定义课程');
+      return [];
+    }
+
+    try {
+      console.log('开始加载学生自定义课程，学生档案ID:', studentProfile.id);
+      
+      const response = await fetch(`/api/student-learning/get-custom-courses/${studentProfile.id}`);
+      
+      if (!response.ok) {
+        console.warn('获取自定义课程失败，响应状态:', response.status);
+        if (response.status !== 404) {
+          console.error('自定义课程API错误:', response.status);
+        }
+        return [];
+      }
+      
+      const result = await response.json();
+      
+      if (result.success && result.data && Array.isArray(result.data)) {
+        const customCourses = result.data.map((course: any) => ({
+          id: course.id,
+          name: course.course_name,
+          teacher: course.teacher || '自填课程',
+          credits: course.credits || 1,
+          status: course.status || 'pending',
+          tags: [],
+          outcomes: '',
+          achievements: '',
+          startDate: course.created_at?.split('T')[0] || new Date().toISOString().split('T')[0],
+          endDate: '',
+          description: course.description || `${course.course_name} - 学生自定义添加的课程`,
+          isCustom: true,
+          semester: course.semester
+        }));
+        
+        console.log('获取到的自定义课程:', customCourses);
+        return customCourses;
+      } else {
+        console.warn('自定义课程API返回数据格式不正确:', result);
+        return [];
+      }
+    } catch (error) {
+      console.error('加载自定义课程失败:', error);
+      return [];
     }
   };
 
@@ -223,79 +308,76 @@ const StudentAcademicTasks: React.FC = () => {
       setCoursesLoading(true);
       console.log('开始加载学生培养方案课程，学生档案ID:', studentProfile.id);
       
-      const response = await fetch(`/api/student/${studentProfile.id}/training-program-courses`);
+      // 先尝试加载自定义课程
+      const customCourses = await fetchStudentCustomCourses();
       
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({}));
-        console.error('API响应错误:', errorData);
+      // 然后尝试加载培养方案课程
+      let allCourses: Course[] = [...customCourses];
+      let programName = customCourses.length > 0 ? '自定义课程' : '暂无课程';
+      
+      try {
+        const response = await fetch(`/api/student/${studentProfile.id}/training-program-courses`);
         
-        // 如果API调用失败，显示演示数据
-        setCourses([
-          {
-            id: 'demo-1',
-            name: '数据结构与算法',
-            teacher: '张教授',
-            credits: 4,
-            status: 'in_progress',
-            tags: ['数据结构', '算法', 'C++', 'Python'],
-            outcomes: '掌握了基本数据结构，理解了算法复杂度分析',
-            achievements: '完成了所有实验项目，期中成绩85分',
-            startDate: '2024-02-26',
-            endDate: '2024-07-15',
-            description: '本课程主要讲授数据结构的基本概念和算法设计与分析方法'
-          }
-        ]);
-        setTrainingProgramName('演示培养方案');
-        return;
-      }
-      
-      const result = await response.json();
-      console.log('获取到的培养方案课程数据:', result);
-      
-      if (result.success && result.data && Array.isArray(result.data)) {
-        const programData = result.data;
-        
-        if (programData.length === 0) {
-          // 如果没有分配培养方案，显示提示信息
-          setCourses([]);
-          setTrainingProgramName('暂未分配培养方案');
-        } else {
-          // 从第一条记录中获取培养方案名称
-          const programName = programData[0]?.program_name || '培养方案';
+        if (!response.ok) {
+          console.error('培养方案API响应错误:', response.status);
+          // 只显示自定义课程
+          setCourses(allCourses);
           setTrainingProgramName(programName);
-          
-          // 转换数据格式
-          const transformedCourses = programData.map((course: any) => ({
-            id: course.id,
-            name: course.course_name,
-            teacher: course.teacher || '待定',
-            credits: course.credits || 0,
-            status: course.status || 'not_started',
-            tags: [], // 标签可以从课程性质或分类中提取
-            outcomes: '',
-            achievements: '',
-            startDate: '2024-02-26', // 可以从实际数据中获取
-            endDate: '2024-07-15',   // 可以从实际数据中获取
-            description: course.course_description || `${course.course_name} - ${course.course_nature}`,
-            programName: course.program_name,
-            programCode: course.program_code,
-            semester: course.semester,
-            courseNature: course.course_nature,
-            examMethod: course.exam_method,
-            grade: course.grade,
-            completedAt: course.completed_at
-          }));
-          
-          console.log('转换后的课程数据:', transformedCourses);
-          setCourses(transformedCourses);
+          return;
         }
-      } else {
-        console.warn('API返回数据格式不正确:', result);
-        setCourses([]);
-        setTrainingProgramName('数据加载失败');
+        
+        const result = await response.json();
+        console.log('获取到的培养方案课程数据:', result);
+        
+        if (result.success && result.data && Array.isArray(result.data)) {
+          const programData = result.data;
+          
+          if (programData.length > 0) {
+            // 从第一条记录中获取培养方案名称
+            programName = programData[0]?.program_name || '培养方案';
+            
+            // 转换培养方案课程数据格式
+            const transformedCourses = programData.map((course: any) => ({
+              id: course.id,
+              name: course.course_name,
+              teacher: course.teacher || '待定',
+              credits: course.credits || 0,
+              status: course.status || 'not_started',
+              tags: [],
+              outcomes: '',
+              achievements: '',
+              startDate: '2024-02-26',
+              endDate: '2024-07-15',
+              description: course.course_description || `${course.course_name} - ${course.course_nature}`,
+              programName: course.program_name,
+              programCode: course.program_code,
+              semester: course.semester,
+              courseNature: course.course_nature,
+              examMethod: course.exam_method,
+              grade: course.grade,
+              completedAt: course.completed_at,
+              isCustom: false
+            }));
+            
+            // 合并培养方案课程和自定义课程
+            allCourses = [...transformedCourses, ...customCourses];
+          }
+        }
+        
+        console.log('合并后的课程数据:', allCourses);
+        setCourses(allCourses);
+        setTrainingProgramName(programName);
+        
+      } catch (apiError) {
+        console.error('培养方案课程API调用失败:', apiError);
+        // 只显示自定义课程
+        setCourses(allCourses);
+        setTrainingProgramName(programName);
       }
+      
     } catch (error) {
-      console.error('加载培养方案课程失败:', error);
+      console.error('加载课程失败:', error);
+      
       // 显示错误状态，但仍保留基本功能
       setCourses([
         {
@@ -309,7 +391,8 @@ const StudentAcademicTasks: React.FC = () => {
           achievements: '',
           startDate: '',
           endDate: '',
-          description: '无法加载培养方案数据，请检查网络连接或联系管理员'
+          description: '无法加载课程数据，请检查网络连接或联系管理员',
+          isCustom: false
         }
       ]);
       setTrainingProgramName('数据加载失败');
@@ -326,17 +409,19 @@ const StudentAcademicTasks: React.FC = () => {
 
   // 页面加载时获取培养方案课程和学习数据
   useEffect(() => {
-    if (studentProfile?.id) {
+    if (studentProfile?.id && !coursesLoading) {
+      console.log('🚀 开始加载课程数据，学生ID:', studentProfile.id);
       fetchStudentTrainingProgramCourses();
     }
   }, [studentProfile?.id, selectedSemester]);
 
   // 在课程加载完成后，加载已保存的学习数据
   useEffect(() => {
-    if (studentProfile?.id && courses.length > 0 && !learningDataLoaded) {
+    if (studentProfile?.id && courses.length > 0 && !learningDataLoaded && !coursesLoading) {
+      console.log('📚 开始加载学习数据，课程数量:', courses.length);
       fetchStudentLearningData();
     }
-  }, [studentProfile?.id, courses, learningDataLoaded]);
+  }, [studentProfile?.id, courses.length, learningDataLoaded, coursesLoading]);
 
   const handleLogoutClick = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -521,6 +606,80 @@ const StudentAcademicTasks: React.FC = () => {
         ? { ...course, tags: [...course.tags, tag] }
         : course
     ));
+  };
+
+  // 添加新课程
+  const handleAddCourse = async () => {
+    if (!studentProfile?.id) {
+      alert('学生档案不存在，无法添加课程');
+      return;
+    }
+
+    if (!newCourseName.trim()) {
+      alert('请输入课程名称');
+      return;
+    }
+
+    try {
+      setAddCourseLoading(true);
+      
+      const response = await fetch('/api/student-learning/add-custom-course', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          student_profile_id: studentProfile.id,
+          course_name: newCourseName.trim(),
+          credits: newCourseCredits,
+          teacher: newCourseTeacher.trim() || '自填课程',
+          description: newCourseDescription.trim() || `${newCourseName.trim()} - 学生自定义添加的课程`,
+          semester: selectedSemester
+        })
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || '添加课程失败');
+      }
+
+      const result = await response.json();
+      
+      if (result.success && result.data) {
+        // 将新课程添加到课程列表
+        const newCourse: Course = {
+          id: result.data.course_id || `custom_${Date.now()}`,
+          name: newCourseName.trim(),
+          teacher: newCourseTeacher.trim() || '自填课程',
+          credits: newCourseCredits,
+          status: 'pending',
+          tags: [],
+          outcomes: '',
+          achievements: '',
+          startDate: new Date().toISOString().split('T')[0],
+          endDate: '',
+          description: newCourseDescription.trim() || `${newCourseName.trim()} - 学生自定义添加的课程`
+        };
+
+        setCourses(prev => [...prev, newCourse]);
+        
+        // 重置表单
+        setNewCourseName('');
+        setNewCourseCredits(1);
+        setNewCourseTeacher('');
+        setNewCourseDescription('');
+        setShowAddCourseModal(false);
+        
+        alert('课程添加成功！');
+      } else {
+        throw new Error(result.message || '添加课程失败');
+      }
+    } catch (error) {
+      console.error('添加课程失败:', error);
+      alert(`添加课程失败: ${error.message}`);
+    } finally {
+      setAddCourseLoading(false);
+    }
   };
 
   // 获取状态标签
@@ -769,12 +928,23 @@ const StudentAcademicTasks: React.FC = () => {
                     {trainingProgramName}
                   </div>
                 )}
-                <p className="text-sm text-text-secondary">点击编辑按钮填写学习收获和成果</p>
+                <p className="text-sm text-text-secondary">
+                  点击编辑按钮填写学习收获和成果，或点击"添加课程"创建自定义课程
+                </p>
               </div>
             </div>
-            <div className="flex items-center space-x-2 text-sm text-text-secondary">
-              <i className="fas fa-info-circle"></i>
-              <span>共 {courses.length} 门课程</span>
+            <div className="flex items-center space-x-4">
+              <button
+                onClick={() => setShowAddCourseModal(true)}
+                className="px-4 py-2 bg-secondary text-white hover:bg-accent rounded-lg transition-colors flex items-center"
+              >
+                <i className="fas fa-plus mr-2"></i>
+                添加课程
+              </button>
+              <div className="flex items-center space-x-2 text-sm text-text-secondary">
+                <i className="fas fa-info-circle"></i>
+                <span>共 {courses.length} 门课程</span>
+              </div>
             </div>
           </div>
           
@@ -783,7 +953,10 @@ const StudentAcademicTasks: React.FC = () => {
               <div className="flex items-center justify-center py-16">
                 <div className="text-center">
                   <i className="fas fa-spinner fa-spin text-3xl text-secondary mb-4"></i>
-                  <p className="text-text-secondary">正在加载培养方案课程...</p>
+                  <p className="text-text-secondary">
+                    {coursesLoading ? '正在加载课程数据...' : '正在加载学习数据...'}
+                  </p>
+                  <p className="text-sm text-gray-500 mt-2">请稍候，系统正在处理您的请求</p>
                 </div>
               </div>
             ) : courses.length === 0 ? (
@@ -792,11 +965,13 @@ const StudentAcademicTasks: React.FC = () => {
                   <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
                     <i className="fas fa-book-open text-2xl text-gray-400"></i>
                   </div>
-                  <h3 className="text-lg font-medium text-gray-600 mb-2">暂无培养方案课程</h3>
+                  <h3 className="text-lg font-medium text-gray-600 mb-2">暂无课程</h3>
                   <p className="text-sm text-gray-500 mb-4">
                     {trainingProgramName === '暂未分配培养方案' 
-                      ? '您的教师还未为您分配培养方案，请联系教师。' 
-                      : '当前培养方案下暂无课程安排。'
+                      ? '您的教师还未为您分配培养方案，您可以点击"添加课程"按钮创建自定义课程。' 
+                      : trainingProgramName === '自定义课程' || trainingProgramName === '暂无课程'
+                      ? '您还没有添加任何课程，点击"添加课程"按钮开始创建您的第一门课程。'
+                      : '当前培养方案下暂无课程安排，您可以点击"添加课程"按钮创建自定义课程。'
                     }
                   </p>
                 </div>
@@ -835,6 +1010,12 @@ const StudentAcademicTasks: React.FC = () => {
                             <span className="flex items-center space-x-1">
                               <i className="fas fa-tag text-xs"></i>
                               <span>{(course as any).courseNature}</span>
+                            </span>
+                          )}
+                          {(course as any).isCustom && (
+                            <span className="flex items-center space-x-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
+                              <i className="fas fa-user-plus text-xs"></i>
+                              <span>自定义</span>
                             </span>
                           )}
                         </div>
@@ -1067,6 +1248,116 @@ const StudentAcademicTasks: React.FC = () => {
             ))}
           </div>
         </section>
+
+        {/* 添加课程弹窗 */}
+        {showAddCourseModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-semibold text-text-primary flex items-center">
+                  <i className="fas fa-plus-circle text-secondary mr-2"></i>
+                  添加自定义课程
+                </h3>
+                <p className="text-sm text-text-secondary mt-1">
+                  填写课程信息，添加后即可编辑学习收获和成果
+                </p>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    <i className="fas fa-book text-blue-500 mr-1"></i>
+                    课程名称 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={newCourseName}
+                    onChange={(e) => setNewCourseName(e.target.value)}
+                    placeholder="例如：Web前端开发"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    maxLength={100}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      <i className="fas fa-graduation-cap text-purple-500 mr-1"></i>
+                      学分
+                    </label>
+                    <input
+                      type="number"
+                      value={newCourseCredits}
+                      onChange={(e) => setNewCourseCredits(Math.max(0, parseInt(e.target.value) || 0))}
+                      placeholder="1"
+                      min="0"
+                      max="10"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      <i className="fas fa-user-tie text-green-500 mr-1"></i>
+                      授课教师
+                    </label>
+                    <input
+                      type="text"
+                      value={newCourseTeacher}
+                      onChange={(e) => setNewCourseTeacher(e.target.value)}
+                      placeholder="可选填"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                      maxLength={50}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    <i className="fas fa-align-left text-orange-500 mr-1"></i>
+                    课程描述
+                  </label>
+                  <textarea
+                    value={newCourseDescription}
+                    onChange={(e) => setNewCourseDescription(e.target.value)}
+                    placeholder="可选填，简要描述课程内容"
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent resize-none"
+                    maxLength={200}
+                  />
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowAddCourseModal(false)}
+                  disabled={addCourseLoading}
+                  className="px-6 py-2 border border-border-light text-text-secondary rounded-lg hover:bg-gray-50 transition-colors flex items-center disabled:opacity-50"
+                >
+                  <i className="fas fa-times mr-2"></i>
+                  取消
+                </button>
+                <button
+                  onClick={handleAddCourse}
+                  disabled={addCourseLoading || !newCourseName.trim()}
+                  className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors flex items-center disabled:opacity-50"
+                >
+                  {addCourseLoading ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin mr-2"></i>
+                      添加中...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-plus mr-2"></i>
+                      添加课程
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </main>
     </div>
   );
