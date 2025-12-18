@@ -1,0 +1,248 @@
+{
+  "name": "学生个人画像生成工作流",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "student-profile-image",
+        "responseMode": "lastNode",
+        "options": {
+          "bodyContentType": "json"
+        }
+      },
+      "id": "872a44b5-8314-4014-8b73-a73749713327",
+      "name": "Webhook触发器",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 3,
+      "position": [
+        100,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "genericCredentialType",
+        "url": "{{$json['api_url']}}/api/student-learning/get-summary/{{$json['student_profile_id']}}",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": []
+        },
+        "options": {
+          "timeout": 10000,
+          "rejectUnauthorized": true
+        }
+      },
+      "id": "f1c5d9a2-3b1d-4e2f-8a3c-9d4a5b6c7e8f",
+      "name": "获取学生学习信息",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        300,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "1",
+          "name": "HTTP Header Auth"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// 处理学生数据并生成AI绘图提示词\nconst studentData = $json.data;\n\n// 提取关键信息\nconst studentInfo = studentData.student_info || {};\nconst technicalTags = studentData.technical_tags || [];\nconst learningAchievements = studentData.learning_achievements || [];\nconst learningOutcomes = studentData.learning_outcomes || [];\n\n// 生成技术标签文本\nconst tagCategories = {};\ntechnicalTags.forEach(tag => {\n  const category = tag.tag_category || '其他';\n  if (!tagCategories[category]) {\n    tagCategories[category] = [];\n  }\n  tagCategories[category].push(tag.tag_name);\n});\n\nlet tagsText = '';\nObject.keys(tagCategories).forEach(category => {\n  tagsText += `${category}: ${tagCategories[category].join(', ')}\n`;\n});\n\n// 生成学习收获摘要\nlet achievementsSummary = '';\nlearningAchievements.slice(0, 3).forEach(achievement => {\n  achievementsSummary += `- ${achievement.title}: ${achievement.content.substring(0, 100)}...\n`;\n});\n\n// 生成学习成果摘要\nlet outcomesSummary = '';\nlearningOutcomes.slice(0, 3).forEach(outcome => {\n  outcomesSummary += `- ${outcome.outcome_title}: ${outcome.outcome_description.substring(0, 100)}...\n`;\n});\n\n// 生成AI绘图提示词\nconst prompt = `请绘制一张学生个人画像，基于以下信息：\n\n基本信息：\n姓名: ${studentInfo.full_name || '未知'}\n班级: ${studentInfo.class_name || '未知'}\n\n技术标签：\n${tagsText}\n\n学习收获：\n${achievementsSummary}\n\n学习成果：\n${outcomesSummary}\n\n要求：\n1. 风格：现代、简约、专业\n2. 包含可视化元素代表学生的技能和特点\n3. 使用不同颜色区分不同类别的技能\n4. 整体布局和谐，信息层次清晰\n5. 不要包含真实人物照片`;\n\nreturn {\n  prompt: prompt,\n  studentInfo: studentInfo\n};"
+      },
+      "id": "c2d3e4f5-a6b7-c8d9-e0f1-a2b3c4d5e6f7",
+      "name": "生成AI绘图提示词",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "apiKey",
+        "apiKey": "{{$credentials.openaiApiKey}}",
+        "model": "dall-e-3",
+        "prompt": "={{$json['prompt']}}",
+        "size": "1024x1024",
+        "quality": "standard",
+        "n": 1
+      },
+      "id": "d3e4f5a6-b7c8-d9e0-f1a2-b3c4d5e6f7a8",
+      "name": "调用DALL-E生成画像",
+      "type": "n8n-nodes-base.openAiImage",
+      "typeVersion": 1,
+      "position": [
+        700,
+        100
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "2",
+          "name": "OpenAI API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "functionCode": "// 处理AI生成的图片并返回响应\nconst imageUrl = $json.data[0].url;\nconst studentInfo = $input.all()[0].json.studentInfo;\n\nreturn {\n  success: true,\n  message: '学生个人画像生成成功',\n  data: {\n    student_info: studentInfo,\n    image_url: imageUrl\n  }\n};"
+      },
+      "id": "e4f5a6b7-c8d9-e0f1-a2b3-c4d5e6f7a8b9",
+      "name": "处理生成结果",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [
+        900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{$json['success']}}",
+              "operation": "equal",
+              "value2": "true"
+            }
+          ]
+        }
+      },
+      "id": "f5a6b7c8-d9e0-f1a2-b3c4d5e6f7a8",
+      "name": "检查API响应",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        500,
+        250
+      ]
+    },
+    {
+      "parameters": {
+        "url": "{{$json['error_webhook']}}",
+        "options": {
+          "timeout": 10000,
+          "rejectUnauthorized": true
+        },
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "error",
+              "value": "={{$json['message']}}",
+              "type": "string"
+            },
+            {
+              "name": "student_profile_id",
+              "value": "={{$json['student_profile_id']}}",
+              "type": "string"
+            }
+          ]
+        },
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": []
+        },
+        "bodyContentType": "json"
+      },
+      "id": "a6b7c8d9-e0f1-a2b3-c4d5e6f7a8b9",
+      "name": "发送错误通知",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [
+        700,
+        400
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook触发器": {
+      "main": [
+        [
+          {
+            "node": "获取学生学习信息",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "获取学生学习信息": {
+      "main": [
+        [
+          {
+            "node": "检查API响应",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "检查API响应": {
+      "main": [
+        [
+          {
+            "node": "生成AI绘图提示词",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "发送错误通知",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "生成AI绘图提示词": {
+      "main": [
+        [
+          {
+            "node": "调用DALL-E生成画像",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "调用DALL-E生成画像": {
+      "main": [
+        [
+          {
+            "node": "处理生成结果",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "处理生成结果": {
+      "main": [
+        [
+          {
+            "node": "Webhook触发器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "发送错误通知": {
+      "main": [
+        [
+          {
+            "node": "Webhook触发器",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {},
+  "versionId": "1.0.0",
+  "id": "student-profile-image-workflow"
+}

@@ -21,6 +21,7 @@ import P_student_profile_edit from '../pages/p-student_profile_edit';
 import P_student_graduation_fill from '../pages/p-student_graduation_fill';
 import P_student_document_view from '../pages/p-student_document_view';
 import P_student_academic_tasks from '../pages/p-student_academic_tasks';
+import P_student_profile_analysis from '../pages/p-student_profile_analysis';
 import NotFoundPage from './NotFoundPage';
 import ErrorPage from './ErrorPage';
 
@@ -194,6 +195,17 @@ const router = createBrowserRouter([
       <ErrorBoundary>
         <AuthGuard requiredRole="student">
           <P_student_academic_tasks />
+        </AuthGuard>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+      {
+    path: '/student-profile-analysis',
+    element: (
+      <ErrorBoundary>
+        <AuthGuard requiredRole="student">
+          <P_student_profile_analysis />
         </AuthGuard>
       </ErrorBoundary>
     ),

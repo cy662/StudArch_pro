@@ -1,0 +1,346 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "studentId",
+              "value": "={{ $json.body.student_id }}",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "e861e71f-8528-4792-abcb-c7e95faf2f1b",
+      "name": "Workflow Configuration",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1248,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "get",
+        "tableId": "student_profiles",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $('Workflow Configuration').first().json.studentId }}"
+            }
+          ]
+        }
+      },
+      "id": "49b16aa4-1358-4706-a1f0-bd1e704b06d2",
+      "name": "Get Student Info",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1472,
+        352
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "A8bGNUpHK4tisOum",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "student_learning_achievements",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "student_profile_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Workflow Configuration').first().json.studentId }}"
+            }
+          ]
+        }
+      },
+      "id": "77de6314-c460-4e2f-b9e6-c15930977296",
+      "name": "Get Student Achievements",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1696,
+        352
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "A8bGNUpHK4tisOum",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "student_technical_tags",
+        "returnAll": true,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "student_profile_id",
+              "condition": "eq",
+              "keyValue": "={{ $('Workflow Configuration').first().json.studentId }}"
+            }
+          ]
+        }
+      },
+      "id": "b98233d1-c9b5-4e3c-8666-e397ca89023a",
+      "name": "Get Student Tech Tags",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [
+        1920,
+        352
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "A8bGNUpHK4tisOum",
+          "name": "Supabase account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "id-1",
+              "name": "studentInfo",
+              "value": "={{ $('Get Student Info').first().json }}",
+              "type": "object"
+            },
+            {
+              "id": "id-2",
+              "name": "achievements",
+              "value": "={{ $('Get Student Achievements').all() }}",
+              "type": "array"
+            },
+            {
+              "id": "id-3",
+              "name": "techTags",
+              "value": "={{ $('Get Student Tech Tags').all() }}",
+              "type": "array"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "id": "f4ed7a95-a679-4027-b78e-004bbd8b423d",
+      "name": "Combine Student Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2144,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "promptType": "define",
+        "text": "=学生信息: {{ $json.studentInfo }}\n\n学习成果: {{ $json.achievements }}\n\n技术标签: {{ $json.techTags }}",
+        "hasOutputParser": true,
+        "options": {
+          "systemMessage": "你是一个专业的学生档案分析师。你的任务是基于学生的个人信息、学习成果和技术标签，生成一个全面、专业的学生画像。\n\n请分析以下方面：\n1. 学生基本情况总结\n2. 学习成果分析（优势领域、成长轨迹）\n3. 技术能力评估（掌握的技术栈、熟练程度）\n4. 个人特点和潜力分析\n5. 发展建议和方向\n\n请用专业、客观的语言生成结构化的学生画像。"
+        }
+      },
+      "id": "c311093d-43f4-4b52-91f0-edcde46eb069",
+      "name": "Generate Student Profile",
+      "type": "@n8n/n8n-nodes-langchain.agent",
+      "typeVersion": 3,
+      "position": [
+        2368,
+        352
+      ]
+    },
+    {
+      "parameters": {
+        "model": {
+          "__rl": true,
+          "mode": "list",
+          "value": "gpt-4.1-mini"
+        },
+        "builtInTools": {},
+        "options": {}
+      },
+      "id": "bedca278-e753-4509-8fc5-7ce30e13bae4",
+      "name": "OpenAI Chat Model",
+      "type": "@n8n/n8n-nodes-langchain.lmChatOpenAi",
+      "typeVersion": 1.3,
+      "position": [
+        2384,
+        576
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "6ySHnWacqscDLFmG",
+          "name": "n8n free OpenAI API credits"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "schemaType": "manual",
+        "inputSchema": "{\n\t\"type\": \"object\",\n\t\"properties\": {\n\t\t\"summary\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"description\": \"学生整体情况总结\"\n\t\t},\n\t\t\"strengths\": {\n\t\t\t\"type\": \"array\",\n\t\t\t\"description\": \"学生的优势和强项\",\n\t\t\t\"items\": {\n\t\t\t\t\"type\": \"string\"\n\t\t\t}\n\t\t},\n\t\t\"technicalSkills\": {\n\t\t\t\"type\": \"object\",\n\t\t\t\"description\": \"技术能力评估，包含各技术栈的熟练程度\"\n\t\t},\n\t\t\"achievements\": {\n\t\t\t\"type\": \"array\",\n\t\t\t\"description\": \"主要学习成果和成就\",\n\t\t\t\"items\": {\n\t\t\t\t\"type\": \"string\"\n\t\t\t}\n\t\t},\n\t\t\"developmentSuggestions\": {\n\t\t\t\"type\": \"string\",\n\t\t\t\"description\": \"发展建议和未来方向\"\n\t\t}\n\t}\n}"
+      },
+      "id": "8c0825b6-733a-4f7b-b558-4b3dd185c5f0",
+      "name": "Structured Output Parser",
+      "type": "@n8n/n8n-nodes-langchain.outputParserStructured",
+      "typeVersion": 1.3,
+      "position": [
+        2512,
+        576
+      ]
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "student-profile-analysis",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "414f2514-56f6-4ed7-b6d3-2eeba152ea58",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        1024,
+        352
+      ],
+      "webhookId": "ff38af7f-1aa0-416c-8387-c7d0e28b9f01"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json.output }}",
+        "options": {}
+      },
+      "id": "1441270a-df8e-439a-a767-70347c0d3d52",
+      "name": "Return Profile to Frontend",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        2720,
+        352
+      ]
+    }
+  ],
+  "connections": {
+    "Workflow Configuration": {
+      "main": [
+        [
+          {
+            "node": "Get Student Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Student Info": {
+      "main": [
+        [
+          {
+            "node": "Get Student Achievements",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Student Achievements": {
+      "main": [
+        [
+          {
+            "node": "Get Student Tech Tags",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Student Tech Tags": {
+      "main": [
+        [
+          {
+            "node": "Combine Student Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Combine Student Data": {
+      "main": [
+        [
+          {
+            "node": "Generate Student Profile",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Student Profile": {
+      "main": [
+        [
+          {
+            "node": "Return Profile to Frontend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI Chat Model": {
+      "ai_languageModel": [
+        [
+          {
+            "node": "Generate Student Profile",
+            "type": "ai_languageModel",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structured Output Parser": {
+      "ai_outputParser": [
+        [
+          {
+            "node": "Generate Student Profile",
+            "type": "ai_outputParser",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Workflow Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "meta": {
+    "instanceId": "40322037b646dd713c46db8bcbd0c22a9c5c3e7f176614a4ccf4800804579702"
+  }
+}
