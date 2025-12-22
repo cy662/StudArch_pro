@@ -1,7 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useAuth } from '../../hooks/useAuth';
 import useStudentProfile from '../../hooks/useStudentProfile';
 import { generateStudentProfile } from '../../services/n8nService';
+import { Radar } from 'react-chartjs-2';
+import {
+  Chart as ChartJS,
+  RadialLinearScale,
+  PointElement,
+  LineElement,
+  Filler,
+  Tooltip,
+  Legend,
+  ChartOptions
+} from 'chart.js';
 import styles from './styles.module.css';
 
 // 定义工作流分析结果的类型
@@ -10,7 +21,65 @@ interface AnalysisResult {
   strengths: string[];
   achievements: string[];
   developmentSuggestions: string;
+  radarChart?: {
+    labels: string[];
+    datasets: {
+      label: string;
+      data: number[];
+      backgroundColor: string[];
+      borderColor: string[];
+      borderWidth: number;
+    }[];
+  };
 }
+
+// 定义雷达图组件
+interface RadarChartProps {
+  chartData: AnalysisResult['radarChart'];
+}
+
+const RadarChart: React.FC<RadarChartProps> = ({ chartData }) => {
+  const chartRef = useRef<ChartJS<'radar'>>(null);
+
+  if (!chartData) return null;
+
+  const options: ChartOptions<'radar'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    scales: {
+      r: {
+        beginAtZero: true,
+        max: 100,
+        ticks: {
+          stepSize: 20
+        },
+        pointLabels: {
+          font: {
+            size: 12
+          }
+        }
+      }
+    },
+    plugins: {
+      legend: {
+        position: 'top'
+      },
+      tooltip: {
+        callbacks: {
+          label: function(context) {
+            return `${context.dataset.label}: ${context.parsed.r}`;
+          }
+        }
+      }
+    }
+  };
+
+  return (
+    <div className={styles.radarChartContainer}>
+      <Radar ref={chartRef} data={chartData} options={options} />
+    </div>
+  );
+};
 
 // 模拟的个人画像分析数据
 const mockAnalysisResult: AnalysisResult = {
@@ -24,7 +93,19 @@ const mockAnalysisResult: AnalysisResult = {
     "成功构建了基于历史成绩和考勤数据的学生成绩预测模型，模型准确率达到85%。",
     "完成相关分析报告，展示了良好的科研和总结能力。"
   ],
-  developmentSuggestions: "建议继续巩固和提升Java语言能力，同时扩展其他编程语言和机器学习相关技术栈，如Python及其机器学习库。可以加强数据预处理和特征工程技能，提升模型泛化能力和准确率。此外，建议多参与实际项目，积累更多实战经验，逐步向高级机器学习工程师方向发展。"
+  developmentSuggestions: "建议继续巩固和提升Java语言能力，同时扩展其他编程语言和机器学习相关技术栈，如Python及其机器学习库。可以加强数据预处理和特征工程技能，提升模型泛化能力和准确率。此外，建议多参与实际项目，积累更多实战经验，逐步向高级机器学习工程师方向发展。",
+  radarChart: {
+    labels: ['编程能力', '算法基础', '数据结构', '项目实践', '团队协作', '学习能力'],
+    datasets: [
+      {
+        label: '能力评分',
+        data: [78, 65, 70, 85, 60, 90],
+        backgroundColor: ['rgba(255, 99, 132, 0.2)', 'rgba(54, 162, 235, 0.2)', 'rgba(255, 206, 86, 0.2)', 'rgba(75, 192, 192, 0.2)', 'rgba(153, 102, 255, 0.2)', 'rgba(255, 159, 64, 0.2)'],
+        borderColor: ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)', 'rgba(255, 159, 64, 1)'],
+        borderWidth: 1
+      }
+    ]
+  }
 };
 
 const StudentProfileAnalysis: React.FC = () => {
@@ -132,12 +213,38 @@ const StudentProfileAnalysis: React.FC = () => {
               hasSuggestions
             });
             
-            // 设置分析结果
-            if (workflowData?.output) {
-              setAnalysisResult(workflowData.output);
-            } else if (workflowData) {
-              // 兼容不同的返回格式
-              setAnalysisResult(workflowData);
+            // 处理n8n返回的数据结构，适配前端组件
+            if (workflowData) {
+              // 提取分析结果
+              const profileData = workflowData?.profile || workflowData;
+              
+              // 提取玫瑰图数据并转换为前端期望的雷达图格式
+              const roseChartData = workflowData?.roseChartData || workflowData?.chartConfig;
+              let radarChartData = null;
+              
+              if (roseChartData) {
+                radarChartData = {
+                  labels: roseChartData.dimensions || [],
+                  datasets: [{
+                    label: '能力评分',
+                    data: roseChartData.values || [],
+                    backgroundColor: ['rgba(255, 99, 132, 0.2)', 'rgba(54, 162, 235, 0.2)', 'rgba(255, 206, 86, 0.2)', 'rgba(75, 192, 192, 0.2)', 'rgba(153, 102, 255, 0.2)'],
+                    borderColor: ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)'],
+                    borderWidth: 1
+                  }]
+                };
+              }
+              
+              // 构建前端需要的AnalysisResult对象
+              const result: AnalysisResult = {
+                summary: profileData.summary || '',
+                strengths: profileData.strengths || [],
+                achievements: profileData.achievements || [],
+                developmentSuggestions: profileData.developmentSuggestions || '',
+                radarChart: radarChartData
+              };
+              
+              setAnalysisResult(result);
             } else {
               throw new Error('工作流未返回分析结果');
             }
@@ -222,9 +329,17 @@ const StudentProfileAnalysis: React.FC = () => {
             
             {portraitStatus === 'success' && (
               <>
-                {/* 分析结果展示 - 不显示图片 */}
+                {/* 分析结果展示 - 包含雷达图 */}
                 {analysisResult && (
                   <div className={styles.analysisResultWrapper}>
+                    {/* 雷达图展示 */}
+                    {analysisResult.radarChart && (
+                      <div className={styles.analysisSection}>
+                        <h3 className={styles.analysisSectionTitle}>📊 能力雷达图</h3>
+                        <RadarChart chartData={analysisResult.radarChart} />
+                      </div>
+                    )}
+                    
                     <div className={styles.analysisSection}>
                       <h3 className={styles.analysisSectionTitle}>📝 个人总结</h3>
                       <p className={styles.analysisText}>{analysisResult.summary}</p>
