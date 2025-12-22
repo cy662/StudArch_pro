@@ -37,7 +37,20 @@ export const callN8nWorkflow = async (params: N8nWorkflowParams): Promise<N8nWor
       body: JSON.stringify(params),
     });
 
-    const result = await response.json();
+    // 先获取响应文本，检查是否为空
+    const responseText = await response.text();
+    
+    // 如果响应文本为空，创建默认结果
+    if (!responseText.trim()) {
+      return {
+        success: true,
+        message: 'n8n工作流调用成功',
+        data: {}
+      };
+    }
+    
+    // 尝试解析JSON响应
+    const result = JSON.parse(responseText);
     return result;
   } catch (error) {
     console.error('调用n8n工作流时发生网络错误:', error);
