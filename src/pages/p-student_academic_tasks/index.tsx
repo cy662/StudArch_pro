@@ -89,7 +89,7 @@ const StudentAcademicTasks: React.FC = () => {
   // 课程数据状态
   const [courses, setCourses] = useState<Course[]>([]);
   const [coursesLoading, setCoursesLoading] = useState(false);
-  const [trainingProgramName, setTrainingProgramName] = useState<string>('');
+
   const [learningDataLoaded, setLearningDataLoaded] = useState(false);
 
   // 编辑状态
@@ -328,8 +328,8 @@ const StudentAcademicTasks: React.FC = () => {
     }
   };
 
-  // 加载学生的培养方案课程
-  const fetchStudentTrainingProgramCourses = async () => {
+  // 加载学生的自定义课程
+  const fetchStudentCustomCoursesOnly = async () => {
     if (!studentProfile?.id) {
       console.log('学生档案ID不存在，无法加载课程');
       return;
@@ -337,96 +337,17 @@ const StudentAcademicTasks: React.FC = () => {
 
     try {
       setCoursesLoading(true);
-      console.log('开始加载学生培养方案课程，学生档案ID:', studentProfile.id);
+      console.log('开始加载学生自定义课程，学生档案ID:', studentProfile.id);
       
-      // 先尝试加载自定义课程
+      // 加载自定义课程
       const customCourses = await fetchStudentCustomCourses();
       
-      // 然后尝试加载培养方案课程
-      let allCourses: Course[] = [...customCourses];
-      let programName = customCourses.length > 0 ? '自定义课程' : '暂无课程';
-      
-      try {
-        const response = await fetch(`/api/student/${studentProfile.id}/training-program-courses`);
-        
-        if (!response.ok) {
-          console.error('培养方案API响应错误:', response.status);
-          // 只显示自定义课程
-          setCourses(allCourses);
-          setTrainingProgramName(programName);
-          return;
-        }
-        
-        const result = await response.json();
-        console.log('获取到的培养方案课程数据:', result);
-        
-        if (result.success && result.data && Array.isArray(result.data)) {
-          const programData = result.data;
-          
-          if (programData.length > 0) {
-            // 从第一条记录中获取培养方案名称
-            programName = programData[0]?.program_name || '培养方案';
-            
-            // 转换培养方案课程数据格式
-            const transformedCourses = programData.map((course: any) => ({
-              id: course.id,
-              name: course.course_name,
-              teacher: course.teacher || '待定',
-              credits: course.credits || 0,
-              status: course.status || 'not_started',
-              tags: [],
-              outcomes: '',
-              achievements: '',
-              startDate: '2024-02-26',
-              endDate: '2024-07-15',
-              description: course.course_description || `${course.course_name} - ${course.course_nature}`,
-              programName: course.program_name,
-              programCode: course.program_code,
-              semester: course.semester,
-              courseNature: course.course_nature,
-              examMethod: course.exam_method,
-              grade: course.grade,
-              completedAt: course.completed_at,
-              isCustom: false
-            }));
-            
-            // 合并培养方案课程和自定义课程
-            allCourses = [...transformedCourses, ...customCourses];
-          }
-        }
-        
-        console.log('合并后的课程数据:', allCourses);
-        setCourses(allCourses);
-        setTrainingProgramName(programName);
-        
-      } catch (apiError) {
-        console.error('培养方案课程API调用失败:', apiError);
-        // 只显示自定义课程
-        setCourses(allCourses);
-        setTrainingProgramName(programName);
-      }
+      console.log('加载到的自定义课程数据:', customCourses);
+      setCourses(customCourses);
       
     } catch (error) {
       console.error('加载课程失败:', error);
-      
-      // 显示错误状态，但仍保留基本功能
-      setCourses([
-        {
-          id: 'error-1',
-          name: '数据加载失败',
-          teacher: '未知',
-          credits: 0,
-          status: 'pending',
-          tags: [],
-          outcomes: '',
-          achievements: '',
-          startDate: '',
-          endDate: '',
-          description: '无法加载课程数据，请检查网络连接或联系管理员',
-          isCustom: false
-        }
-      ]);
-      setTrainingProgramName('数据加载失败');
+      setCourses([]);
     } finally {
       setCoursesLoading(false);
     }
@@ -438,11 +359,11 @@ const StudentAcademicTasks: React.FC = () => {
     return () => { document.title = originalTitle; };
   }, []);
 
-  // 页面加载时获取培养方案课程和学习数据
+  // 页面加载时获取自定义课程和学习数据
   useEffect(() => {
     if (studentProfile?.id && !coursesLoading) {
       console.log('🚀 开始加载课程数据，学生ID:', studentProfile.id);
-      fetchStudentTrainingProgramCourses();
+      fetchStudentCustomCoursesOnly();
     }
   }, [studentProfile?.id, selectedSemester]);
 
@@ -981,12 +902,6 @@ const StudentAcademicTasks: React.FC = () => {
             <div>
               <h3 className="text-lg font-semibold text-text-primary mb-2">课程详情</h3>
               <div className="flex items-center space-x-3">
-                {trainingProgramName && (
-                  <div className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
-                    <i className="fas fa-graduation-cap mr-1"></i>
-                    {trainingProgramName}
-                  </div>
-                )}
                 <p className="text-sm text-text-secondary">
                   点击编辑按钮填写学习收获和成果，或点击"添加课程"创建自定义课程
                 </p>
@@ -1026,12 +941,7 @@ const StudentAcademicTasks: React.FC = () => {
                   </div>
                   <h3 className="text-lg font-medium text-gray-600 mb-2">暂无课程</h3>
                   <p className="text-sm text-gray-500 mb-4">
-                    {trainingProgramName === '暂未分配培养方案' 
-                      ? '您的教师还未为您分配培养方案，您可以点击"添加课程"按钮创建自定义课程。' 
-                      : trainingProgramName === '自定义课程' || trainingProgramName === '暂无课程'
-                      ? '您还没有添加任何课程，点击"添加课程"按钮开始创建您的第一门课程。'
-                      : '当前培养方案下暂无课程安排，您可以点击"添加课程"按钮创建自定义课程。'
-                    }
+                    您还没有添加任何课程，点击"添加课程"按钮开始创建您的第一门课程。
                   </p>
                 </div>
               </div>

@@ -2,15 +2,32 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { UserService } from '../../services/userService';
-import { TrainingProgramService } from '../../services/trainingProgramService';
+
 import { UserWithRole } from '../../types/user';
-import { TrainingProgramCourse, TrainingProgramImportResult } from '../../types/trainingProgram';
+
 import { useAuth } from '../../hooks/useAuth'; // 添加这行导入
 import { supabase } from '../../lib/supabase'; // 导入supabase客户端
 
+// 添加奖惩相关的类型
+interface RewardPunishment {
+  id: string;
+  student_id: string;
+  type: 'reward' | 'punishment';
+  name: string;
+  level: string;
+  category?: string;
+  description: string;
+  date: string;
+  created_by: string;
+  created_at: string;
+  updated_at?: string;
+  status?: 'pending' | 'approved' | 'rejected';
+}
+
 const TeacherStudentList: React.FC = () => {
   const navigate = useNavigate();
-  const { user, setUser } = useAuth(); // 获取当前登录用户信息
+  const { user, refreshProfile } = useAuth(); // 获取当前登录用户信息
+  const [localUser, setLocalUser] = useState<any>(null); // 本地用户状态
   
   // 教师管理的学生数据
   const [studentsData, setStudentsData] = useState<UserWithRole[]>([]);
@@ -34,19 +51,19 @@ const TeacherStudentList: React.FC = () => {
   const [importPage, setImportPage] = useState(1);
   const [importTotalCount, setImportTotalCount] = useState(0);
 
-  // 培养方案导入相关状态
-  const [isTrainingProgramModalOpen, setIsTrainingProgramModalOpen] = useState(false);
-  const [trainingProgramFile, setTrainingProgramFile] = useState<File | null>(null);
-  const [trainingProgramCourses, setTrainingProgramCourses] = useState<TrainingProgramCourse[]>([]);
-  const [trainingProgramImporting, setTrainingProgramImporting] = useState(false);
-  const [trainingProgramImportResult, setTrainingProgramImportResult] = useState<TrainingProgramImportResult | null>(null);
-
-  // 培养方案分配相关状态
-  const [isAssignProgramModalOpen, setIsAssignProgramModalOpen] = useState(false);
-  const [availablePrograms, setAvailablePrograms] = useState<any[]>([]);
-  const [selectedProgram, setSelectedProgram] = useState<string>('');
-  const [assigningProgram, setAssigningProgram] = useState(false);
-  const [programsLoading, setProgramsLoading] = useState(false);
+  // 添加筛选和查找弹窗相关状态
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [filterForm, setFilterForm] = useState({
+    studentNumberOrName: '',
+    grade: '',
+    technicalTags: '',
+    reward: '',
+    punishment: '',
+    graduationDestination: ''
+  });
+  const [filteredStudents, setFilteredStudents] = useState<UserWithRole[]>([]);
+  const [isFiltering, setIsFiltering] = useState(false);
+  const [filtering, setFiltering] = useState(false);
 
   // 将档案ID映射回用户ID（因为前端显示使用档案ID，但后端API需要用户ID）
   const mapProfileIdsToUserIds = async (profileIds: string[]): Promise<string[]> => {
@@ -80,7 +97,7 @@ const TeacherStudentList: React.FC = () => {
     try {
       setStudentsLoading(true);
       // 从认证状态中获取当前教师的ID
-      const currentTeacherId = user?.id;
+      const currentTeacherId = user?.id || localUser?.id;
       
       // 添加调试信息
       console.log('=== 调试认证状态 ===');
@@ -103,7 +120,7 @@ const TeacherStudentList: React.FC = () => {
             // 如果有用户信息且是教师，直接设置
             if (parsedUser.role?.role_name === 'teacher' && parsedUser.id) {
               console.log('✅ 从localStorage恢复教师信息成功');
-              setUser(parsedUser);
+              setLocalUser(parsedUser);
               // 不return，让函数继续执行（因为现在有ID了）
             } else {
               // 手动设置测试教师
@@ -115,7 +132,7 @@ const TeacherStudentList: React.FC = () => {
                 role_id: '2'
               };
               console.log('设置测试教师账号');
-              setUser(testTeacher);
+              setLocalUser(testTeacher);
               localStorage.setItem('user_info', JSON.stringify(testTeacher));
             }
           } catch (parseError) {
@@ -130,7 +147,7 @@ const TeacherStudentList: React.FC = () => {
               role_id: '2'
             };
             console.log('设置测试教师账号');
-            setUser(testTeacher);
+            setLocalUser(testTeacher);
             localStorage.setItem('user_info', JSON.stringify(testTeacher));
           }
         } else {
@@ -143,7 +160,7 @@ const TeacherStudentList: React.FC = () => {
             role_id: '2'
           };
           console.log('设置测试教师账号');
-          setUser(testTeacher);
+          setLocalUser(testTeacher);
           localStorage.setItem('user_info', JSON.stringify(testTeacher));
         }
         
@@ -180,7 +197,7 @@ const TeacherStudentList: React.FC = () => {
     try {
       setImportLoading(true);
       // 从认证状态中获取当前教师的ID
-      const teacherId = user?.id;
+      const teacherId = user?.id || localUser?.id;
       
       // 如果没有获取到教师ID，不执行查询
       if (!teacherId) {
@@ -210,7 +227,7 @@ const TeacherStudentList: React.FC = () => {
     } catch (error) {
       console.error('获取可导入学生失败，使用备用方案:', error);
       // 如果数据库函数调用失败，使用备用方案获取所有学生
-      const teacherId = user?.id;
+      const teacherId = user?.id || localUser?.id;
       if (teacherId) {
         await fetchAvailableStudentsFallback(teacherId);
       } else {
@@ -322,6 +339,15 @@ const TeacherStudentList: React.FC = () => {
     return selectedCount > 0 && selectedCount < studentsData.length;
   };
 
+  const isAllSelectedAvailable = (): boolean => {
+    return availableStudents.length > 0 && availableStudents.every(student => selectedAvailableStudents.has(student.id));
+  };
+
+  const isIndeterminateAvailable = (): boolean => {
+    const selectedCount = availableStudents.filter(student => selectedAvailableStudents.has(student.id)).length;
+    return selectedCount > 0 && selectedCount < availableStudents.length;
+  };
+
   const handlePageChange = (page: number) => {
     const totalPages = Math.ceil(studentsTotal / pageSize);
     if (page >= 1 && page <= totalPages) {
@@ -346,7 +372,226 @@ const TeacherStudentList: React.FC = () => {
     setEditingStudent(null);
   };
 
+  // 处理筛选表单变化
+  const handleFilterFormChange = (field: string, value: string) => {
+    setFilterForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
 
+  // 执行筛选
+  const executeFilter = async () => {
+    try {
+      setFiltering(true);
+      setIsFiltering(true);
+      
+      // 构建筛选条件
+      let query = supabase
+        .from('teacher_students')
+        .select(`
+          student_id,
+          created_at,
+          users!inner(
+            id,
+            username,
+            email,
+            full_name,
+            user_number,
+            phone,
+            department,
+            grade,
+            class_name,
+            status,
+            created_at
+          ),
+          roles!inner(id, role_name, role_description)
+        `)
+        .eq('teacher_id', user?.id || localUser?.id)
+        .eq('users.role_id', '3'); // 学生角色
+
+      // 学号或姓名筛选
+      if (filterForm.studentNumberOrName) {
+        query = query.or(`
+          users.full_name.ilike.%${filterForm.studentNumberOrName}%|
+          users.user_number.ilike.%${filterForm.studentNumberOrName}%
+        `);
+      }
+
+      // 年级筛选
+      if (filterForm.grade) {
+        query = query.eq('users.grade', filterForm.grade);
+      }
+
+      // 排序
+      query = query.order('created_at', { ascending: false });
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('筛选学生失败:', error);
+        setFilteredStudents([]);
+      } else {
+        // 处理数据
+        const students = (data || []).map((item: any) => ({
+          ...item.users,
+          role: item.roles
+        }));
+
+        // 如果有技术标签、奖励、违纪或毕业去向筛选，需要进一步过滤
+        let finalResults = students;
+
+        // 技术标签筛选
+        if (filterForm.technicalTags) {
+          const tagFilteredStudents = await filterByTechnicalTags(students, filterForm.technicalTags);
+          finalResults = finalResults.filter((student: UserWithRole) => 
+            tagFilteredStudents.some(s => s.id === student.id)
+          );
+        }
+
+        // 奖励筛选
+        if (filterForm.reward) {
+          const rewardFilteredStudents = await filterByRewards(students, filterForm.reward, 'reward');
+          finalResults = finalResults.filter((student: UserWithRole) => 
+            rewardFilteredStudents.some(s => s.id === student.id)
+          );
+        }
+
+        // 违纪筛选
+        if (filterForm.punishment) {
+          const punishmentFilteredStudents = await filterByRewards(students, filterForm.punishment, 'punishment');
+          finalResults = finalResults.filter((student: UserWithRole) => 
+            punishmentFilteredStudents.some(s => s.id === student.id)
+          );
+        }
+
+        // 毕业去向筛选
+        if (filterForm.graduationDestination) {
+          const graduationFilteredStudents = await filterByGraduationDestination(students, filterForm.graduationDestination);
+          finalResults = finalResults.filter((student: UserWithRole) => 
+            graduationFilteredStudents.some(s => s.id === student.id)
+          );
+        }
+
+        setFilteredStudents(finalResults);
+      }
+      
+      // 关闭筛选弹窗
+      setIsFilterModalOpen(false);
+    } catch (error) {
+      console.error('筛选异常:', error);
+      setFilteredStudents([]);
+    } finally {
+      setFiltering(false);
+    }
+  };
+
+  // 根据技术标签筛选学生
+  const filterByTechnicalTags = async (students: UserWithRole[], tagName: string) => {
+    if (!students.length) return [];
+    
+    try {
+      const studentIds = students.map(s => s.id);
+      
+      // 获取这些学生的技术标签
+      const { data, error } = await supabase
+        .from('student_technical_tags')
+        .select('student_profile_id, tag_name')
+        .in('student_profile_id', studentIds)
+        .ilike('tag_name', `%${tagName}%`)
+        .eq('status', 'active');
+
+      if (error) {
+        console.error('获取技术标签失败:', error);
+        return [];
+      }
+
+      // 获取有匹配标签的学生ID
+      const matchedStudentIds = [...new Set(data?.map((item: any) => item.student_profile_id) || [])];
+      
+      // 返回匹配的学生
+      return students.filter(student => matchedStudentIds.includes(student.id));
+    } catch (error) {
+      console.error('技术标签筛选异常:', error);
+      return [];
+    }
+  };
+
+  // 根据奖惩记录筛选学生
+  const filterByRewards = async (students: UserWithRole[], keyword: string, type: 'reward' | 'punishment') => {
+    if (!students.length) return [];
+    
+    try {
+      const studentIds = students.map(s => s.id);
+      
+      // 获取这些学生的奖惩记录
+      const { data, error } = await supabase
+        .from('reward_punishments')
+        .select('student_id, name, type')
+        .in('student_id', studentIds)
+        .eq('type', type)
+        .eq('status', 'approved')
+        .ilike('name', `%${keyword}%`);
+
+      if (error) {
+        console.error('获取奖惩记录失败:', error);
+        return [];
+      }
+
+      // 获取有匹配记录的学生ID
+      const matchedStudentIds = [...new Set(data?.map((item: any) => item.student_id) || [])];
+      
+      // 返回匹配的学生
+      return students.filter(student => matchedStudentIds.includes(student.id));
+    } catch (error) {
+      console.error('奖惩记录筛选异常:', error);
+      return [];
+    }
+  };
+
+  // 根据毕业去向筛选学生
+  const filterByGraduationDestination = async (students: UserWithRole[], destinationType: string) => {
+    if (!students.length) return [];
+    
+    try {
+      const studentIds = students.map(s => s.id);
+      
+      // 获取这些学生的毕业去向
+      const { data, error } = await supabase
+        .from('graduation_destinations')
+        .select('student_id, destination_type')
+        .in('student_id', studentIds)
+        .eq('destination_type', destinationType);
+
+      if (error) {
+        console.error('获取毕业去向失败:', error);
+        return [];
+      }
+
+      // 获取有匹配记录的学生ID
+      const matchedStudentIds = [...new Set(data?.map((item: any) => item.student_id) || [])];
+      
+      // 返回匹配的学生
+      return students.filter(student => matchedStudentIds.includes(student.id));
+    } catch (error) {
+      console.error('毕业去向筛选异常:', error);
+      return [];
+    }
+  };
+
+  // 重置筛选表单
+  const resetFilterForm = () => {
+    setFilterForm({
+      studentNumberOrName: '',
+      grade: '',
+      technicalTags: '',
+      reward: '',
+      punishment: '',
+      graduationDestination: ''
+    });
+    setFilteredStudents([]);
+    setIsFiltering(false);
+  };
 
   const handleBatchDelete = async () => {
     if (selectedStudents.size === 0) {
@@ -499,234 +744,19 @@ ${errors.slice(0, 2).join('\n')}`);
     }
   };
 
-  // 培养方案导入处理函数
-  const handleDownloadTrainingProgramTemplate = async () => {
-    try {
-      await TrainingProgramService.generateAndDownloadTemplate();
-    } catch (error) {
-      console.error('下载模板失败:', error);
-      alert('下载模板失败，请重试');
-    }
-  };
 
-  // 获取可用的培养方案列表
-  const fetchAvailablePrograms = async () => {
-    try {
-      setProgramsLoading(true);
-      const currentTeacherId = user?.id;
-      
-      if (!currentTeacherId) {
-        console.warn('未获取到教师ID');
-        setAvailablePrograms([]);
-        return;
-      }
-      
-      const result = await TrainingProgramService.getTeacherAvailablePrograms(currentTeacherId);
-      setAvailablePrograms(result);
-    } catch (error) {
-      console.error('获取培养方案失败:', error);
-      alert('获取培养方案失败，请检查API服务器');
-    } finally {
-      setProgramsLoading(false);
-    }
-  };
 
-  // 批量分配培养方案给选中的学生
-  const handleAssignTrainingProgram = async () => {
-    if (selectedStudents.size === 0) {
-      alert('请先选择要分配培养方案的学生');
-      return;
-    }
 
-    if (!selectedProgram) {
-      alert('请选择要分配的培养方案');
-      return;
-    }
 
-    const confirmMessage = `确定要将培养方案分配给 ${selectedStudents.size} 名学生吗？`;
-    if (!window.confirm(confirmMessage)) {
-      return;
-    }
 
-    try {
-      setAssigningProgram(true);
-      const currentTeacherId = user?.id;
-      if (!currentTeacherId) {
-        alert('未获取到教师信息，请重新登录');
-        return;
-      }
-      
-      // 修复：将档案ID映射为用户ID
-      const profileIds = Array.from(selectedStudents);
-      const studentIds = await mapProfileIdsToUserIds(profileIds);
 
-      console.log('开始分配培养方案:', { programId: selectedProgram, studentIds, teacherId: currentTeacherId });
 
-      // 使用新的教师隔离API
-      const result = await TrainingProgramService.assignTeacherTrainingProgram(
-        currentTeacherId,
-        selectedProgram,
-        studentIds,
-        '批量分配培养方案'
-      );
 
-      console.log('分配响应:', result);
 
-      if (result.success) {
-        // 使用更安全的方式解构数据，避免undefined问题
-        const success_count = result.data?.success_count ?? 0;
-        const failure_count = result.data?.failure_count ?? 0;
-        const total_count = result.data?.total_count ?? 0;
-        
-        if (failure_count === 0) {
-          alert(`✅ 成功为 ${success_count} 名学生分配培养方案！\n\n💡 学生可以在"教学任务与安排"页面查看分配的课程。`);
-        } else {
-          const details = result.data?.details || [];
-          let detailsMessage = '';
-          
-          if (details.length > 0) {
-            detailsMessage = '\n\n失败详情:\n' + details.slice(0, 3).map((d: any) => 
-              `• 学生ID ${d.student_id}: ${d.error}`
-            ).join('\n');
-            
-            if (details.length > 3) {
-              detailsMessage += `\n...还有 ${details.length - 3} 个错误`;
-            }
-          }
-          
-          alert(`⚠️ 培养方案分配完成\n\n✅ 成功分配: ${success_count} 名学生\n❌ 分配失败: ${failure_count} 名学生${detailsMessage}`);
-          console.log('分配详情:', result.data?.details);
-        }
-        
-        // 关闭模态框并重置状态
-        setIsAssignProgramModalOpen(false);
-        setSelectedProgram('');
-        setSelectedStudents(new Set());
-        
-        // 刷新学生列表数据
-        console.log('开始刷新学生列表...');
-        await fetchTeacherStudents();
-        console.log('学生列表刷新完成');
-        
-        // 如果有成功的分配，显示额外提示
-        if (success_count > 0) {
-          setTimeout(() => {
-            alert(`📚 培养方案分配成功！
 
-分配的 ${success_count} 名学生现在可以在他们的"教学任务与安排"页面中看到相关课程。
 
-请通知学生登录系统查看。`);
-          }, 1000);
-        }
-      } else {
-        // 修复：添加更详细的错误信息显示
-        const errorMessage = result.message || '未知错误';
-        console.error('分配失败详情:', result);
-        alert(`❌ 分配失败: ${errorMessage}`);
-      }
-    } catch (error) {
-      console.error('分配培养方案失败:', error);
-      alert(`分配培养方案失败: ${error instanceof Error ? error.message : '网络连接异常'}`);
-    } finally {
-      setAssigningProgram(false);
-    }
-  };
 
-  // 打开分配培养方案模态框
-  const handleOpenAssignProgramModal = () => {
-    if (selectedStudents.size === 0) {
-      alert('请先选择要分配培养方案的学生');
-      return;
-    }
-    setIsAssignProgramModalOpen(true);
-    fetchAvailablePrograms();
-  };
 
-  const handleTrainingProgramFileSelect = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      // 验证文件类型
-      const allowedTypes = [
-        'application/vnd.ms-excel',
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-        'text/csv',
-        'application/csv'
-      ];
-      
-      if (!allowedTypes.includes(file.type) && !file.name.match(/\.(xlsx?|csv)$/i)) {
-        alert('请选择Excel文件(.xlsx, .xls)或CSV文件');
-        return;
-      }
-
-      setTrainingProgramFile(file);
-      setTrainingProgramImportResult(null);
-      
-      // 解析文件
-      TrainingProgramService.parseExcelFile(file)
-        .then(courses => {
-          setTrainingProgramCourses(courses);
-          alert(`成功解析 ${courses.length} 条课程记录`);
-        })
-        .catch(error => {
-          console.error('文件解析失败:', error);
-          alert(`文件解析失败: ${error instanceof Error ? error.message : '未知错误'}`);
-          setTrainingProgramFile(null);
-          setTrainingProgramCourses([]);
-        });
-    }
-  };
-
-  const handleTrainingProgramImport = async () => {
-    if (trainingProgramCourses.length === 0) {
-      alert('没有可导入的课程数据');
-      return;
-    }
-
-    const confirmMessage = `确定要导入 ${trainingProgramCourses.length} 条课程记录吗？`;
-    if (!confirm(confirmMessage)) {
-      return;
-    }
-
-    try {
-      setTrainingProgramImporting(true);
-      const currentTeacherId = user?.id;
-      if (!currentTeacherId) {
-        alert('未获取到教师信息，请重新登录');
-        return;
-      }
-      
-      const result = await TrainingProgramService.importTrainingProgram(trainingProgramCourses, {
-        teacherId: currentTeacherId,
-        programName: `培养方案_${new Date().toLocaleString('zh-CN')}`,
-        programCode: `PROGRAM_${Date.now()}`,
-        major: '未指定专业',
-        department: '未指定院系'
-      });
-      setTrainingProgramImportResult(result);
-      
-      if (result.success > 0) {
-        alert(`✅ 成功导入 ${result.success} 条课程记录${result.failed > 0 ? `，失败 ${result.failed} 条` : ''}`);
-        // 重置状态
-        setTrainingProgramFile(null);
-        setTrainingProgramCourses([]);
-        setTrainingProgramImportResult(null);
-      } else {
-        alert('❌ 导入失败，请检查数据格式');
-      }
-    } catch (error) {
-      console.error('导入失败:', error);
-      alert(`导入失败: ${error instanceof Error ? error.message : '未知错误'}`);
-    } finally {
-      setTrainingProgramImporting(false);
-    }
-  };
-
-  const handleTrainingProgramModalClose = () => {
-    setIsTrainingProgramModalOpen(false);
-    setTrainingProgramFile(null);
-    setTrainingProgramCourses([]);
-    setTrainingProgramImportResult(null);
-  };
 
   const handleLogout = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -856,6 +886,13 @@ ${errors.slice(0, 2).join('\n')}`);
             </div>
             <div className="flex space-x-3">
               <button 
+                onClick={() => setIsFilterModalOpen(true)}
+                className="px-4 py-2 bg-white border border-border-light rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2"
+              >
+                <i className="fas fa-filter text-secondary"></i>
+                <span className="text-text-primary">筛选和查找</span>
+              </button>
+              <button 
                 onClick={() => setIsImportModalOpen(true)}
                 className="px-4 py-2 bg-white border border-border-light rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2"
               >
@@ -913,33 +950,6 @@ ${errors.slice(0, 2).join('\n')}`);
             {/* 批量操作 */}
             <div className="flex items-center space-x-3">
               <button 
-                onClick={() => setIsTrainingProgramModalOpen(true)}
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center space-x-2"
-                title="导入培养方案"
-              >
-                <i className="fas fa-file-excel"></i>
-                <span>导入培养方案</span>
-              </button>
-              
-              <button 
-                onClick={handleOpenAssignProgramModal}
-                disabled={selectedStudents.size === 0}
-                className={`px-4 py-2 rounded-lg transition-colors flex items-center space-x-2 ${
-                  selectedStudents.size > 0 
-                    ? 'bg-blue-600 text-white hover:bg-blue-700' 
-                    : 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                }`}
-                title={selectedStudents.size > 0 ? `为${selectedStudents.size}名学生分配培养方案` : '请先选择学生'}
-              >
-                <i className="fas fa-graduation-cap"></i>
-                <span>分配培养方案</span>
-                {selectedStudents.size > 0 && (
-                  <span className="bg-white text-blue-600 px-2 py-0.5 rounded-full text-xs font-bold">
-                    {selectedStudents.size}
-                  </span>
-                )}
-              </button>
-              <button 
                 onClick={handleBatchDelete}
                 disabled={selectedStudents.size === 0}
                 className="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:bg-gray-300"
@@ -985,20 +995,20 @@ ${errors.slice(0, 2).join('\n')}`);
                       <p className="text-text-secondary">加载中...</p>
                     </td>
                   </tr>
-                ) : studentsData.length === 0 ? (
+                ) : (isFiltering && filteredStudents.length === 0) ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-12 text-center">
-                      <i className="fas fa-users text-4xl text-gray-300 mb-4"></i>
-                      <p className="text-text-secondary mb-4">暂无管理的学生</p>
+                      <i className="fas fa-search text-4xl text-gray-300 mb-4"></i>
+                      <p className="text-text-secondary mb-4">未找到匹配的学生</p>
                       <button 
-                        onClick={() => setIsImportModalOpen(true)}
+                        onClick={resetFilterForm}
                         className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
                       >
-                        批量导入学生
+                        清除筛选条件
                       </button>
                     </td>
                   </tr>
-                ) : studentsData.map(student => (
+                ) : (isFiltering ? filteredStudents : studentsData).map(student => (
                   <tr key={student.id} className={styles.tableRow}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <input 
@@ -1088,6 +1098,149 @@ ${errors.slice(0, 2).join('\n')}`);
         </div>
       </main>
 
+      {/* 筛选和查找弹窗 */}
+      {isFilterModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-border-light">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-text-primary">筛选和查找</h3>
+                <button 
+                  onClick={() => {
+                    setIsFilterModalOpen(false);
+                    resetFilterForm();
+                  }}
+                  className="text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <i className="fas fa-times text-xl"></i>
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-6">
+                {/* 筛选表单 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* 学号或姓名 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      学号或姓名
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.studentNumberOrName}
+                      onChange={(e) => handleFilterFormChange('studentNumberOrName', e.target.value)}
+                      placeholder="请输入学号或姓名"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 年级 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      年级 (格式: 2023)
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.grade}
+                      onChange={(e) => handleFilterFormChange('grade', e.target.value)}
+                      placeholder="请输入年级，如：2023"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 技术标签 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      技术标签
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.technicalTags}
+                      onChange={(e) => handleFilterFormChange('technicalTags', e.target.value)}
+                      placeholder="请输入技术标签关键词"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 获奖 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      获奖
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.reward}
+                      onChange={(e) => handleFilterFormChange('reward', e.target.value)}
+                      placeholder="请输入获奖名称关键词"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 违纪 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      违纪
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.punishment}
+                      onChange={(e) => handleFilterFormChange('punishment', e.target.value)}
+                      placeholder="请输入违纪名称关键词"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 毕业去向 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      毕业去向
+                    </label>
+                    <select
+                      value={filterForm.graduationDestination}
+                      onChange={(e) => handleFilterFormChange('graduationDestination', e.target.value)}
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    >
+                      <option value="">请选择毕业去向</option>
+                      <option value="furtherstudy">升学</option>
+                      <option value="employment">就业</option>
+                      <option value="other">其它</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {/* 操作按钮 */}
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={resetFilterForm}
+                    className="px-4 py-2 border border-border-light rounded-lg text-text-primary hover:bg-gray-50 transition-colors"
+                  >
+                    重置
+                  </button>
+                  <button
+                    onClick={executeFilter}
+                    disabled={filtering}
+                    className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center"
+                  >
+                    {filtering ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        筛选中...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-search mr-2"></i>
+                        筛选
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 批量导入模态弹窗 */}
       {isImportModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
@@ -1173,9 +1326,9 @@ ${errors.slice(0, 2).join('\n')}`);
                           <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
                             <input 
                               type="checkbox" 
-                              checked={isAllSelected()}
+                              checked={isAllSelectedAvailable()}
                               ref={(input) => {
-                                if (input) input.indeterminate = isIndeterminate();
+                                if (input) input.indeterminate = isIndeterminateAvailable();
                               }}
                               onChange={(e) => handleSelectAllAvailable(e.target.checked)}
                               className="rounded border-border-light"
@@ -1233,203 +1386,6 @@ ${errors.slice(0, 2).join('\n')}`);
                       <i className="fas fa-chevron-right"></i>
                     </button>
                   </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 培养方案导入模态框 */}
-      {isTrainingProgramModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl">
-            <div className="p-6 border-b border-border-light">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-text-primary">导入培养方案</h3>
-                <button 
-                  onClick={handleTrainingProgramModalClose}
-                  className="text-text-secondary hover:text-text-primary transition-colors"
-                >
-                  <i className="fas fa-times text-xl"></i>
-                </button>
-              </div>
-            </div>
-            
-            <div className="p-6">
-              <div className="space-y-6">
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <h4 className="font-medium text-blue-800 mb-2">
-                    <i className="fas fa-info-circle mr-2"></i>使用说明
-                  </h4>
-                  <ul className="text-sm text-blue-700 space-y-1">
-                    <li>• 请下载最新的Excel模板并按照格式填写培养方案信息</li>
-                    <li>• 支持.xls和.xlsx格式的Excel文件</li>
-                    <li>• 文件大小不能超过10MB</li>
-                    <li>• 导入前请仔细检查数据准确性</li>
-                  </ul>
-                </div>
-                
-                <div className="space-y-4">
-                  <button 
-                    onClick={handleDownloadTrainingProgramTemplate}
-                    className="w-full px-4 py-3 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors flex items-center justify-center space-x-2"
-                  >
-                    <i className="fas fa-download"></i>
-                    <span>下载模板</span>
-                  </button>
-                  
-                  <div className="border-2 border-dashed border-border-light rounded-lg p-6 text-center hover:border-secondary transition-colors">
-                    <input 
-                      type="file" 
-                      accept=".xlsx,.xls,.csv" 
-                      onChange={handleTrainingProgramFileSelect}
-                      className="hidden" 
-                      id="training-program-file"
-                    />
-                    <label htmlFor="training-program-file" className="cursor-pointer">
-                      <i className="fas fa-cloud-upload-alt text-3xl text-secondary mb-3"></i>
-                      <p className="font-medium text-text-primary">点击选择文件或拖拽文件到这里</p>
-                      <p className="text-sm text-text-secondary mt-1">支持 Excel 文件 (.xlsx, .xls)</p>
-                    </label>
-                  </div>
-                  
-                  {trainingProgramFile && (
-                    <div className="p-4 bg-gray-50 rounded-lg">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center space-x-3">
-                          <i className="fas fa-file-excel text-green-500 text-xl"></i>
-                          <div>
-                            <p className="font-medium text-text-primary">{trainingProgramFile.name}</p>
-                            <p className="text-sm text-text-secondary">
-                              {(trainingProgramFile.size / 1024 / 1024).toFixed(2)} MB
-                            </p>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={() => setTrainingProgramFile(null)}
-                          className="text-text-secondary hover:text-red-500 transition-colors"
-                        >
-                          <i className="fas fa-times"></i>
-                        </button>
-                      </div>
-                      
-                      {trainingProgramCourses.length > 0 && (
-                        <div className="mt-3 p-3 bg-white rounded border">
-                          <p className="text-sm text-text-primary">
-                            已解析 <span className="font-semibold">{trainingProgramCourses.length}</span> 条课程记录
-                          </p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {trainingProgramImportResult && (
-                    <div className={`p-4 rounded-lg ${trainingProgramImportResult.success > 0 ? 'bg-green-50 border border-green-200' : 'bg-red-50 border border-red-200'}`}>
-                      <div className="flex items-start space-x-3">
-                        <i className={`fas ${trainingProgramImportResult.success > 0 ? 'fa-check-circle text-green-500' : 'fa-exclamation-circle text-red-500'} text-xl`}></i>
-                        <div>
-                          <h4 className={`font-medium ${trainingProgramImportResult.success > 0 ? 'text-green-800' : 'text-red-800'}`}>
-                            {trainingProgramImportResult.success > 0 ? '导入成功' : '导入失败'}
-                          </h4>
-                          <p className={`text-sm mt-1 ${trainingProgramImportResult.success > 0 ? 'text-green-700' : 'text-red-700'}`}>
-                            成功导入 {trainingProgramImportResult.success} 条记录
-                            {trainingProgramImportResult.failed > 0 && (
-                              <span>，失败 {trainingProgramImportResult.failed} 条</span>
-                            )}
-                          </p>
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                
-                <div className="flex space-x-3">
-                  <button 
-                    onClick={handleTrainingProgramModalClose}
-                    className="flex-1 px-4 py-2 border border-border-light rounded-lg text-text-primary hover:bg-gray-50 transition-colors"
-                  >
-                    取消
-                  </button>
-                  <button 
-                    onClick={handleTrainingProgramImport}
-                    disabled={!trainingProgramFile || trainingProgramImporting}
-                    className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
-                  >
-                    <i className={`fas ${trainingProgramImporting ? 'fa-spinner fa-spin' : 'fa-upload'}`}></i>
-                    <span>{trainingProgramImporting ? '导入中...' : '开始导入'}</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* 分配培养方案模态框 */}
-      {isAssignProgramModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-xl shadow-xl w-full max-w-md">
-            <div className="p-6 border-b border-border-light">
-              <div className="flex items-center justify-between">
-                <h3 className="text-lg font-semibold text-text-primary">分配培养方案</h3>
-                <button 
-                  onClick={() => setIsAssignProgramModalOpen(false)}
-                  className="text-text-secondary hover:text-text-primary transition-colors"
-                >
-                  <i className="fas fa-times text-xl"></i>
-                </button>
-              </div>
-            </div>
-            
-            <div className="p-6">
-              <div className="space-y-6">
-                <div className="p-4 bg-blue-50 border border-blue-200 rounded-lg">
-                  <p className="text-sm text-blue-700">
-                    将为 <span className="font-semibold">{selectedStudents.size}</span> 名学生分配培养方案
-                  </p>
-                </div>
-                
-                <div>
-                  <label className="block text-sm font-medium text-text-primary mb-2">
-                    选择培养方案
-                  </label>
-                  {programsLoading ? (
-                    <div className="py-4 text-center">
-                      <i className="fas fa-spinner fa-spin text-secondary"></i>
-                      <p className="text-sm text-text-secondary mt-2">加载中...</p>
-                    </div>
-                  ) : (
-                    <select 
-                      value={selectedProgram}
-                      onChange={(e) => setSelectedProgram(e.target.value)}
-                      className="w-full px-4 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
-                    >
-                      <option value="">请选择培养方案</option>
-                      {availablePrograms.map(program => (
-                        <option key={program.id} value={program.id}>
-                          {program.program_name}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                </div>
-                
-                <div className="flex space-x-3">
-                  <button 
-                    onClick={() => setIsAssignProgramModalOpen(false)}
-                    className="flex-1 px-4 py-2 border border-border-light rounded-lg text-text-primary hover:bg-gray-50 transition-colors"
-                  >
-                    取消
-                  </button>
-                  <button 
-                    onClick={handleAssignTrainingProgram}
-                    disabled={!selectedProgram || assigningProgram}
-                    className="flex-1 px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center justify-center space-x-2"
-                  >
-                    <i className={`fas ${assigningProgram ? 'fa-spinner fa-spin' : 'fa-check'}`}></i>
-                    <span>{assigningProgram ? '分配中...' : '确认分配'}</span>
-                  </button>
                 </div>
               </div>
             </div>
@@ -1552,11 +1508,14 @@ ${errors.slice(0, 2).join('\n')}`);
           </div>
         </div>
       )}
-    </div>
+  </div>
   );
 };
 
+
 export default TeacherStudentList;
+
+
 
 
 
