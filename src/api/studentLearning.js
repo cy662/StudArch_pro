@@ -1,7 +1,6 @@
 // 学生学习信息API路由
 import express from 'express';
 import { createClient } from '@supabase/supabase-js';
-import fetch from 'node-fetch';
 
 const router = express.Router();
 
@@ -25,64 +24,20 @@ const handleApiError = (error, res, message = '操作失败') => {
 // 验证student_profile_id是否存在
 const validateStudentProfile = async (studentProfileId) => {
   try {
-    // 如果传入的ID是null或undefined，尝试通过当前用户查找
-    if (!studentProfileId || studentProfileId === 'null') {
-      console.error('学生档案ID无效:', studentProfileId);
-      return { 
-        valid: false, 
-        error: '学生档案ID无效，请确保已正确获取学生信息'
-      };
-    }
-
-    // 如果是mock ID或test ID，直接返回成功但使用模拟学生信息
-    if (studentProfileId.startsWith('mock-') || studentProfileId.startsWith('test-')) {
-      console.log('使用模拟学生信息:', studentProfileId);
-      return { 
-        valid: true, 
-        student: { 
-          id: studentProfileId, 
-          full_name: '测试学生', 
-          class_name: '测试班级' 
-        } 
-      };
-    }
-
     const { data, error } = await supabase
       .from('student_profiles')
       .select('id, full_name, class_name')
       .eq('id', studentProfileId)
-      .maybeSingle();
+      .single();
 
     if (error || !data) {
       console.error('学生档案验证失败:', error?.message || '数据不存在');
-      
-      // 如果学生档案不存在，尝试通过user_id查找
-      console.log('尝试通过user_id查找学生档案:', studentProfileId);
-      const { data: userData, error: userError } = await supabase
-        .from('student_profiles')
-        .select('id, full_name, class_name')
-        .eq('user_id', studentProfileId)
-        .maybeSingle();
-
-      if (userError || !userData) {
-        console.error('通过user_id查找学生档案也失败:', userError?.message || '数据不存在');
-        return { 
-          valid: false, 
-          error: `学生档案不存在: ${studentProfileId}`
-        };
-      }
-
-      console.log('通过user_id成功找到学生档案:', userData);
-      return { valid: true, student: userData };
+      return { valid: false, error: '学生档案不存在: ' + (error?.message || '未知错误') };
     }
 
     return { valid: true, student: data };
   } catch (error) {
-    console.error('验证学生档案时发生错误:', error.message);
-    return { 
-      valid: false, 
-      error: `验证学生档案时发生错误: ${error.message}`
-    };
+    return { valid: false, error: error.message };
   }
 };
 
@@ -464,12 +419,13 @@ router.put('/student-learning/update-technical-tag/:tag_id', async (req, res) =>
   }
 });
 
-// 8. 根据课程名称获取或创建技术标签
-router.post('/student-learning/sync-technical-tags', async (req, res) => {
+// 7. 同步技术标签（更新而非新增）
+router.post('/sync-technical-tags', async (req, res) => {
   try {
     const { student_profile_id, course_name, tags } = req.body;
-
-    if (!student_profile_id || !course_name || !Array.isArray(tags)) {
+    
+    // 验证必填字段
+    if (!student_profile_id || !course_name || !tags || !Array.isArray(tags)) {
       return res.status(400).json({
         success: false,
         message: '缺少必填字段：student_profile_id, course_name, tags'
@@ -486,8 +442,8 @@ router.post('/student-learning/sync-technical-tags', async (req, res) => {
     }
 
     const results = [];
-    
-    // 获取该学生该课程的现有标签
+
+    // 先查找已存在的标签
     const { data: existingTags, error: fetchError } = await supabase
       .from('student_technical_tags')
       .select('*')
@@ -548,12 +504,16 @@ router.post('/student-learning/sync-technical-tags', async (req, res) => {
   }
 });
 
-// 9. 根据课程获取或更新学习收获
-router.post('/student-learning/sync-learning-achievement', async (req, res) => {
+// 8. 根据课程获取或更新学习收获
+router.post('/sync-learning-achievement', async (req, res) => {
   try {
     const { student_profile_id, course_name, content } = req.body;
-
+    
+    console.log('📥 收到同步学习收获请求:', { student_profile_id, course_name, content });
+    
+    // 验证必填字段
     if (!student_profile_id || !course_name) {
+      console.log('❌ 缺少必填字段');
       return res.status(400).json({
         success: false,
         message: '缺少必填字段：student_profile_id, course_name'
@@ -569,68 +529,80 @@ router.post('/student-learning/sync-learning-achievement', async (req, res) => {
       });
     }
 
-    // 检查是否已存在该课程的学习收获
-    const { data: existingAchievement, error: checkError } = await supabase
+    let result;
+
+    console.log('🔍 查找现有学习收获:', { student_profile_id, course_name });
+    // 先查找是否已存在相同的学习收获
+    const { data: existingAchievements, error: fetchError } = await supabase
       .from('student_learning_achievements')
       .select('*')
       .eq('student_profile_id', student_profile_id)
       .eq('related_course', course_name)
-      .eq('status', 'active')
-      .single();
+      .eq('status', 'active');
 
-    let result;
-    if (existingAchievement) {
-      // 更新现有记录
-      const updateData = {
-        updated_at: new Date().toISOString()
-      };
-      
-      if (content !== undefined && content !== '') {
-        updateData.content = content;
-      }
+    if (fetchError) {
+      console.log('❌ 获取现有学习收获失败:', fetchError);
+      return handleApiError(fetchError, res, '获取现有学习收获失败');
+    }
+    console.log('📊 查找结果:', { existingCount: existingAchievements?.length || 0 });
 
-      const { data: updatedData, error: updateError } = await supabase
-        .from('student_learning_achievements')
-        .update(updateData)
-        .eq('id', existingAchievement.id)
-        .select()
-        .single();
-
-      if (updateError) {
-        return handleApiError(updateError, res, '更新学习收获失败');
-      }
-      
-      result = { action: 'updated', data: updatedData };
-    } else {
-      // 创建新记录（仅当有内容时）
-      if (content && content.trim()) {
-        const { data: newData, error: insertError } = await supabase
+    if (content && content.trim()) {
+      if (existingAchievements && existingAchievements.length > 0) {
+        // 更新现有记录
+        console.log('🔄 更新现有学习收获记录:', { id: existingAchievements[0].id, content });
+        const { data: updatedData, error: updateError } = await supabase
           .from('student_learning_achievements')
-          .insert({
-            student_profile_id,
-            title: `${course_name} - 学习收获`,
+          .update({
             content: content,
-            achievement_type: 'skill',
-            achieved_at: new Date().toISOString().split('T')[0],
-            impact_level: 'medium',
-            related_course: course_name,
-            status: 'active',
-            created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           })
+          .eq('id', existingAchievements[0].id)
+          .select()
+          .single();
+
+        if (updateError) {
+          console.log('❌ 更新学习收获失败:', updateError);
+          return handleApiError(updateError, res, '更新学习收获失败');
+        }
+        
+        console.log('✅ 学习收获更新成功:', updatedData);
+        result = { action: 'updated', data: updatedData };
+      } else {
+        // 创建新记录
+        const insertData = {
+          student_profile_id,
+          title: `${course_name} - 学习收获`,
+          content: content,
+          achievement_type: 'study_reflection',
+          related_course: course_name,
+          status: 'active',
+          achieved_at: new Date().toISOString().split('T')[0],
+          impact_level: 'medium',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        console.log('💾 准备创建学习收获记录:', insertData);
+        
+        const { data: newData, error: insertError } = await supabase
+          .from('student_learning_achievements')
+          .insert(insertData)
           .select()
           .single();
 
         if (insertError) {
+          console.log('❌ 创建学习收获失败:', insertError);
           return handleApiError(insertError, res, '创建学习收获失败');
         }
         
+        console.log('✅ 学习收获创建成功:', newData);
         result = { action: 'created', data: newData };
-      } else {
-        result = { action: 'skipped', reason: '内容为空' };
       }
+    } else {
+      result = { action: 'skipped', reason: '内容为空' };
     }
 
+    console.log('📤 发送响应:', { success: true, message: '学习收获同步完成', data: result });
     res.json({
       success: true,
       message: '学习收获同步完成',
@@ -642,11 +614,12 @@ router.post('/student-learning/sync-learning-achievement', async (req, res) => {
   }
 });
 
-// 10. 根据课程获取或更新学习成果
-router.post('/student-learning/sync-learning-outcome', async (req, res) => {
+// 9. 根据课程获取或更新学习成果
+router.post('/sync-learning-outcome', async (req, res) => {
   try {
     const { student_profile_id, course_name, description, start_date, end_date } = req.body;
-
+    
+    // 验证必填字段
     if (!student_profile_id || !course_name) {
       return res.status(400).json({
         success: false,
@@ -663,43 +636,42 @@ router.post('/student-learning/sync-learning-outcome', async (req, res) => {
       });
     }
 
-    // 检查是否已存在该课程的学习成果
-    const { data: existingOutcome, error: checkError } = await supabase
+    let result;
+
+    // 先查找是否已存在相同的学习成果
+    const { data: existingOutcomes, error: fetchError } = await supabase
       .from('student_learning_outcomes')
       .select('*')
       .eq('student_profile_id', student_profile_id)
       .eq('related_course', course_name)
-      .eq('status', 'active')
-      .single();
+      .eq('status', 'active');
 
-    let result;
-    if (existingOutcome) {
-      // 更新现有记录
-      const updateData = {
-        updated_at: new Date().toISOString()
-      };
-      
-      if (description !== undefined && description !== '') {
-        updateData.outcome_description = description;
-      }
-      if (start_date) updateData.start_date = start_date;
-      if (end_date) updateData.completion_date = end_date;
+    if (fetchError) {
+      return handleApiError(fetchError, res, '获取现有学习成果失败');
+    }
 
-      const { data: updatedData, error: updateError } = await supabase
-        .from('student_learning_outcomes')
-        .update(updateData)
-        .eq('id', existingOutcome.id)
-        .select()
-        .single();
+    if (description && description.trim()) {
+      if (existingOutcomes && existingOutcomes.length > 0) {
+        // 更新现有记录
+        const { data: updatedData, error: updateError } = await supabase
+          .from('student_learning_outcomes')
+          .update({
+            outcome_description: description,
+            start_date: start_date || existingOutcomes[0].start_date,
+            completion_date: end_date || existingOutcomes[0].completion_date,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existingOutcomes[0].id)
+          .select()
+          .single();
 
-      if (updateError) {
-        return handleApiError(updateError, res, '更新学习成果失败');
-      }
-      
-      result = { action: 'updated', data: updatedData };
-    } else {
-      // 创建新记录（仅当有内容时）
-      if (description && description.trim()) {
+        if (updateError) {
+          return handleApiError(updateError, res, '更新学习成果失败');
+        }
+        
+        result = { action: 'updated', data: updatedData };
+      } else {
+        // 创建新记录
         const { data: newData, error: insertError } = await supabase
           .from('student_learning_outcomes')
           .insert({
@@ -725,9 +697,9 @@ router.post('/student-learning/sync-learning-outcome', async (req, res) => {
         }
         
         result = { action: 'created', data: newData };
-      } else {
-        result = { action: 'skipped', reason: '内容为空' };
       }
+    } else {
+      result = { action: 'skipped', reason: '内容为空' };
     }
 
     res.json({
@@ -742,155 +714,6 @@ router.post('/student-learning/sync-learning-outcome', async (req, res) => {
 });
 
 // 辅助函数：根据标签名称判断分类
-
-// 11. 生成学生画像
-router.post('/student-profile/generate-image', async (req, res) => {
-  try {
-    const { student_profile_id } = req.body;
-
-    console.log('=== 学生画像生成请求开始 ===');
-    console.log('接收到的student_profile_id:', student_profile_id);
-    console.log('请求体完整内容:', req.body);
-
-    if (!student_profile_id || student_profile_id === 'null' || student_profile_id === 'undefined') {
-      console.error('学生档案ID无效或为空:', student_profile_id);
-      return res.status(400).json({
-        success: false,
-        message: '缺少有效的学生档案ID，请确保已正确获取学生信息'
-      });
-    }
-
-    // 验证学生档案
-    console.log('开始验证学生档案...');
-    const validation = await validateStudentProfile(student_profile_id);
-    console.log('验证结果:', validation);
-    
-    if (!validation.valid) {
-      console.error('学生档案验证失败:', validation.error);
-      return res.status(400).json({
-        success: false,
-        message: validation.error || '学生档案验证失败'
-      });
-    }
-
-    // 使用验证函数返回的真实学生信息
-    const studentInfo = validation.student;
-    console.log('获取到的学生信息:', studentInfo);
-
-    // n8n工作流配置
-    const n8nWebhookUrl = 'https://cy2005.app.n8n.cloud/webhook/student-profile-analysis';
-    console.log('准备调用n8n工作流:', n8nWebhookUrl);
-    
-    // 准备发送给n8n的数据
-    const n8nPayload = {
-      studentId: studentInfo.id, // 使用n8n期望的字段名
-      student_id: studentInfo.id, // 保留原字段作为备选
-      student_profile_id: studentInfo.id,
-      student_info: studentInfo
-    };
-    console.log('发送给n8n的数据:', JSON.stringify(n8nPayload, null, 2));
-    
-    // 调用n8n工作流生成画像
-    try {
-      // 设置超时的fetch调用
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // 30秒超时
-
-      const response = await fetch(n8nWebhookUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(n8nPayload),
-        signal: controller.signal // 添加超时信号
-      });
-
-      clearTimeout(timeoutId); // 清除超时
-
-      console.log('n8n响应状态:', response.status, response.statusText);
-
-      // 获取响应内容
-      const responseText = await response.text();
-      console.log('n8n响应内容:', responseText);
-
-      // 处理响应
-      let result;
-      try {
-        // 尝试解析JSON响应
-        result = JSON.parse(responseText);
-        console.log('解析后的n8n响应:', result);
-      } catch (parseError) {
-        // 如果解析失败（如空响应），创建默认结果
-        console.warn('n8n返回非JSON响应，使用默认结果:', parseError.message);
-        result = { success: true, message: 'n8n处理成功' };
-      }
-
-      if (!response.ok) {
-        console.error('n8n调用失败:', response.status, result);
-        return res.status(500).json({
-          success: false,
-          message: '调用画像生成服务失败',
-          error: result.message || responseText || '未知错误',
-          status_code: response.status,
-          debug_info: {
-            n8n_status: response.status,
-            n8n_response: result,
-            sent_student_id: n8nPayload.student_id
-          }
-        });
-      }
-
-      // 尝试从n8n响应中获取图片URL，如果没有则使用模拟的
-      let generatedImageUrl = result.image_url || result.data?.image_url;
-      
-      if (!generatedImageUrl) {
-        // 如果n8n没有返回图片URL，生成一个模拟的
-        console.log('n8n未返回图片URL，使用模拟URL');
-        generatedImageUrl = `https://picsum.photos/seed/${studentInfo.id}/500/500`;
-      }
-      
-      console.log('最终生成的图片URL:', generatedImageUrl);
-
-      const response_data = {
-        success: true,
-        message: '学生画像生成成功',
-        data: {
-          image_url: generatedImageUrl,
-          student_id: studentInfo.id
-        }
-      };
-      
-      console.log('=== 学生画像生成请求完成 ===');
-      console.log('返回给前端的数据:', response_data);
-
-      res.json(response_data);
-
-    } catch (n8nError) {
-      console.error('调用n8n工作流失败:', n8nError);
-      console.log('=== 学生画像生成请求失败（n8n错误） ===');
-      
-      // 如果n8n调用失败，返回模拟数据
-      const fallbackImageUrl = `https://picsum.photos/seed/${studentInfo.id}/500/500`;
-      const fallback_response = {
-        success: true,
-        message: '学生画像生成成功（使用备用方案）',
-        data: {
-          image_url: fallbackImageUrl,
-          student_id: studentInfo.id,
-          fallback_mode: true
-        }
-      };
-      
-      console.log('使用备用方案:', fallback_response);
-      console.log('=== 学生画像生成请求完成（备用方案） ===');
-      
-      res.json(fallback_response);
-    }
-
-  } catch (error) {
-    handleApiError(error, res, '生成学生画像时发生错误');
-  }
-});
 const getTagCategory = (tagName) => {
   const lowerTagName = tagName.toLowerCase();
   
@@ -927,5 +750,130 @@ const getTagCategory = (tagName) => {
   // 默认分类
   return 'other';
 };
+
+// 添加自定义课程接口
+router.post('/add-custom-course', async (req, res) => {
+  try {
+    const { student_profile_id, course_code, course_name, credits, course_nature, teacher, description, semester } = req.body;
+
+    // 验证必填字段
+    if (!student_profile_id || !course_name) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少必填字段：student_profile_id, course_name'
+      });
+    }
+
+    // 验证学生档案
+    const validation = await validateStudentProfile(student_profile_id);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error
+      });
+    }
+
+    // 让数据库自动生成UUID
+    // 创建自定义课程记录
+    const { data: courseData, error: courseError } = await supabase
+      .from('student_custom_courses')
+      .insert({
+        student_profile_id: student_profile_id,
+        course_code: course_code || null,
+        course_name: course_name.trim(),
+        credits: credits || 1,
+        course_nature: course_nature || '选修课',
+        teacher: teacher?.trim() || '自填课程',
+        description: description?.trim() || `${course_name.trim()} - 学生自定义添加的课程`,
+        semester: semester || '2024-2',
+        status: 'pending',
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .select()
+      .single();
+
+    if (courseError) {
+      console.error('创建自定义课程失败:', courseError);
+      return res.status(500).json({
+        success: false,
+        message: '创建自定义课程失败',
+        error: courseError.message
+      });
+    }
+
+    console.log('✅ 自定义课程添加成功:', courseData);
+    
+    return res.status(201).json({
+      success: true,
+      message: '自定义课程添加成功',
+      data: {
+        course_id: courseData.id,
+        course_code: courseData.course_code,
+        course_name: courseData.course_name,
+        credits: courseData.credits,
+        course_nature: courseData.course_nature,
+        teacher: courseData.teacher,
+        description: courseData.description
+      }
+    });
+
+  } catch (error) {
+    console.error('添加自定义课程失败:', error);
+    return res.status(500).json({
+      success: false,
+      message: '添加自定义课程失败',
+      error: error.message
+    });
+  }
+});
+
+// 获取学生自定义课程列表
+router.get('/get-custom-courses/:student_profile_id', async (req, res) => {
+  try {
+    const { student_profile_id } = req.params;
+
+    // 验证学生档案
+    const validation = await validateStudentProfile(student_profile_id);
+    if (!validation.valid) {
+      return res.status(400).json({
+        success: false,
+        message: validation.error
+      });
+    }
+
+    // 获取自定义课程列表
+    const { data: courses, error } = await supabase
+      .from('student_custom_courses')
+      .select('*')
+      .eq('student_profile_id', student_profile_id)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('获取自定义课程失败:', error);
+      return res.status(500).json({
+        success: false,
+        message: '获取自定义课程失败',
+        error: error.message
+      });
+    }
+
+    console.log('✅ 获取自定义课程成功:', courses);
+
+    return res.json({
+      success: true,
+      message: '获取自定义课程成功',
+      data: courses || []
+    });
+
+  } catch (error) {
+    console.error('获取自定义课程失败:', error);
+    return res.status(500).json({
+      success: false,
+      message: '获取自定义课程失败',
+      error: error.message
+    });
+  }
+});
 
 export default router;

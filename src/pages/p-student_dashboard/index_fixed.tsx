@@ -82,14 +82,7 @@ const StudentDashboard: React.FC = () => {
             };
           }
           
-          // 2. 获取培养方案课程数据
-          const coursesResponse = await fetch(`/api/student/${studentProfile.id}/training-program-courses`);
-          if (coursesResponse.ok) {
-            const coursesResult = await coursesResponse.json();
-            if (coursesResult.success && coursesResult.data && Array.isArray(coursesResult.data)) {
-              learningInfo.courses = coursesResult.data;
-            }
-          }
+
         } catch (learningError) {
           console.warn('获取学习信息失败，将不包含课程相关数据:', learningError);
           // 继续导出基础信息，即使学习信息获取失败

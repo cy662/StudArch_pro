@@ -28,6 +28,7 @@ interface Course {
   examMethod?: string;
   grade?: string;
   completedAt?: string;
+  courseCode?: string; // 添加课程代码字段
 }
 
 interface Semester {
@@ -42,15 +43,38 @@ const StudentAcademicTasks: React.FC = () => {
   const { profile: studentProfile } = useStudentProfile(currentUser?.id || '');
 
   // 学期选择相关状态
-  const [selectedSemester, setSelectedSemester] = useState('2024-2');
-  const [semesters] = useState<Semester[]>([
-    { value: '2024-2', label: '2024年第二学期', isActive: true },
-    { value: '2024-1', label: '2024年第一学期', isActive: false },
-    { value: '2023-2', label: '2023年第二学期', isActive: false },
-    { value: '2023-1', label: '2023年第一学期', isActive: false },
-    { value: '2022-2', label: '2022年第二学期', isActive: false },
-    { value: '2022-1', label: '2022年第一学期', isActive: false },
+  const [selectedSemester, setSelectedSemester] = useState('2023-2024-1');
+  const [semesters, setSemesters] = useState<Semester[]>([
+    { value: '2023-2024-2', label: '2023-2024学年第二学期', isActive: true },
+    { value: '2023-2024-1', label: '2023-2024学年第一学期', isActive: false },
+    { value: '2022-2023-2', label: '2022-2023学年第二学期', isActive: false },
+    { value: '2022-2023-1', label: '2022-2023学年第一学期', isActive: false },
+    { value: '2021-2022-2', label: '2021-2022学年第二学期', isActive: false },
+    { value: '2021-2022-1', label: '2021-2022学年第一学期', isActive: false },
   ]);
+
+  // 根据入学年份生成学期选项
+  useEffect(() => {
+    if (studentProfile?.enrollment_year) {
+      const enrollmentYear = parseInt(studentProfile.enrollment_year);
+      if (!isNaN(enrollmentYear)) {
+        const generatedSemesters: Semester[] = [];
+        // 从入学年份开始，生成到入学年份+4年（假设4年学制）
+        for (let year = enrollmentYear; year < enrollmentYear + 4; year++) {
+          generatedSemesters.push(
+            { value: `${year}-${year+1}-1`, label: `${year}-${year+1}学年第一学期`, isActive: year === enrollmentYear },
+            { value: `${year}-${year+1}-2`, label: `${year}-${year+1}学年第二学期`, isActive: year === enrollmentYear }
+          );
+        }
+        setSemesters(generatedSemesters);
+        
+        // 默认选中第一个学期
+        if (generatedSemesters.length > 0) {
+          setSelectedSemester(generatedSemesters[0].value);
+        }
+      }
+    }
+  }, [studentProfile?.enrollment_year]);
 
   // 常用技术标签
   const [commonTags] = useState<string[]>([
@@ -65,7 +89,7 @@ const StudentAcademicTasks: React.FC = () => {
   // 课程数据状态
   const [courses, setCourses] = useState<Course[]>([]);
   const [coursesLoading, setCoursesLoading] = useState(false);
-  const [trainingProgramName, setTrainingProgramName] = useState<string>('');
+
   const [learningDataLoaded, setLearningDataLoaded] = useState(false);
 
   // 编辑状态
@@ -76,8 +100,13 @@ const StudentAcademicTasks: React.FC = () => {
   
   // 添加课程相关状态
   const [showAddCourseModal, setShowAddCourseModal] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false); // 确认弹框
+  const [showEditCourseModal, setShowEditCourseModal] = useState(false); // 修改课程信息弹框
+  const [editingCourseData, setEditingCourseData] = useState<Course | null>(null); // 当前正在编辑的课程数据
+  const [newCourseCode, setNewCourseCode] = useState(''); // 添加课程代码状态
   const [newCourseName, setNewCourseName] = useState('');
   const [newCourseCredits, setNewCourseCredits] = useState(1);
+  const [newCourseNature, setNewCourseNature] = useState('选修课'); // 添加课程性质状态
   const [newCourseTeacher, setNewCourseTeacher] = useState('');
   const [newCourseDescription, setNewCourseDescription] = useState('');
   const [addCourseLoading, setAddCourseLoading] = useState(false);
@@ -256,7 +285,7 @@ const StudentAcademicTasks: React.FC = () => {
     try {
       console.log('开始加载学生自定义课程，学生档案ID:', studentProfile.id);
       
-      const response = await fetch(`/api/student-learning/get-custom-courses/${studentProfile.id}`);
+      const response = await fetch(`/api/get-custom-courses/${studentProfile.id}`);
       
       if (!response.ok) {
         console.warn('获取自定义课程失败，响应状态:', response.status);
@@ -282,9 +311,11 @@ const StudentAcademicTasks: React.FC = () => {
           endDate: '',
           description: course.description || `${course.course_name} - 学生自定义添加的课程`,
           isCustom: true,
-          semester: course.semester
+          semester: course.semester,
+          courseNature: course.course_nature, // 添加课程性质
+          courseCode: course.course_code // 添加课程代码
         }));
-        
+
         console.log('获取到的自定义课程:', customCourses);
         return customCourses;
       } else {
@@ -297,8 +328,8 @@ const StudentAcademicTasks: React.FC = () => {
     }
   };
 
-  // 加载学生的培养方案课程
-  const fetchStudentTrainingProgramCourses = async () => {
+  // 加载学生的自定义课程
+  const fetchStudentCustomCoursesOnly = async () => {
     if (!studentProfile?.id) {
       console.log('学生档案ID不存在，无法加载课程');
       return;
@@ -306,96 +337,17 @@ const StudentAcademicTasks: React.FC = () => {
 
     try {
       setCoursesLoading(true);
-      console.log('开始加载学生培养方案课程，学生档案ID:', studentProfile.id);
+      console.log('开始加载学生自定义课程，学生档案ID:', studentProfile.id);
       
-      // 先尝试加载自定义课程
+      // 加载自定义课程
       const customCourses = await fetchStudentCustomCourses();
       
-      // 然后尝试加载培养方案课程
-      let allCourses: Course[] = [...customCourses];
-      let programName = customCourses.length > 0 ? '自定义课程' : '暂无课程';
-      
-      try {
-        const response = await fetch(`/api/student/${studentProfile.id}/training-program-courses`);
-        
-        if (!response.ok) {
-          console.error('培养方案API响应错误:', response.status);
-          // 只显示自定义课程
-          setCourses(allCourses);
-          setTrainingProgramName(programName);
-          return;
-        }
-        
-        const result = await response.json();
-        console.log('获取到的培养方案课程数据:', result);
-        
-        if (result.success && result.data && Array.isArray(result.data)) {
-          const programData = result.data;
-          
-          if (programData.length > 0) {
-            // 从第一条记录中获取培养方案名称
-            programName = programData[0]?.program_name || '培养方案';
-            
-            // 转换培养方案课程数据格式
-            const transformedCourses = programData.map((course: any) => ({
-              id: course.id,
-              name: course.course_name,
-              teacher: course.teacher || '待定',
-              credits: course.credits || 0,
-              status: course.status || 'not_started',
-              tags: [],
-              outcomes: '',
-              achievements: '',
-              startDate: '2024-02-26',
-              endDate: '2024-07-15',
-              description: course.course_description || `${course.course_name} - ${course.course_nature}`,
-              programName: course.program_name,
-              programCode: course.program_code,
-              semester: course.semester,
-              courseNature: course.course_nature,
-              examMethod: course.exam_method,
-              grade: course.grade,
-              completedAt: course.completed_at,
-              isCustom: false
-            }));
-            
-            // 合并培养方案课程和自定义课程
-            allCourses = [...transformedCourses, ...customCourses];
-          }
-        }
-        
-        console.log('合并后的课程数据:', allCourses);
-        setCourses(allCourses);
-        setTrainingProgramName(programName);
-        
-      } catch (apiError) {
-        console.error('培养方案课程API调用失败:', apiError);
-        // 只显示自定义课程
-        setCourses(allCourses);
-        setTrainingProgramName(programName);
-      }
+      console.log('加载到的自定义课程数据:', customCourses);
+      setCourses(customCourses);
       
     } catch (error) {
       console.error('加载课程失败:', error);
-      
-      // 显示错误状态，但仍保留基本功能
-      setCourses([
-        {
-          id: 'error-1',
-          name: '数据加载失败',
-          teacher: '未知',
-          credits: 0,
-          status: 'pending',
-          tags: [],
-          outcomes: '',
-          achievements: '',
-          startDate: '',
-          endDate: '',
-          description: '无法加载课程数据，请检查网络连接或联系管理员',
-          isCustom: false
-        }
-      ]);
-      setTrainingProgramName('数据加载失败');
+      setCourses([]);
     } finally {
       setCoursesLoading(false);
     }
@@ -407,11 +359,11 @@ const StudentAcademicTasks: React.FC = () => {
     return () => { document.title = originalTitle; };
   }, []);
 
-  // 页面加载时获取培养方案课程和学习数据
+  // 页面加载时获取自定义课程和学习数据
   useEffect(() => {
     if (studentProfile?.id && !coursesLoading) {
       console.log('🚀 开始加载课程数据，学生ID:', studentProfile.id);
-      fetchStudentTrainingProgramCourses();
+      fetchStudentCustomCoursesOnly();
     }
   }, [studentProfile?.id, selectedSemester]);
 
@@ -446,9 +398,29 @@ const StudentAcademicTasks: React.FC = () => {
     console.log('加载学期', semester, '的课程数据');
   };
 
+  // 添加一个函数来筛选课程
+  const getFilteredCourses = () => {
+    if (!selectedSemester) {
+      return courses;
+    }
+    
+    return courses.filter(course => {
+      // 对于自定义课程，使用course.semester
+      // 对于培养方案课程，使用(course as any).semester
+      const courseSemester = course.semester || (course as any).semester;
+      return courseSemester === selectedSemester;
+    });
+  };
+
   // 编辑课程信息
   const handleEditCourse = (courseId: string) => {
     setEditingCourse(courseId);
+  };
+
+  // 编辑课程基本信息
+  const handleEditCourseInfo = (course: Course) => {
+    setEditingCourseData({...course});
+    setShowEditCourseModal(true);
   };
 
   // 保存课程信息（使用同步API，更新而非新增）
@@ -471,7 +443,7 @@ const StudentAcademicTasks: React.FC = () => {
       // 1. 同步技术标签（使用新的sync接口）
       if (course.tags.length > 0) {
         try {
-          const tagResponse = await fetch('/api/student-learning/sync-technical-tags', {
+          const tagResponse = await fetch('/api/sync-technical-tags', {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
@@ -547,8 +519,6 @@ const StudentAcademicTasks: React.FC = () => {
         console.warn('学习成果同步API调用失败:', error);
       }
 
-
-
       alert('课程信息同步成功！已更新现有数据，不会产生重复记录。');
       setEditingCourse(null);
       
@@ -620,18 +590,33 @@ const StudentAcademicTasks: React.FC = () => {
       return;
     }
 
+    // 显示确认弹框而不是直接添加
+    setShowConfirmModal(true);
+  };
+
+  // 确认添加课程
+  const confirmAddCourse = async () => {
+    setShowConfirmModal(false);
+    
+    if (!studentProfile?.id) {
+      alert('学生档案不存在，无法添加课程');
+      return;
+    }
+    
     try {
       setAddCourseLoading(true);
       
-      const response = await fetch('/api/student-learning/add-custom-course', {
+      const response = await fetch('/api/add-custom-course', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           student_profile_id: studentProfile.id,
+          course_code: newCourseCode.trim() || null, // 添加课程代码
           course_name: newCourseName.trim(),
           credits: newCourseCredits,
+          course_nature: newCourseNature, // 添加课程性质
           teacher: newCourseTeacher.trim() || '自填课程',
           description: newCourseDescription.trim() || `${newCourseName.trim()} - 学生自定义添加的课程`,
           semester: selectedSemester
@@ -658,23 +643,26 @@ const StudentAcademicTasks: React.FC = () => {
           achievements: '',
           startDate: new Date().toISOString().split('T')[0],
           endDate: '',
-          description: newCourseDescription.trim() || `${newCourseName.trim()} - 学生自定义添加的课程`
+          description: newCourseDescription.trim() || `${newCourseName.trim()} - 学生自定义添加的课程`,
+          courseCode: newCourseCode.trim() || undefined, // 添加课程代码
+          courseNature: newCourseNature // 添加课程性质
         };
 
         setCourses(prev => [...prev, newCourse]);
-        
+      
         // 重置表单
         setNewCourseName('');
         setNewCourseCredits(1);
+        setNewCourseNature('选修课'); // 重置课程性质
         setNewCourseTeacher('');
         setNewCourseDescription('');
         setShowAddCourseModal(false);
-        
+      
         alert('课程添加成功！');
       } else {
         throw new Error(result.message || '添加课程失败');
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('添加课程失败:', error);
       alert(`添加课程失败: ${error.message}`);
     } finally {
@@ -682,32 +670,24 @@ const StudentAcademicTasks: React.FC = () => {
     }
   };
 
-  // 获取状态标签
-  const getStatusTag = (status: Course['status']) => {
-    switch (status) {
-      case 'completed':
-        return (
-          <span className="px-3 py-1 text-xs rounded-full font-medium bg-green-100 text-green-800 flex items-center">
-            <i className="fas fa-check-circle mr-1"></i>
-            已完成
-          </span>
-        );
-      case 'in_progress':
-        return (
-          <span className="px-3 py-1 text-xs rounded-full font-medium bg-orange-100 text-orange-800 flex items-center">
-            <i className="fas fa-clock mr-1"></i>
-            进行中
-          </span>
-        );
-      case 'pending':
-        return (
-          <span className="px-3 py-1 text-xs rounded-full font-medium bg-gray-100 text-gray-800 flex items-center">
-            <i className="fas fa-hourglass-start mr-1"></i>
-            待开始
-          </span>
-        );
-      default:
-        return null;
+  // 保存修改的课程信息
+  const saveEditedCourse = async () => {
+    if (!editingCourseData) return;
+    
+    try {
+      // 更新本地状态
+      setCourses(prev => prev.map(course => 
+        course.id === editingCourseData.id ? editingCourseData : course
+      ));
+      
+      // 关闭编辑弹框
+      setShowEditCourseModal(false);
+      setEditingCourseData(null);
+      
+      alert('课程信息更新成功！');
+    } catch (error) {
+      console.error('更新课程信息失败:', error);
+      alert('更新课程信息失败，请重试');
     }
   };
 
@@ -842,7 +822,7 @@ const StudentAcademicTasks: React.FC = () => {
                 <select 
                   value={selectedSemester}
                   onChange={(e) => handleSemesterChange(e.target.value)}
-                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent bg-white w-48"
+                  className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent bg-white w-64"
                 >
                   {semesters.map(semester => (
                     <option key={semester.value} value={semester.value}>
@@ -863,7 +843,7 @@ const StudentAcademicTasks: React.FC = () => {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-text-secondary text-sm mb-1">总课程数</p>
-                  <p className="text-3xl font-bold text-blue-600">{courses.length}</p>
+                  <p className="text-3xl font-bold text-blue-600">{getFilteredCourses().length}</p>
                   <p className="text-text-secondary text-sm mt-1">本学期课程</p>
                 </div>
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center">
@@ -876,7 +856,7 @@ const StudentAcademicTasks: React.FC = () => {
                 <div>
                   <p className="text-text-secondary text-sm mb-1">已完成</p>
                   <p className="text-3xl font-bold text-green-600">
-                    {courses.filter(c => c.status === 'completed').length}
+                    {getFilteredCourses().filter(c => c.status === 'completed').length}
                   </p>
                   <p className="text-text-secondary text-sm mt-1">课程完成</p>
                 </div>
@@ -890,7 +870,7 @@ const StudentAcademicTasks: React.FC = () => {
                 <div>
                   <p className="text-text-secondary text-sm mb-1">进行中</p>
                   <p className="text-3xl font-bold text-orange-600">
-                    {courses.filter(c => c.status === 'in_progress').length}
+                    {getFilteredCourses().filter(c => c.status === 'in_progress').length}
                   </p>
                   <p className="text-text-secondary text-sm mt-1">正在学习</p>
                 </div>
@@ -904,7 +884,7 @@ const StudentAcademicTasks: React.FC = () => {
                 <div>
                   <p className="text-text-secondary text-sm mb-1">总学分</p>
                   <p className="text-3xl font-bold text-purple-600">
-                    {courses.reduce((sum, c) => sum + c.credits, 0)}
+                    {getFilteredCourses().reduce((sum, c) => sum + c.credits, 0)}
                   </p>
                   <p className="text-text-secondary text-sm mt-1">学分累计</p>
                 </div>
@@ -922,12 +902,6 @@ const StudentAcademicTasks: React.FC = () => {
             <div>
               <h3 className="text-lg font-semibold text-text-primary mb-2">课程详情</h3>
               <div className="flex items-center space-x-3">
-                {trainingProgramName && (
-                  <div className="px-3 py-1 bg-blue-50 text-blue-700 rounded-full text-sm font-medium">
-                    <i className="fas fa-graduation-cap mr-1"></i>
-                    {trainingProgramName}
-                  </div>
-                )}
                 <p className="text-sm text-text-secondary">
                   点击编辑按钮填写学习收获和成果，或点击"添加课程"创建自定义课程
                 </p>
@@ -943,7 +917,7 @@ const StudentAcademicTasks: React.FC = () => {
               </button>
               <div className="flex items-center space-x-2 text-sm text-text-secondary">
                 <i className="fas fa-info-circle"></i>
-                <span>共 {courses.length} 门课程</span>
+                <span>共 {getFilteredCourses().length} 门课程</span>
               </div>
             </div>
           </div>
@@ -959,7 +933,7 @@ const StudentAcademicTasks: React.FC = () => {
                   <p className="text-sm text-gray-500 mt-2">请稍候，系统正在处理您的请求</p>
                 </div>
               </div>
-            ) : courses.length === 0 ? (
+            ) : getFilteredCourses().length === 0 ? (
               <div className="flex items-center justify-center py-16">
                 <div className="text-center">
                   <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
@@ -967,16 +941,11 @@ const StudentAcademicTasks: React.FC = () => {
                   </div>
                   <h3 className="text-lg font-medium text-gray-600 mb-2">暂无课程</h3>
                   <p className="text-sm text-gray-500 mb-4">
-                    {trainingProgramName === '暂未分配培养方案' 
-                      ? '您的教师还未为您分配培养方案，您可以点击"添加课程"按钮创建自定义课程。' 
-                      : trainingProgramName === '自定义课程' || trainingProgramName === '暂无课程'
-                      ? '您还没有添加任何课程，点击"添加课程"按钮开始创建您的第一门课程。'
-                      : '当前培养方案下暂无课程安排，您可以点击"添加课程"按钮创建自定义课程。'
-                    }
+                    您还没有添加任何课程，点击"添加课程"按钮开始创建您的第一门课程。
                   </p>
                 </div>
               </div>
-            ) : courses.map((course) => (
+            ) : getFilteredCourses().map((course) => (
               <div key={course.id} className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300`}>
                 {/* 课程头部信息 */}
                 <div className="flex items-start justify-between mb-6">
@@ -1000,6 +969,12 @@ const StudentAcademicTasks: React.FC = () => {
                             <i className="fas fa-graduation-cap text-xs"></i>
                             <span>{course.credits}学分</span>
                           </span>
+                          {course.courseCode && (
+                            <span className="flex items-center space-x-1">
+                              <i className="fas fa-barcode text-xs"></i>
+                              <span>{course.courseCode}</span>
+                            </span>
+                          )}
                           {(course as any).semester && (
                             <span className="flex items-center space-x-1">
                               <i className="fas fa-calendar-alt text-xs"></i>
@@ -1012,16 +987,13 @@ const StudentAcademicTasks: React.FC = () => {
                               <span>{(course as any).courseNature}</span>
                             </span>
                           )}
-                          {(course as any).isCustom && (
-                            <span className="flex items-center space-x-1 px-2 py-1 bg-purple-100 text-purple-700 rounded-full text-xs font-medium">
-                              <i className="fas fa-user-plus text-xs"></i>
-                              <span>自定义</span>
+                          {course.teacher && (
+                            <span className="flex items-center space-x-1">
+                              <i className="fas fa-user-tie text-xs"></i>
+                              <span>{course.teacher}</span>
                             </span>
                           )}
                         </div>
-                      </div>
-                      <div className="ml-4">
-                        {getStatusTag(course.status)}
                       </div>
                     </div>
                   </div>
@@ -1235,6 +1207,13 @@ const StudentAcademicTasks: React.FC = () => {
                         取消
                       </Button>
                       <button 
+                        onClick={() => handleEditCourseInfo(course)} 
+                        className="px-6 py-2 bg-primary text-accent rounded-lg hover:bg-opacity-90 transition-colors flex items-center"
+                      >
+                        <i className="fas fa-edit mr-2"></i>
+                        编辑信息
+                      </button>
+                      <button 
                         onClick={() => handleSaveCourse(course.id)} 
                         className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors flex items-center"
                       >
@@ -1266,6 +1245,21 @@ const StudentAcademicTasks: React.FC = () => {
               <div className="p-6 space-y-4">
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-2">
+                    <i className="fas fa-barcode text-blue-500 mr-1"></i>
+                    课程代码
+                  </label>
+                  <input
+                    type="text"
+                    value={newCourseCode}
+                    onChange={(e) => setNewCourseCode(e.target.value)}
+                    placeholder="例如：32201226（可选）"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    maxLength={20}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
                     <i className="fas fa-book text-blue-500 mr-1"></i>
                     课程名称 <span className="text-red-500">*</span>
                   </label>
@@ -1294,6 +1288,41 @@ const StudentAcademicTasks: React.FC = () => {
                       max="10"
                       className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      <i className="fas fa-tag text-orange-500 mr-1"></i>
+                      课程性质
+                    </label>
+                    <select
+                      value={newCourseNature}
+                      onChange={(e) => setNewCourseNature(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    >
+                      <option value="必修课">必修课</option>
+                      <option value="选修课">选修课</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      <i className="fas fa-calendar-alt text-green-500 mr-1"></i>
+                      学期
+                    </label>
+                    <select
+                      value={selectedSemester}
+                      onChange={(e) => setSelectedSemester(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    >
+                      {semesters.map(semester => (
+                        <option key={semester.value} value={semester.value}>
+                          {semester.label}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
@@ -1330,7 +1359,17 @@ const StudentAcademicTasks: React.FC = () => {
 
               <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
                 <button
-                  onClick={() => setShowAddCourseModal(false)}
+                  onClick={() => {
+                    setShowAddCourseModal(false);
+                    // 重置表单
+                    setNewCourseCode('');
+                    setNewCourseName('');
+                    setNewCourseCredits(1);
+                    setNewCourseNature('选修课');
+                    setNewCourseTeacher('');
+                    setNewCourseDescription('');
+                    // 学期状态保持当前选择，不需要重置
+                  }}
                   disabled={addCourseLoading}
                   className="px-6 py-2 border border-border-light text-text-secondary rounded-lg hover:bg-gray-50 transition-colors flex items-center disabled:opacity-50"
                 >
@@ -1355,9 +1394,242 @@ const StudentAcademicTasks: React.FC = () => {
                   )}
                 </button>
               </div>
+
             </div>
           </div>
         )}
+
+        {/* 确认弹框 */}
+        {showConfirmModal && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-semibold text-text-primary flex items-center">
+                  <i className="fas fa-exclamation-circle text-yellow-500 mr-2"></i>
+                  确认添加课程
+                </h3>
+                <p className="text-sm text-text-secondary mt-1">
+                  请确认以下课程信息是否正确
+                </p>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <div className="bg-gray-50 rounded-lg p-4">
+                  <div className="space-y-3">
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">课程名称:</span>
+                      <span className="font-medium">{newCourseName}</span>
+                    </div>
+                    {newCourseCode && (
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">课程代码:</span>
+                        <span className="font-medium">{newCourseCode}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">学分:</span>
+                      <span className="font-medium">{newCourseCredits}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">课程性质:</span>
+                      <span className="font-medium">{newCourseNature}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-text-secondary">学期:</span>
+                      <span className="font-medium">
+                        {semesters.find(s => s.value === selectedSemester)?.label || selectedSemester}
+                      </span>
+                    </div>
+                    {newCourseTeacher && (
+                      <div className="flex justify-between">
+                        <span className="text-text-secondary">授课教师:</span>
+                        <span className="font-medium">{newCourseTeacher}</span>
+                      </div>
+                    )}
+                    {newCourseDescription && (
+                      <div>
+                        <span className="text-text-secondary block mb-1">课程描述:</span>
+                        <p className="text-sm bg-white p-2 rounded border">{newCourseDescription}</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+                
+                <div className="text-sm text-text-secondary">
+                  <i className="fas fa-info-circle mr-1"></i>
+                  请仔细核对以上信息，添加后可通过编辑功能修改课程信息
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowConfirmModal(false)}
+                  className="px-6 py-2 border border-border-light text-text-secondary rounded-lg hover:bg-gray-50 transition-colors flex items-center"
+                >
+                  <i className="fas fa-times mr-2"></i>
+                  返回修改
+                </button>
+                <button
+                  onClick={confirmAddCourse}
+                  className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors flex items-center"
+                >
+                  <i className="fas fa-check mr-2"></i>
+                  确认添加
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* 修改课程信息弹框 */}
+        {showEditCourseModal && editingCourseData && (
+          <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+            <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
+              <div className="p-6 border-b border-gray-200">
+                <h3 className="text-xl font-semibold text-text-primary flex items-center">
+                  <i className="fas fa-edit text-secondary mr-2"></i>
+                  修改课程信息
+                </h3>
+                <p className="text-sm text-text-secondary mt-1">
+                  修改课程基本信息
+                </p>
+              </div>
+              
+              <div className="p-6 space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    <i className="fas fa-barcode text-blue-500 mr-1"></i>
+                    课程代码
+                  </label>
+                  <input
+                    type="text"
+                    value={editingCourseData.courseCode || ''}
+                    onChange={(e) => setEditingCourseData(prev => prev ? {...prev, courseCode: e.target.value} : null)}
+                    placeholder="例如：32201226（可选）"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    maxLength={20}
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    <i className="fas fa-book text-blue-500 mr-1"></i>
+                    课程名称 <span className="text-red-500">*</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={editingCourseData.name}
+                    onChange={(e) => setEditingCourseData(prev => prev ? {...prev, name: e.target.value} : null)}
+                    placeholder="例如：Web前端开发"
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    maxLength={100}
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      <i className="fas fa-graduation-cap text-purple-500 mr-1"></i>
+                      学分
+                    </label>
+                    <input
+                      type="number"
+                      value={editingCourseData.credits}
+                      onChange={(e) => setEditingCourseData(prev => prev ? {...prev, credits: Math.max(0, parseInt(e.target.value) || 0)} : null)}
+                      placeholder="1"
+                      min="0"
+                      max="10"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      <i className="fas fa-tag text-orange-500 mr-1"></i>
+                      课程性质
+                    </label>
+                    <select
+                      value={editingCourseData.courseNature || '选修课'}
+                      onChange={(e) => setEditingCourseData(prev => prev ? {...prev, courseNature: e.target.value} : null)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    >
+                      <option value="必修课">必修课</option>
+                      <option value="选修课">选修课</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      <i className="fas fa-calendar-alt text-green-500 mr-1"></i>
+                      学期
+                    </label>
+                    <select
+                      value={selectedSemester}
+                      onChange={(e) => setSelectedSemester(e.target.value)}
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                    >
+                      {semesters.map(semester => (
+                        <option key={semester.value} value={semester.value}>
+                          {semester.label}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-2">
+                      <i className="fas fa-user-tie text-green-500 mr-1"></i>
+                      授课教师
+                    </label>
+                    <input
+                      type="text"
+                      value={editingCourseData.teacher || ''}
+                      onChange={(e) => setEditingCourseData(prev => prev ? {...prev, teacher: e.target.value} : null)}
+                      placeholder="可选填"
+                      className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent"
+                      maxLength={50}
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-text-primary mb-2">
+                    <i className="fas fa-align-left text-orange-500 mr-1"></i>
+                    课程描述
+                  </label>
+                  <textarea
+                    value={editingCourseData.description || ''}
+                    onChange={(e) => setEditingCourseData(prev => prev ? {...prev, description: e.target.value} : null)}
+                    placeholder="可选填，简要描述课程内容"
+                    rows={3}
+                    className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent resize-none"
+                    maxLength={200}
+                  />
+                </div>
+              </div>
+
+              <div className="p-6 border-t border-gray-200 flex justify-end space-x-3">
+                <button
+                  onClick={() => setShowEditCourseModal(false)}
+                  className="px-6 py-2 border border-border-light text-text-secondary rounded-lg hover:bg-gray-50 transition-colors flex items-center"
+                >
+                  <i className="fas fa-times mr-2"></i>
+                  取消
+                </button>
+                <button
+                  onClick={saveEditedCourse}
+                  className="px-6 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors flex items-center"
+                >
+                  <i className="fas fa-save mr-2"></i>
+                  保存修改
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
     </div>
   );

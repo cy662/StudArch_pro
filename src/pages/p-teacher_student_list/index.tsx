@@ -2,13 +2,32 @@ import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { UserService } from '../../services/userService';
+
 import { UserWithRole } from '../../types/user';
+
 import { useAuth } from '../../hooks/useAuth'; // 添加这行导入
 import { supabase } from '../../lib/supabase'; // 导入supabase客户端
 
+// 添加奖惩相关的类型
+interface RewardPunishment {
+  id: string;
+  student_id: string;
+  type: 'reward' | 'punishment';
+  name: string;
+  level: string;
+  category?: string;
+  description: string;
+  date: string;
+  created_by: string;
+  created_at: string;
+  updated_at?: string;
+  status?: 'pending' | 'approved' | 'rejected';
+}
+
 const TeacherStudentList: React.FC = () => {
   const navigate = useNavigate();
-  const { user, setUser } = useAuth(); // 获取当前登录用户信息
+  const { user, refreshProfile } = useAuth(); // 获取当前登录用户信息
+  const [localUser, setLocalUser] = useState<any>(null); // 本地用户状态
   
   // 教师管理的学生数据
   const [studentsData, setStudentsData] = useState<UserWithRole[]>([]);
@@ -32,7 +51,19 @@ const TeacherStudentList: React.FC = () => {
   const [importPage, setImportPage] = useState(1);
   const [importTotalCount, setImportTotalCount] = useState(0);
 
-  
+  // 添加筛选和查找弹窗相关状态
+  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false);
+  const [filterForm, setFilterForm] = useState({
+    studentNumberOrName: '',
+    grade: '',
+    technicalTags: '',
+    reward: '',
+    punishment: '',
+    graduationDestination: ''
+  });
+  const [filteredStudents, setFilteredStudents] = useState<UserWithRole[]>([]);
+  const [isFiltering, setIsFiltering] = useState(false);
+  const [filtering, setFiltering] = useState(false);
 
   // 将档案ID映射回用户ID（因为前端显示使用档案ID，但后端API需要用户ID）
   const mapProfileIdsToUserIds = async (profileIds: string[]): Promise<string[]> => {
@@ -66,7 +97,7 @@ const TeacherStudentList: React.FC = () => {
     try {
       setStudentsLoading(true);
       // 从认证状态中获取当前教师的ID
-      const currentTeacherId = user?.id;
+      const currentTeacherId = user?.id || localUser?.id;
       
       // 添加调试信息
       console.log('=== 调试认证状态 ===');
@@ -89,7 +120,7 @@ const TeacherStudentList: React.FC = () => {
             // 如果有用户信息且是教师，直接设置
             if (parsedUser.role?.role_name === 'teacher' && parsedUser.id) {
               console.log('✅ 从localStorage恢复教师信息成功');
-              setUser(parsedUser);
+              setLocalUser(parsedUser);
               // 不return，让函数继续执行（因为现在有ID了）
             } else {
               // 手动设置测试教师
@@ -101,7 +132,7 @@ const TeacherStudentList: React.FC = () => {
                 role_id: '2'
               };
               console.log('设置测试教师账号');
-              setUser(testTeacher);
+              setLocalUser(testTeacher);
               localStorage.setItem('user_info', JSON.stringify(testTeacher));
             }
           } catch (parseError) {
@@ -116,7 +147,7 @@ const TeacherStudentList: React.FC = () => {
               role_id: '2'
             };
             console.log('设置测试教师账号');
-            setUser(testTeacher);
+            setLocalUser(testTeacher);
             localStorage.setItem('user_info', JSON.stringify(testTeacher));
           }
         } else {
@@ -129,7 +160,7 @@ const TeacherStudentList: React.FC = () => {
             role_id: '2'
           };
           console.log('设置测试教师账号');
-          setUser(testTeacher);
+          setLocalUser(testTeacher);
           localStorage.setItem('user_info', JSON.stringify(testTeacher));
         }
         
@@ -166,7 +197,7 @@ const TeacherStudentList: React.FC = () => {
     try {
       setImportLoading(true);
       // 从认证状态中获取当前教师的ID
-      const teacherId = user?.id;
+      const teacherId = user?.id || localUser?.id;
       
       // 如果没有获取到教师ID，不执行查询
       if (!teacherId) {
@@ -196,7 +227,7 @@ const TeacherStudentList: React.FC = () => {
     } catch (error) {
       console.error('获取可导入学生失败，使用备用方案:', error);
       // 如果数据库函数调用失败，使用备用方案获取所有学生
-      const teacherId = user?.id;
+      const teacherId = user?.id || localUser?.id;
       if (teacherId) {
         await fetchAvailableStudentsFallback(teacherId);
       } else {
@@ -308,6 +339,15 @@ const TeacherStudentList: React.FC = () => {
     return selectedCount > 0 && selectedCount < studentsData.length;
   };
 
+  const isAllSelectedAvailable = (): boolean => {
+    return availableStudents.length > 0 && availableStudents.every(student => selectedAvailableStudents.has(student.id));
+  };
+
+  const isIndeterminateAvailable = (): boolean => {
+    const selectedCount = availableStudents.filter(student => selectedAvailableStudents.has(student.id)).length;
+    return selectedCount > 0 && selectedCount < availableStudents.length;
+  };
+
   const handlePageChange = (page: number) => {
     const totalPages = Math.ceil(studentsTotal / pageSize);
     if (page >= 1 && page <= totalPages) {
@@ -332,7 +372,226 @@ const TeacherStudentList: React.FC = () => {
     setEditingStudent(null);
   };
 
+  // 处理筛选表单变化
+  const handleFilterFormChange = (field: string, value: string) => {
+    setFilterForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
 
+  // 执行筛选
+  const executeFilter = async () => {
+    try {
+      setFiltering(true);
+      setIsFiltering(true);
+      
+      // 构建筛选条件
+      let query = supabase
+        .from('teacher_students')
+        .select(`
+          student_id,
+          created_at,
+          users!inner(
+            id,
+            username,
+            email,
+            full_name,
+            user_number,
+            phone,
+            department,
+            grade,
+            class_name,
+            status,
+            created_at
+          ),
+          roles!inner(id, role_name, role_description)
+        `)
+        .eq('teacher_id', user?.id || localUser?.id)
+        .eq('users.role_id', '3'); // 学生角色
+
+      // 学号或姓名筛选
+      if (filterForm.studentNumberOrName) {
+        query = query.or(`
+          users.full_name.ilike.%${filterForm.studentNumberOrName}%|
+          users.user_number.ilike.%${filterForm.studentNumberOrName}%
+        `);
+      }
+
+      // 年级筛选
+      if (filterForm.grade) {
+        query = query.eq('users.grade', filterForm.grade);
+      }
+
+      // 排序
+      query = query.order('created_at', { ascending: false });
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error('筛选学生失败:', error);
+        setFilteredStudents([]);
+      } else {
+        // 处理数据
+        const students = (data || []).map((item: any) => ({
+          ...item.users,
+          role: item.roles
+        }));
+
+        // 如果有技术标签、奖励、违纪或毕业去向筛选，需要进一步过滤
+        let finalResults = students;
+
+        // 技术标签筛选
+        if (filterForm.technicalTags) {
+          const tagFilteredStudents = await filterByTechnicalTags(students, filterForm.technicalTags);
+          finalResults = finalResults.filter((student: UserWithRole) => 
+            tagFilteredStudents.some(s => s.id === student.id)
+          );
+        }
+
+        // 奖励筛选
+        if (filterForm.reward) {
+          const rewardFilteredStudents = await filterByRewards(students, filterForm.reward, 'reward');
+          finalResults = finalResults.filter((student: UserWithRole) => 
+            rewardFilteredStudents.some(s => s.id === student.id)
+          );
+        }
+
+        // 违纪筛选
+        if (filterForm.punishment) {
+          const punishmentFilteredStudents = await filterByRewards(students, filterForm.punishment, 'punishment');
+          finalResults = finalResults.filter((student: UserWithRole) => 
+            punishmentFilteredStudents.some(s => s.id === student.id)
+          );
+        }
+
+        // 毕业去向筛选
+        if (filterForm.graduationDestination) {
+          const graduationFilteredStudents = await filterByGraduationDestination(students, filterForm.graduationDestination);
+          finalResults = finalResults.filter((student: UserWithRole) => 
+            graduationFilteredStudents.some(s => s.id === student.id)
+          );
+        }
+
+        setFilteredStudents(finalResults);
+      }
+      
+      // 关闭筛选弹窗
+      setIsFilterModalOpen(false);
+    } catch (error) {
+      console.error('筛选异常:', error);
+      setFilteredStudents([]);
+    } finally {
+      setFiltering(false);
+    }
+  };
+
+  // 根据技术标签筛选学生
+  const filterByTechnicalTags = async (students: UserWithRole[], tagName: string) => {
+    if (!students.length) return [];
+    
+    try {
+      const studentIds = students.map(s => s.id);
+      
+      // 获取这些学生的技术标签
+      const { data, error } = await supabase
+        .from('student_technical_tags')
+        .select('student_profile_id, tag_name')
+        .in('student_profile_id', studentIds)
+        .ilike('tag_name', `%${tagName}%`)
+        .eq('status', 'active');
+
+      if (error) {
+        console.error('获取技术标签失败:', error);
+        return [];
+      }
+
+      // 获取有匹配标签的学生ID
+      const matchedStudentIds = [...new Set(data?.map((item: any) => item.student_profile_id) || [])];
+      
+      // 返回匹配的学生
+      return students.filter(student => matchedStudentIds.includes(student.id));
+    } catch (error) {
+      console.error('技术标签筛选异常:', error);
+      return [];
+    }
+  };
+
+  // 根据奖惩记录筛选学生
+  const filterByRewards = async (students: UserWithRole[], keyword: string, type: 'reward' | 'punishment') => {
+    if (!students.length) return [];
+    
+    try {
+      const studentIds = students.map(s => s.id);
+      
+      // 获取这些学生的奖惩记录
+      const { data, error } = await supabase
+        .from('reward_punishments')
+        .select('student_id, name, type')
+        .in('student_id', studentIds)
+        .eq('type', type)
+        .eq('status', 'approved')
+        .ilike('name', `%${keyword}%`);
+
+      if (error) {
+        console.error('获取奖惩记录失败:', error);
+        return [];
+      }
+
+      // 获取有匹配记录的学生ID
+      const matchedStudentIds = [...new Set(data?.map((item: any) => item.student_id) || [])];
+      
+      // 返回匹配的学生
+      return students.filter(student => matchedStudentIds.includes(student.id));
+    } catch (error) {
+      console.error('奖惩记录筛选异常:', error);
+      return [];
+    }
+  };
+
+  // 根据毕业去向筛选学生
+  const filterByGraduationDestination = async (students: UserWithRole[], destinationType: string) => {
+    if (!students.length) return [];
+    
+    try {
+      const studentIds = students.map(s => s.id);
+      
+      // 获取这些学生的毕业去向
+      const { data, error } = await supabase
+        .from('graduation_destinations')
+        .select('student_id, destination_type')
+        .in('student_id', studentIds)
+        .eq('destination_type', destinationType);
+
+      if (error) {
+        console.error('获取毕业去向失败:', error);
+        return [];
+      }
+
+      // 获取有匹配记录的学生ID
+      const matchedStudentIds = [...new Set(data?.map((item: any) => item.student_id) || [])];
+      
+      // 返回匹配的学生
+      return students.filter(student => matchedStudentIds.includes(student.id));
+    } catch (error) {
+      console.error('毕业去向筛选异常:', error);
+      return [];
+    }
+  };
+
+  // 重置筛选表单
+  const resetFilterForm = () => {
+    setFilterForm({
+      studentNumberOrName: '',
+      grade: '',
+      technicalTags: '',
+      reward: '',
+      punishment: '',
+      graduationDestination: ''
+    });
+    setFilteredStudents([]);
+    setIsFiltering(false);
+  };
 
   const handleBatchDelete = async () => {
     if (selectedStudents.size === 0) {
@@ -485,7 +744,19 @@ ${errors.slice(0, 2).join('\n')}`);
     }
   };
 
-  
+
+
+
+
+
+
+
+
+
+
+
+
+
 
   const handleLogout = () => {
     if (confirm('确定要退出登录吗？')) {
@@ -615,6 +886,13 @@ ${errors.slice(0, 2).join('\n')}`);
             </div>
             <div className="flex space-x-3">
               <button 
+                onClick={() => setIsFilterModalOpen(true)}
+                className="px-4 py-2 bg-white border border-border-light rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2"
+              >
+                <i className="fas fa-filter text-secondary"></i>
+                <span className="text-text-primary">筛选和查找</span>
+              </button>
+              <button 
                 onClick={() => setIsImportModalOpen(true)}
                 className="px-4 py-2 bg-white border border-border-light rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-2"
               >
@@ -671,7 +949,6 @@ ${errors.slice(0, 2).join('\n')}`);
             
             {/* 批量操作 */}
             <div className="flex items-center space-x-3">
-              
               <button 
                 onClick={handleBatchDelete}
                 disabled={selectedStudents.size === 0}
@@ -718,20 +995,20 @@ ${errors.slice(0, 2).join('\n')}`);
                       <p className="text-text-secondary">加载中...</p>
                     </td>
                   </tr>
-                ) : studentsData.length === 0 ? (
+                ) : (isFiltering && filteredStudents.length === 0) ? (
                   <tr>
                     <td colSpan={7} className="px-6 py-12 text-center">
-                      <i className="fas fa-users text-4xl text-gray-300 mb-4"></i>
-                      <p className="text-text-secondary mb-4">暂无管理的学生</p>
+                      <i className="fas fa-search text-4xl text-gray-300 mb-4"></i>
+                      <p className="text-text-secondary mb-4">未找到匹配的学生</p>
                       <button 
-                        onClick={() => setIsImportModalOpen(true)}
+                        onClick={resetFilterForm}
                         className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
                       >
-                        批量导入学生
+                        清除筛选条件
                       </button>
                     </td>
                   </tr>
-                ) : studentsData.map(student => (
+                ) : (isFiltering ? filteredStudents : studentsData).map(student => (
                   <tr key={student.id} className={styles.tableRow}>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <input 
@@ -821,6 +1098,149 @@ ${errors.slice(0, 2).join('\n')}`);
         </div>
       </main>
 
+      {/* 筛选和查找弹窗 */}
+      {isFilterModalOpen && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
+            <div className="p-6 border-b border-border-light">
+              <div className="flex items-center justify-between">
+                <h3 className="text-lg font-semibold text-text-primary">筛选和查找</h3>
+                <button 
+                  onClick={() => {
+                    setIsFilterModalOpen(false);
+                    resetFilterForm();
+                  }}
+                  className="text-text-secondary hover:text-text-primary transition-colors"
+                >
+                  <i className="fas fa-times text-xl"></i>
+                </button>
+              </div>
+            </div>
+            
+            <div className="flex-1 overflow-y-auto p-6">
+              <div className="space-y-6">
+                {/* 筛选表单 */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* 学号或姓名 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      学号或姓名
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.studentNumberOrName}
+                      onChange={(e) => handleFilterFormChange('studentNumberOrName', e.target.value)}
+                      placeholder="请输入学号或姓名"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 年级 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      年级 (格式: 2023)
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.grade}
+                      onChange={(e) => handleFilterFormChange('grade', e.target.value)}
+                      placeholder="请输入年级，如：2023"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 技术标签 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      技术标签
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.technicalTags}
+                      onChange={(e) => handleFilterFormChange('technicalTags', e.target.value)}
+                      placeholder="请输入技术标签关键词"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 获奖 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      获奖
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.reward}
+                      onChange={(e) => handleFilterFormChange('reward', e.target.value)}
+                      placeholder="请输入获奖名称关键词"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 违纪 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      违纪
+                    </label>
+                    <input
+                      type="text"
+                      value={filterForm.punishment}
+                      onChange={(e) => handleFilterFormChange('punishment', e.target.value)}
+                      placeholder="请输入违纪名称关键词"
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    />
+                  </div>
+                  
+                  {/* 毕业去向 */}
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      毕业去向
+                    </label>
+                    <select
+                      value={filterForm.graduationDestination}
+                      onChange={(e) => handleFilterFormChange('graduationDestination', e.target.value)}
+                      className="w-full px-3 py-2 border border-border-light rounded-lg"
+                    >
+                      <option value="">请选择毕业去向</option>
+                      <option value="furtherstudy">升学</option>
+                      <option value="employment">就业</option>
+                      <option value="other">其它</option>
+                    </select>
+                  </div>
+                </div>
+                
+                {/* 操作按钮 */}
+                <div className="flex justify-end space-x-3">
+                  <button
+                    onClick={resetFilterForm}
+                    className="px-4 py-2 border border-border-light rounded-lg text-text-primary hover:bg-gray-50 transition-colors"
+                  >
+                    重置
+                  </button>
+                  <button
+                    onClick={executeFilter}
+                    disabled={filtering}
+                    className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors disabled:opacity-50 flex items-center"
+                  >
+                    {filtering ? (
+                      <>
+                        <i className="fas fa-spinner fa-spin mr-2"></i>
+                        筛选中...
+                      </>
+                    ) : (
+                      <>
+                        <i className="fas fa-search mr-2"></i>
+                        筛选
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 批量导入模态弹窗 */}
       {isImportModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 z-50">
@@ -906,9 +1326,9 @@ ${errors.slice(0, 2).join('\n')}`);
                           <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
                             <input 
                               type="checkbox" 
-                              checked={isAllSelected()}
+                              checked={isAllSelectedAvailable()}
                               ref={(input) => {
-                                if (input) input.indeterminate = isIndeterminate();
+                                if (input) input.indeterminate = isIndeterminateAvailable();
                               }}
                               onChange={(e) => handleSelectAllAvailable(e.target.checked)}
                               className="rounded border-border-light"
@@ -972,8 +1392,6 @@ ${errors.slice(0, 2).join('\n')}`);
           </div>
         </div>
       )}
-
-      
 
       {/* 编辑学生模态框 */}
       {isStudentModalOpen && (
@@ -1090,11 +1508,14 @@ ${errors.slice(0, 2).join('\n')}`);
           </div>
         </div>
       )}
-    </div>
+  </div>
   );
 };
 
+
 export default TeacherStudentList;
+
+
 
 
 
