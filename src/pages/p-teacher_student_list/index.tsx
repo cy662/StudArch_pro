@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { UserService } from '../../services/userService';
@@ -28,6 +28,7 @@ const TeacherStudentList: React.FC = () => {
   const navigate = useNavigate();
   const { user, refreshProfile } = useAuth(); // 获取当前登录用户信息
   const [localUser, setLocalUser] = useState<any>(null); // 本地用户状态
+  const retryCountRef = useRef(0); // 重试计数器，防止无限循环
   
   // 教师管理的学生数据
   const [studentsData, setStudentsData] = useState<UserWithRole[]>([]);
@@ -37,6 +38,7 @@ const TeacherStudentList: React.FC = () => {
   const [pageSize] = useState(10);
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
+  const [technicalTagFilter, setTechnicalTagFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<UserWithRole | null>(null);
@@ -83,8 +85,27 @@ const TeacherStudentList: React.FC = () => {
   const fetchTeacherStudents = async () => {
     try {
       setStudentsLoading(true);
-      // 从认证状态中获取当前教师的ID
-      const currentTeacherId = user?.id || localUser?.id;
+      
+      // 尝试从localStorage恢复用户信息（优先使用）
+      let currentTeacherId = user?.id || localUser?.id;
+      
+      // 如果还是没有ID，尝试从localStorage直接读取
+      if (!currentTeacherId) {
+        const storedUser = localStorage.getItem('user_info');
+        if (storedUser) {
+          try {
+            const parsedUser = JSON.parse(storedUser);
+            if (parsedUser.role?.role_name === 'teacher' && parsedUser.id) {
+              currentTeacherId = parsedUser.id;
+              // 更新状态（但不等待）
+              setLocalUser(parsedUser);
+              console.log('✅ 从localStorage直接读取教师ID成功:', currentTeacherId);
+            }
+          } catch (parseError) {
+            console.error('解析localStorage用户信息失败:', parseError);
+          }
+        }
+      }
       
       // 添加调试信息
       console.log('=== 调试认证状态 ===');
@@ -93,22 +114,33 @@ const TeacherStudentList: React.FC = () => {
       console.log('User role:', user?.role?.role_name);
       console.log('localStorage token:', localStorage.getItem('auth_token'));
       console.log('localStorage user:', localStorage.getItem('user_info'));
+      console.log('重试次数:', retryCountRef.current);
       
-      // 如果没有获取到教师ID，尝试快速修复
+      // 如果没有获取到教师ID，尝试快速修复（最多重试3次）
       if (!currentTeacherId) {
-        console.warn('❌ 未获取到当前教师ID，尝试快速修复...');
+        if (retryCountRef.current >= 3) {
+          console.error('❌ 已达到最大重试次数，停止尝试获取教师ID');
+          setStudentsLoading(false);
+          retryCountRef.current = 0; // 重置计数器，避免下次进入时立即失败
+          return;
+        }
+        
+        retryCountRef.current += 1;
+        console.warn(`❌ 未获取到当前教师ID，尝试快速修复... (第${retryCountRef.current}次)`);
         
         // 尝试从localStorage恢复用户信息
         const storedUser = localStorage.getItem('user_info');
+        let teacherIdToUse = null;
+        
         if (storedUser) {
           try {
             const parsedUser = JSON.parse(storedUser);
             console.log('尝试从localStorage恢复用户:', parsedUser);
-            // 如果有用户信息且是教师，直接设置
+            // 如果有用户信息且是教师，直接使用ID
             if (parsedUser.role?.role_name === 'teacher' && parsedUser.id) {
-              console.log('✅ 从localStorage恢复教师信息成功');
+              console.log('✅ 从localStorage恢复教师信息成功，ID:', parsedUser.id);
+              teacherIdToUse = parsedUser.id;
               setLocalUser(parsedUser);
-              // 不return，让函数继续执行（因为现在有ID了）
             } else {
               // 手动设置测试教师
               const testTeacher = {
@@ -119,6 +151,7 @@ const TeacherStudentList: React.FC = () => {
                 role_id: '2'
               };
               console.log('设置测试教师账号');
+              teacherIdToUse = testTeacher.id;
               setLocalUser(testTeacher);
               localStorage.setItem('user_info', JSON.stringify(testTeacher));
             }
@@ -134,6 +167,7 @@ const TeacherStudentList: React.FC = () => {
               role_id: '2'
             };
             console.log('设置测试教师账号');
+            teacherIdToUse = testTeacher.id;
             setLocalUser(testTeacher);
             localStorage.setItem('user_info', JSON.stringify(testTeacher));
           }
@@ -147,25 +181,69 @@ const TeacherStudentList: React.FC = () => {
             role_id: '2'
           };
           console.log('设置测试教师账号');
+          teacherIdToUse = testTeacher.id;
           setLocalUser(testTeacher);
           localStorage.setItem('user_info', JSON.stringify(testTeacher));
         }
         
-        // 不return，给一点时间让状态更新
-        setTimeout(() => {
-          // 重新调用获取函数
-          fetchTeacherStudents();
-        }, 100);
+        // 如果获取到了ID，直接使用它继续执行
+        if (teacherIdToUse) {
+          currentTeacherId = teacherIdToUse;
+          console.log('✅ 使用恢复的教师ID继续执行:', currentTeacherId);
+          // 重置重试计数器
+          retryCountRef.current = 0;
+          // 不要return，继续执行下面的代码
+        } else {
+          // 如果还是没有ID，等待后重试（但限制次数）
+          console.warn('⚠️ 无法获取教师ID，等待后重试');
+          setStudentsLoading(false);
+          setTimeout(() => {
+            fetchTeacherStudents();
+          }, 500);
+          return;
+        }
+      } else {
+        // 成功获取到ID，重置重试计数器
+        retryCountRef.current = 0;
+      }
+      
+      // 最终检查：如果还是没有ID，直接返回，不再重试
+      if (!currentTeacherId) {
+        console.error('❌ 最终检查：仍然无法获取教师ID，停止执行');
+        setStudentsLoading(false);
         return;
       }
       
-      console.log('🎯 开始获取教师学生列表:', { currentTeacherId, searchTerm, currentPage, pageSize });
+      console.log('🎯 开始获取教师学生列表:', { currentTeacherId, searchTerm, technicalTagFilter, currentPage, pageSize });
       
-      const result = await UserService.getTeacherStudents(currentTeacherId, {
-        keyword: searchTerm,
-        page: currentPage,
-        limit: pageSize
-      });
+      let result;
+      if (technicalTagFilter.trim()) {
+        // 如果有技术标签筛选，使用技术标签搜索
+        console.log('🏷️ 开始技术标签搜索:', technicalTagFilter);
+        result = await UserService.getStudentsByTechnicalTag(currentTeacherId, technicalTagFilter, {
+          page: currentPage,
+          limit: pageSize
+        });
+        console.log('🏷️ 技术标签搜索结果:', result);
+        
+        // 如果没有结果，尝试模糊搜索
+        if (!result.students || result.students.length === 0) {
+          console.log('🔍 尝试模糊搜索技术标签:', technicalTagFilter);
+          result = await UserService.getStudentsByTechnicalTag(currentTeacherId, technicalTagFilter, {
+            page: currentPage,
+            limit: pageSize,
+            fuzzy: true
+          });
+          console.log('🔍 模糊搜索结果:', result);
+        }
+      } else {
+        // 否则使用普通搜索
+        result = await UserService.getTeacherStudents(currentTeacherId, {
+          keyword: searchTerm,
+          page: currentPage,
+          limit: pageSize
+        });
+      }
       
       console.log('✅ 教师学生列表结果:', result);
       setStudentsData(result.students || []);
@@ -282,8 +360,26 @@ const TeacherStudentList: React.FC = () => {
 
   // 页面加载时获取教师学生数据
   useEffect(() => {
-    fetchTeacherStudents();
-  }, [searchTerm, currentPage, pageSize, user]); // 添加user依赖
+    // 只有当有有效的教师ID时才获取数据，避免无限循环
+    const teacherId = user?.id || localUser?.id;
+    if (teacherId) {
+      fetchTeacherStudents();
+    } else {
+      // 如果没有教师ID，尝试从localStorage读取一次
+      const storedUser = localStorage.getItem('user_info');
+      if (storedUser) {
+        try {
+          const parsedUser = JSON.parse(storedUser);
+          if (parsedUser.role?.role_name === 'teacher' && parsedUser.id) {
+            setLocalUser(parsedUser);
+            // 设置后，会在下一次渲染时触发这个useEffect
+          }
+        } catch (e) {
+          // 忽略解析错误
+        }
+      }
+    }
+  }, [searchTerm, technicalTagFilter, currentPage, pageSize, user?.id, localUser?.id]); // 只依赖ID，不依赖整个对象
 
 
 
@@ -676,6 +772,16 @@ ${errors.slice(0, 2).join('\n')}`);
                   className={`pl-10 pr-4 py-2 border border-border-light rounded-lg w-64 ${styles.searchInput}`}
                 />
               </div>
+              <div className="relative">
+                <i className="fas fa-tag absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary"></i>
+                <input 
+                  type="text" 
+                  placeholder="搜索技术标签" 
+                  value={technicalTagFilter}
+                  onChange={(e) => setTechnicalTagFilter(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-border-light rounded-lg w-48"
+                />
+              </div>
             </div>
             
             {/* 批量操作 */}
@@ -713,6 +819,7 @@ ${errors.slice(0, 2).join('\n')}`);
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">学号</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">姓名</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">班级</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">技术标签</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">学籍状态</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">联系方式</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">操作</th>
@@ -721,7 +828,7 @@ ${errors.slice(0, 2).join('\n')}`);
               <tbody className="bg-white divide-y divide-border-light">
                 {studentsLoading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-12 text-center">
+                    <td colSpan={8} className="px-6 py-12 text-center">
                       <i className="fas fa-spinner fa-spin text-2xl text-secondary mb-4"></i>
                       <p className="text-text-secondary">加载中...</p>
                     </td>
@@ -754,8 +861,22 @@ ${errors.slice(0, 2).join('\n')}`);
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">{student.class_name}</td>
                     <td className="px-6 py-4 whitespace-nowrap">
+                      {(student as any).technical_tag ? (
+                        <div className="flex flex-col space-y-1">
+                          <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded-full">
+                            {(student as any).technical_tag.tag_name}
+                          </span>
+                          <span className="text-xs text-text-secondary">
+                            {(student as any).technical_tag.tag_category}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-text-secondary">-</span>
+                      )}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <span className="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded-full">
-                        {student.status === 'active' ? '在读' : '其他'}
+                        {student.status === '在读' || student.status === 'active' ? '在读' : '其他'}
                       </span>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">{student.phone}</td>

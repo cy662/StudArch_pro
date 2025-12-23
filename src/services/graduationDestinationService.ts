@@ -472,13 +472,49 @@ export class GraduationDestinationService {
   // 根据学生ID获取毕业去向记录
   static async getGraduationDestinationByStudentId(studentId: string): Promise<GraduationDestination | null> {
     try {
+      // 检查表是否存在 - 如果不存在直接返回null
+      try {
+        const { data: testData, error: testError } = await supabase
+          .from('graduation_destinations')
+          .select('count', { count: 'exact', head: true });
+        
+        if (testError && testError.code === 'PGRST116') {
+          console.warn('graduation_destinations表不存在，跳过查询');
+          return null;
+        }
+      } catch (tableError) {
+        console.warn('检查graduation_destinations表失败:', tableError);
+        return null;
+      }
+
       const { data, error } = await supabase
         .from('graduation_destinations')
         .select('*')
         .eq('student_id', studentId)
-        .single();
+        .maybeSingle();
 
       if (error) {
+        // 如果是表不存在或字段不存在，返回null而不是抛出错误
+        if (error.code === 'PGRST116' || error.code === 'PGRST204' || error.status === 406) {
+          console.warn('毕业去向数据不存在或表结构问题:', error.message);
+          return null;
+        }
+        // 处理多个结果的情况
+        if (error.message && error.message.includes('coerce the result to a single JSON object')) {
+          console.warn('找到多条毕业去向记录，获取第一条');
+          const { data: multipleData, error: multipleError } = await supabase
+            .from('graduation_destinations')
+            .select('*')
+            .eq('student_id', studentId)
+            .limit(1);
+          
+          if (multipleError) {
+            console.error('获取多条毕业去向记录失败:', multipleError);
+            return null;
+          }
+          
+          return multipleData && multipleData.length > 0 ? multipleData[0] as GraduationDestination : null;
+        }
         console.error('获取学生毕业去向失败:', error);
         return null;
       }

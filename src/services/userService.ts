@@ -195,8 +195,11 @@ export class UserService {
         const result = functionData[0];
         const students = (result.students || []) as UserWithRole[];
         
+        // 为学生添加技术标签信息
+        const studentsWithTags = await this.addTechnicalTagsToStudents(students);
+        
         return {
-          students,
+          students: studentsWithTags,
           total: result.total_count || 0
         };
       }
@@ -217,8 +220,11 @@ export class UserService {
         // 需要将user_id转换为student_profiles.id
         const studentsWithProfileIds = await this.mapUsersToProfileIds(students);
         
+        // 为学生添加技术标签信息
+        const studentsWithTags = await this.addTechnicalTagsToStudents(studentsWithProfileIds);
+        
         return {
-          students: studentsWithProfileIds,
+          students: studentsWithTags,
           total: result.total_count || 0
         };
       }
@@ -340,14 +346,116 @@ export class UserService {
         };
       });
 
+      // 为学生添加技术标签信息
+      const studentsWithTags = await this.addTechnicalTagsToStudents(students);
+
       return {
-        students,
+        students: studentsWithTags,
         total: count || 0
       };
 
     } catch (error) {
       console.error('获取教师学生列表异常:', error);
       return { students: [], total: 0 };
+    }
+  }
+
+  // 辅助方法：为学生列表添加技术标签信息
+  private static async addTechnicalTagsToStudents(students: UserWithRole[]): Promise<(UserWithRole & { technical_tag?: any })[]> {
+    try {
+      if (!students || students.length === 0) {
+        return students;
+      }
+
+      // 获取所有学生的ID（可能是profile_id或user_id）
+      const studentIds = students.map(s => s.id || (s as any).user_id).filter(Boolean);
+      
+      if (studentIds.length === 0) {
+        return students;
+      }
+
+      // 创建student.id到profile_id的映射
+      // 先尝试查询student_profiles，建立user_id到profile_id的映射
+      const { data: profiles, error: profileError } = await supabase
+        .from('student_profiles')
+        .select('id, user_id')
+        .in('id', studentIds);
+
+      const studentIdToProfileIdMap: Record<string, string> = {};
+      
+      // 如果通过id查询到了profiles，说明student.id就是profile_id
+      if (!profileError && profiles && profiles.length > 0) {
+        profiles.forEach(profile => {
+          studentIdToProfileIdMap[profile.id] = profile.id;
+        });
+      } else {
+        // 否则尝试通过user_id查询
+        const { data: profilesByUserId } = await supabase
+          .from('student_profiles')
+          .select('id, user_id')
+          .in('user_id', studentIds);
+        
+        if (profilesByUserId) {
+          profilesByUserId.forEach(profile => {
+            if (profile.user_id) {
+              studentIdToProfileIdMap[profile.user_id] = profile.id;
+            }
+          });
+        }
+      }
+
+      // 获取所有profile_id
+      const profileIds = students.map(s => {
+        const studentId = s.id || (s as any).user_id;
+        return studentIdToProfileIdMap[studentId] || studentId;
+      }).filter(Boolean);
+
+      if (profileIds.length === 0) {
+        return students;
+      }
+
+      // 查询每个学生的第一个技术标签（用于列表显示）
+      const { data: tagsData, error: tagsError } = await supabase
+        .from('student_technical_tags')
+        .select('student_profile_id, tag_name, tag_category, proficiency_level')
+        .in('student_profile_id', profileIds)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false });
+
+      if (tagsError) {
+        console.warn('获取技术标签信息失败:', tagsError);
+        return students;
+      }
+
+      // 为每个学生只保留第一个标签（用于列表显示）
+      const profileIdToTagMap: Record<string, any> = {};
+      const seenProfiles = new Set<string>();
+      
+      if (tagsData) {
+        tagsData.forEach(tag => {
+          if (!seenProfiles.has(tag.student_profile_id)) {
+            profileIdToTagMap[tag.student_profile_id] = {
+              tag_name: tag.tag_name,
+              tag_category: tag.tag_category,
+              proficiency_level: tag.proficiency_level
+            };
+            seenProfiles.add(tag.student_profile_id);
+          }
+        });
+      }
+
+      // 为每个学生添加技术标签信息
+      return students.map(student => {
+        const studentId = student.id || (student as any).user_id;
+        const profileId = studentIdToProfileIdMap[studentId] || studentId;
+        return {
+          ...student,
+          technical_tag: profileIdToTagMap[profileId] || null
+        };
+      });
+    } catch (error) {
+      console.warn('添加技术标签信息时出错:', error);
+      return students;
     }
   }
 
@@ -634,21 +742,36 @@ export class UserService {
     data?: Array<{ id: string; user_id: string }>
   }> {
     try {
-      const { data, error } = await supabase
+      // 首先尝试按user_id查询（因为传入的可能是user_id）
+      const { data: dataByUserId, error: errorByUserId } = await supabase
+        .from('student_profiles')
+        .select('id, user_id')
+        .in('user_id', profileIds);
+      
+      // 如果按user_id找到了数据，返回结果
+      if (!errorByUserId && dataByUserId && dataByUserId.length > 0) {
+        return {
+          success: true,
+          data: dataByUserId
+        };
+      }
+      
+      // 如果按user_id没找到，再尝试按id查询（传入的是student_profile_id）
+      const { data: dataById, error: errorById } = await supabase
         .from('student_profiles')
         .select('id, user_id')
         .in('id', profileIds);
 
-      if (error) {
+      if (errorById) {
         return {
           success: false,
-          message: `查询档案映射失败: ${error.message}`
+          message: `查询档案映射失败: ${errorById.message}`
         };
       }
 
       return {
         success: true,
-        data: data || []
+        data: dataById || []
       };
     } catch (error) {
       return {
@@ -818,6 +941,126 @@ export class UserService {
         { className: '计算机科学与技术2班', studentCount: 38, employmentRate: 82, rewardRate: 30 },
         { className: '计算机科学与技术3班', studentCount: 46, employmentRate: 86, rewardRate: 31 }
       ];
+    }
+  }
+
+  // 根据技术标签搜索学生
+  static async getStudentsByTechnicalTag(teacherId: string, tagName: string, params?: {
+    page?: number
+    limit?: number
+    fuzzy?: boolean
+  }): Promise<{ students: UserWithRole[], total: number }> {
+    const {
+      page = 1,
+      limit = 20,
+      fuzzy = false
+    } = params || {}
+
+    try {
+      console.log('🔍 开始技术标签搜索:', { teacherId, tagName, page, limit });
+      
+      // 首先通过 teacher_students 表获取教师管理的学生 user_id 列表
+      const { data: teacherStudents, error: teacherError } = await supabase
+        .from('teacher_students')
+        .select('student_id')
+        .eq('teacher_id', teacherId);
+
+      if (teacherError) {
+        console.error('❌ 获取教师学生列表失败:', teacherError);
+        throw new Error(`获取教师学生列表失败: ${teacherError.message}`);
+      }
+
+      if (!teacherStudents || teacherStudents.length === 0) {
+        console.log('ℹ️ 该教师没有管理的学生');
+        return { students: [], total: 0 };
+      }
+
+      const studentUserIds = teacherStudents.map(ts => ts.student_id);
+      console.log(`✅ 教师管理 ${studentUserIds.length} 个学生:`, studentUserIds.slice(0, 3));
+
+      // 根据技术标签搜索，先找到有该标签的 student_profile_id
+      const offset = (page - 1) * limit;
+      
+      const { data: tagData, error: tagError, count } = await supabase
+        .from('student_technical_tags')
+        .select(`
+          student_profile_id,
+          tag_name,
+          tag_category,
+          proficiency_level,
+        student_profiles!inner(
+          user_id,
+          student_number,
+          full_name,
+          email,
+          phone,
+          class_name,
+          profile_status,
+          users!inner(
+            username,
+            created_at,
+            role:roles(*)
+          )
+        )
+        `, { count: 'exact' })
+        .ilike('tag_name', `%${tagName.trim().toLowerCase()}%`)
+        .eq('status', 'active')
+        .in('student_profiles.user_id', studentUserIds)
+        .range(offset, offset + limit - 1);
+
+      if (tagError) {
+        console.error('❌ 搜索技术标签失败:', tagError);
+        throw new Error(`搜索技术标签失败: ${tagError.message}`);
+      }
+
+      console.log(`✅ 找到 ${tagData?.length || 0} 条匹配的标签记录，总数: ${count}`);
+
+      // 转换数据格式
+      const students: UserWithRole[] = (tagData || []).map(item => {
+        const profile = item.student_profiles;
+        const user = profile.users;
+        return {
+          id: profile.user_id, // 使用 user_id 作为主要ID
+          profile_id: item.student_profile_id, // 保存 profile_id 用于其他操作
+          username: user.username || '',
+          email: profile.email || '',
+          full_name: profile.full_name || '',
+          user_number: profile.student_number || profile.user_number || '',
+          phone: profile.phone || '',
+          department: profile.department || '待分配',
+          grade: profile.grade || '待分配',
+          class_name: profile.class_name || '待分配',
+          status: profile.profile_status === 'active' || profile.status === 'active' ? '在读' : '其他',
+          role_id: '3',
+          role: user.role || {
+            id: '3',
+            role_name: 'student',
+            role_description: '学生',
+            permissions: {},
+            is_system_default: true,
+            created_at: '2021-01-01',
+            updated_at: '2021-01-01'
+          },
+          created_at: user.created_at || profile.created_at,
+          updated_at: profile.updated_at || user.created_at,
+          // 添加技术标签信息
+          technical_tag: {
+            tag_name: item.tag_name,
+            tag_category: item.tag_category,
+            proficiency_level: item.proficiency_level
+          }
+        } as UserWithRole & { technical_tag: any };
+      });
+
+      console.log(`✅ 转换后的学生数据: ${students.length} 条`);
+      
+      return {
+        students,
+        total: count || 0
+      };
+    } catch (error) {
+      console.error('❌ 根据技术标签搜索学生失败:', error);
+      return { students: [], total: 0 };
     }
   }
 }

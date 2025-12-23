@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>技术标签搜索测试 - 简化版</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+            align-items: center;
+        }
+        .input-group input {
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 10px 20px;
+            background: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+        }
+        .btn:hover {
+            background: #0056b3;
+        }
+        .btn:disabled {
+            background: #ccc;
+            cursor: not-allowed;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid #ddd;
+        }
+        th {
+            background: #f8f9fa;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        .tag {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+            display: inline-block;
+        }
+        .status {
+            padding: 4px 12px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .status.active {
+            background: #e8f5e8;
+            color: #2e7d2e;
+        }
+        .status.other {
+            background: #fff3e0;
+            color: #f57c00;
+        }
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .error {
+            background: #ffebee;
+            color: #c62828;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .success {
+            background: #e8f5e8;
+            color: #2e7d2e;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .info {
+            background: #e3f2fd;
+            color: #1976d2;
+            padding: 15px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 40px;
+            color: #999;
+        }
+    </style>
+</head>
+<body>
+    <h1>技术标签搜索功能测试</h1>
+    
+    <!-- 数据库连接状态 -->
+    <div class="container">
+        <h3>数据库连接状态</h3>
+        <div id="connectionStatus">检查中...</div>
+    </div>
+
+    <!-- 基础数据检查 -->
+    <div class="container">
+        <h3>基础数据检查</h3>
+        <div id="basicDataStatus">检查中...</div>
+        <button class="btn" onclick="checkBasicData()">重新检查基础数据</button>
+    </div>
+
+    <!-- 教师搜索测试 -->
+    <div class="container">
+        <h3>教师搜索测试</h3>
+        <div class="input-group">
+            <input type="text" id="teacherId" placeholder="教师ID" value="11111111-1111-1111-1111-111111111121" style="width: 300px;">
+            <input type="text" id="teacherName" placeholder="教师姓名" readonly style="width: 200px; background: #f5f5f5;">
+            <button class="btn" onclick="loadTeacherInfo()">加载教师信息</button>
+        </div>
+        <div id="teacherStatus"></div>
+    </div>
+
+    <!-- 技术标签搜索 -->
+    <div class="container">
+        <h3>技术标签搜索</h3>
+        <div class="input-group">
+            <input type="text" id="tagName" placeholder="技术标签名称" style="width: 200px;">
+            <button class="btn" onclick="searchByTechnicalTag()">搜索</button>
+            <button class="btn" onclick="loadAvailableTags()">加载可用标签</button>
+        </div>
+        <div id="availableTags" style="margin: 15px 0;"></div>
+        <div id="searchResults"></div>
+    </div>
+
+    <script>
+        // 配置Supabase客户端
+        const supabase = createClient(
+            'https://mddpbyibesqewcktlqle.supabase.co',
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1kZHBieWliZXNxZXdja3RscWxlIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc2MzM1NDM0OSwiZXhwIjoyMDc4OTMwMzQ5fQ.P2Y3IaRqJn6Tf7NjaHztGSd__3bTb_aBVioKoIK9Rq8'
+        );
+
+        // 页面加载时自动检查连接
+        window.onload = function() {
+            checkDatabaseConnection();
+        };
+
+        // 检查数据库连接
+        async function checkDatabaseConnection() {
+            const statusDiv = document.getElementById('connectionStatus');
+            
+            try {
+                // 测试连接
+                const { data, error } = await supabase
+                    .from('users')
+                    .select('count(*)')
+                    .limit(1);
+
+                if (error) {
+                    throw error;
+                }
+
+                statusDiv.innerHTML = '<div class="success">✅ 数据库连接正常</div>';
+                
+                // 自动检查基础数据
+                checkBasicData();
+                
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">❌ 数据库连接失败: ${error.message}</div>`;
+            }
+        }
+
+        // 检查基础数据
+        async function checkBasicData() {
+            const statusDiv = document.getElementById('basicDataStatus');
+            statusDiv.innerHTML = '<div class="loading">检查中...</div>';
+
+            try {
+                // 检查学生档案
+                const { count: studentCount, error: studentError } = await supabase
+                    .from('student_profiles')
+                    .select('*', { count: 'exact', head: true });
+
+                // 检查教师数据
+                const { count: teacherCount, error: teacherError } = await supabase
+                    .from('users')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('role_id', '2');
+
+                // 检查技术标签
+                const { count: tagCount, error: tagError } = await supabase
+                    .from('student_technical_tags')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('status', 'active');
+
+                // 检查师生关联
+                const { count: relationCount, error: relationError } = await supabase
+                    .from('teacher_students')
+                    .select('*', { count: 'exact', head: true });
+
+                let html = '<div class="info">📊 基础数据统计:</div>';
+                html += `<ul>`;
+                html += `<li>学生档案: ${studentCount || 0} 个</li>`;
+                html += `<li>教师账号: ${teacherCount || 0} 个</li>`;
+                html += `<li>技术标签: ${tagCount || 0} 个</li>`;
+                html += `<li>师生关联: ${relationCount || 0} 个</li>`;
+                html += `</ul>`;
+
+                if ((studentCount || 0) === 0) {
+                    html += '<div class="error">⚠️ 没有学生档案数据</div>';
+                }
+                if ((teacherCount || 0) === 0) {
+                    html += '<div class="error">⚠️ 没有教师账号数据</div>';
+                }
+                if ((tagCount || 0) === 0) {
+                    html += '<div class="error">⚠️ 没有技术标签数据</div>';
+                }
+                if ((relationCount || 0) === 0) {
+                    html += '<div class="error">⚠️ 没有师生关联数据</div>';
+                }
+
+                statusDiv.innerHTML = html;
+
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">❌ 检查基础数据失败: ${error.message}</div>`;
+            }
+        }
+
+        // 加载教师信息
+        async function loadTeacherInfo() {
+            const teacherId = document.getElementById('teacherId').value;
+            const teacherNameInput = document.getElementById('teacherName');
+            const statusDiv = document.getElementById('teacherStatus');
+
+            if (!teacherId) {
+                statusDiv.innerHTML = '<div class="error">请输入教师ID</div>';
+                return;
+            }
+
+            statusDiv.innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                // 获取教师信息
+                const { data: teacher, error: teacherError } = await supabase
+                    .from('users')
+                    .select('id, full_name, username')
+                    .eq('id', teacherId)
+                    .eq('role_id', '2')
+                    .single();
+
+                if (teacherError || !teacher) {
+                    throw new Error('教师不存在或不是教师角色');
+                }
+
+                teacherNameInput.value = teacher.full_name;
+
+                // 获取该教师管理的学生
+                const { data: students, error: studentsError } = await supabase
+                    .from('teacher_students')
+                    .select('student_id')
+                    .eq('teacher_id', teacherId);
+
+                if (studentsError) {
+                    throw studentsError;
+                }
+
+                const studentCount = students?.length || 0;
+                
+                let html = `<div class="success">✅ 教师信息加载成功</div>`;
+                html += `<ul>`;
+                html += `<li>姓名: ${teacher.full_name}</li>`;
+                html += `<li>用户名: ${teacher.username}</li>`;
+                html += `<li>管理学生: ${studentCount} 个</li>`;
+                html += `</ul>`;
+
+                if (studentCount === 0) {
+                    html += '<div class="error">⚠️ 该教师没有管理任何学生</div>';
+                }
+
+                statusDiv.innerHTML = html;
+
+                // 自动加载可用标签
+                loadAvailableTags();
+
+            } catch (error) {
+                statusDiv.innerHTML = `<div class="error">❌ 加载教师信息失败: ${error.message}</div>`;
+            }
+        }
+
+        // 加载可用标签
+        async function loadAvailableTags() {
+            const tagsDiv = document.getElementById('availableTags');
+            const teacherId = document.getElementById('teacherId').value;
+
+            if (!teacherId) {
+                tagsDiv.innerHTML = '<div class="error">请先选择教师</div>';
+                return;
+            }
+
+            tagsDiv.innerHTML = '<div class="loading">加载中...</div>';
+
+            try {
+                // 获取该教师管理的学生技术标签
+                const { data: tags, error: tagsError } = await supabase
+                    .from('student_technical_tags')
+                    .select('tag_name')
+                    .eq('status', 'active');
+
+                if (tagsError) {
+                    throw tagsError;
+                }
+
+                if (!tags || tags.length === 0) {
+                    tagsDiv.innerHTML = '<div class="info">ℹ️ 没有找到技术标签数据</div>';
+                    return;
+                }
+
+                // 去重并排序
+                const uniqueTags = [...new Set(tags.map(t => t.tag_name))].sort();
+                
+                let html = '<div style="margin-bottom: 10px;"><strong>可用的技术标签（点击使用）:</strong></div>';
+                html += '<div style="display: flex; flex-wrap: wrap; gap: 8px;">';
+                
+                uniqueTags.forEach(tag => {
+                    html += `<span class="tag" style="cursor: pointer;" onclick="document.getElementById('tagName').value='${tag}'">${tag}</span>`;
+                });
+                
+                html += '</div>';
+                html += `<div style="margin-top: 10px; font-size: 12px; color: #666;">共 ${uniqueTags.length} 个不同标签</div>`;
+                
+                tagsDiv.innerHTML = html;
+
+            } catch (error) {
+                tagsDiv.innerHTML = `<div class="error">❌ 加载标签失败: ${error.message}</div>`;
+            }
+        }
+
+        // 根据技术标签搜索
+        async function searchByTechnicalTag() {
+            const teacherId = document.getElementById('teacherId').value;
+            const tagName = document.getElementById('tagName').value.trim();
+            const resultsDiv = document.getElementById('searchResults');
+
+            if (!teacherId) {
+                resultsDiv.innerHTML = '<div class="error">请先选择教师</div>';
+                return;
+            }
+
+            if (!tagName) {
+                resultsDiv.innerHTML = '<div class="error">请输入技术标签名称</div>';
+                return;
+            }
+
+            resultsDiv.innerHTML = '<div class="loading">搜索中...</div>';
+
+            try {
+                // 1. 获取教师管理的学生
+                const { data: teacherStudents, error: teacherError } = await supabase
+                    .from('teacher_students')
+                    .select('student_id')
+                    .eq('teacher_id', teacherId);
+
+                if (teacherError) {
+                    throw teacherError;
+                }
+
+                if (!teacherStudents || teacherStudents.length === 0) {
+                    resultsDiv.innerHTML = '<div class="empty-state">该教师没有管理任何学生</div>';
+                    return;
+                }
+
+                const studentUserIds = teacherStudents.map(ts => ts.student_id);
+
+                // 2. 搜索具有指定技术标签的学生
+                const { data: tagData, error: tagError } = await supabase
+                    .from('student_technical_tags')
+                    .select(`
+                        student_profile_id,
+                        tag_name,
+                        tag_category,
+                        proficiency_level,
+                        student_profiles!inner(
+                            user_id,
+                            user_number,
+                            full_name,
+                            email,
+                            phone,
+                            class_name,
+                            status
+                        )
+                    `)
+                    .eq('tag_name', tagName)
+                    .eq('status', 'active')
+                    .in('student_profiles.user_id', studentUserIds);
+
+                if (tagError) {
+                    throw tagError;
+                }
+
+                if (!tagData || tagData.length === 0) {
+                    resultsDiv.innerHTML = `<div class="empty-state">没有找到具有 "${tagName}" 技术标签的学生<br><small>该教师管理 ${studentUserIds.length} 个学生，但都没有这个标签</small></div>`;
+                    return;
+                }
+
+                // 3. 显示结果
+                let html = `<div class="success">✅ 找到 ${tagData.length} 个具有 "${tagName}" 技术标签的学生:</div>`;
+                html += '<table>';
+                html += '<thead>';
+                html += '<tr>';
+                html += '<th>学号</th>';
+                html += '<th>姓名</th>';
+                html += '<th>班级</th>';
+                html += '<th>技术标签</th>';
+                html += '<th>分类</th>';
+                html += '<th>掌握程度</th>';
+                html += '<th>状态</th>';
+                html += '</tr>';
+                html += '</thead>';
+                html += '<tbody>';
+
+                tagData.forEach(item => {
+                    const profile = item.student_profiles;
+                    const proficiencyText = {
+                        'beginner': '初级',
+                        'intermediate': '中级',
+                        'advanced': '高级',
+                        'expert': '专家'
+                    }[item.proficiency_level] || item.proficiency_level;
+
+                    const categoryText = {
+                        'programming_language': '编程语言',
+                        'framework': '框架',
+                        'tool': '工具',
+                        'database': '数据库'
+                    }[item.tag_category] || item.tag_category;
+
+                    const statusClass = profile.status === 'active' ? 'active' : 'other';
+                    const statusText = profile.status === 'active' ? '在读' : '其他';
+
+                    html += '<tr>';
+                    html += `<td>${profile.user_number}</td>`;
+                    html += `<td><strong>${profile.full_name}</strong></td>`;
+                    html += `<td>${profile.class_name || '未分班'}</td>`;
+                    html += `<td><span class="tag">${item.tag_name}</span></td>`;
+                    html += `<td>${categoryText}</td>`;
+                    html += `<td>${proficiencyText}</td>`;
+                    html += `<td><span class="status ${statusClass}">${statusText}</span></td>`;
+                    html += '</tr>';
+                });
+
+                html += '</tbody></table>';
+                
+                resultsDiv.innerHTML = html;
+
+            } catch (error) {
+                resultsDiv.innerHTML = `<div class="error">❌ 搜索失败: ${error.message}</div>`;
+                console.error('搜索错误:', error);
+            }
+        }
+    </script>
+</body>
+</html>

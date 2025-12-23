@@ -832,17 +832,24 @@ router.post('/add-custom-course', async (req, res) => {
 router.get('/get-custom-courses/:student_profile_id', async (req, res) => {
   try {
     const { student_profile_id } = req.params;
+    console.log('📚 开始获取自定义课程，学生档案ID:', student_profile_id);
 
     // 验证学生档案
+    console.log('🔍 验证学生档案...');
     const validation = await validateStudentProfile(student_profile_id);
     if (!validation.valid) {
+      console.error('❌ 学生档案验证失败:', validation.error);
       return res.status(400).json({
         success: false,
         message: validation.error
       });
     }
+    console.log('✅ 学生档案验证成功');
+
+    // 直接查询，如果表不存在会在查询时捕获错误
 
     // 获取自定义课程列表
+    console.log('🔍 查询自定义课程...');
     const { data: courses, error } = await supabase
       .from('student_custom_courses')
       .select('*')
@@ -850,15 +857,33 @@ router.get('/get-custom-courses/:student_profile_id', async (req, res) => {
       .order('created_at', { ascending: false });
 
     if (error) {
-      console.error('获取自定义课程失败:', error);
+      console.error('❌ 获取自定义课程失败:', error);
+      console.error('错误详情:', {
+        code: error.code,
+        message: error.message,
+        details: error.details,
+        hint: error.hint
+      });
+      
+      // 如果表不存在，返回空数组而不是错误
+      if (error.code === '42P01' || error.message.includes('does not exist') || error.message.includes('relation') && error.message.includes('does not exist')) {
+        console.log('⚠️ student_custom_courses 表不存在，返回空数组');
+        return res.json({
+          success: true,
+          message: '获取自定义课程成功（表不存在，返回空数组）',
+          data: []
+        });
+      }
+      
       return res.status(500).json({
         success: false,
         message: '获取自定义课程失败',
-        error: error.message
+        error: error.message,
+        errorCode: error.code
       });
     }
 
-    console.log('✅ 获取自定义课程成功:', courses);
+    console.log('✅ 获取自定义课程成功，数量:', courses?.length || 0);
 
     return res.json({
       success: true,
@@ -867,11 +892,13 @@ router.get('/get-custom-courses/:student_profile_id', async (req, res) => {
     });
 
   } catch (error) {
-    console.error('获取自定义课程失败:', error);
+    console.error('❌ 获取自定义课程异常:', error);
+    console.error('异常堆栈:', error.stack);
     return res.status(500).json({
       success: false,
       message: '获取自定义课程失败',
-      error: error.message
+      error: error.message,
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });

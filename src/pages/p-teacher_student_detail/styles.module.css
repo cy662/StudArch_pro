@@ -45,7 +45,7 @@
 }
 
 .tabContentHidden {
-  display: none;
+  display: none !important;
 }
 
 .modalBackdrop {

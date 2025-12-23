@@ -822,6 +822,189 @@ export class StudentProfileService {
     }
   }
 
+  // 获取学生技术标签信息
+  static async getStudentTechnicalTags(studentId: string): Promise<{
+    tag_names: string | null
+    total_tags: number
+    advanced_tags: number
+  }> {
+    try {
+      // 检查表是否存在
+      try {
+        const { data: testData, error: testError } = await supabase
+          .from('student_learning_summary')
+          .select('count', { count: 'exact', head: true });
+        
+        if (testError && (testError.code === 'PGRST116' || testError.status === 406)) {
+          console.warn('student_learning_summary表不存在，返回默认值');
+          return {
+            tag_names: null,
+            total_tags: 0,
+            advanced_tags: 0
+          };
+        }
+      } catch (tableError) {
+        console.warn('检查student_learning_summary表失败:', tableError);
+        return {
+          tag_names: null,
+          total_tags: 0,
+          advanced_tags: 0
+        };
+      }
+
+      const { data, error } = await supabase
+        .from('student_learning_summary')
+        .select('tag_names, total_tags, advanced_tags')
+        .eq('student_profile_id', studentId)
+        .maybeSingle()
+      
+      if (error) {
+        // 处理406错误和其他表结构问题
+        if (error.code === 'PGRST116' || error.code === 'PGRST204' || error.status === 406) {
+          console.warn('技术标签数据不存在或表结构问题:', error.message);
+          return {
+            tag_names: null,
+            total_tags: 0,
+            advanced_tags: 0
+          };
+        }
+        // 处理多个结果的情况
+        if (error.message && error.message.includes('coerce the result to a single JSON object')) {
+          console.warn('找到多条技术标签记录，获取最新一条');
+          const { data: multipleData, error: multipleError } = await supabase
+            .from('student_learning_summary')
+            .select('tag_names, total_tags, advanced_tags')
+            .eq('student_profile_id', studentId)
+            .order('created_at', { ascending: false })
+            .limit(1);
+          
+          if (multipleError) {
+            console.warn('获取多条技术标签记录失败:', multipleError);
+            return {
+              tag_names: null,
+              total_tags: 0,
+              advanced_tags: 0
+            };
+          }
+          
+          if (multipleData && multipleData.length > 0) {
+            return {
+              tag_names: multipleData[0]?.tag_names || null,
+              total_tags: multipleData[0]?.total_tags || 0,
+              advanced_tags: multipleData[0]?.advanced_tags || 0
+            };
+          }
+          
+          return {
+            tag_names: null,
+            total_tags: 0,
+            advanced_tags: 0
+          };
+        }
+        console.warn('获取学生技术标签失败:', error)
+        return {
+          tag_names: null,
+          total_tags: 0,
+          advanced_tags: 0
+        }
+      }
+      
+      return {
+        tag_names: data?.tag_names || null,
+        total_tags: data?.total_tags || 0,
+        advanced_tags: data?.advanced_tags || 0
+      }
+    } catch (error) {
+      console.error('获取学生技术标签异常:', error)
+      return {
+        tag_names: null,
+        total_tags: 0,
+        advanced_tags: 0
+      }
+    }
+  }
+
+  // 获取学生详细技术标签信息（包含课程来源）
+  static async getStudentTechnicalTagsDetail(studentId: string): Promise<{
+    tags: Array<{
+      tag_name: string
+      tag_category: string
+      proficiency_level: string
+      course_name?: string
+      created_at: string
+    }>
+    summary: {
+      tag_names: string | null
+      total_tags: number
+      advanced_tags: number
+    }
+  }> {
+    try {
+      // console.log('🔍 开始获取详细技术标签，studentId:', studentId);
+      
+      // 先获取基本的技术标签信息，不依赖关联表
+      const { data: tagsData, error: tagsError } = await supabase
+        .from('student_technical_tags')
+        .select(`
+          tag_name,
+          tag_category,
+          proficiency_level,
+          description,
+          created_at
+        `)
+        .eq('student_profile_id', studentId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+      
+      // console.log('🔍 标签查询结果:', { tagsData, tagsError });
+      
+      // 获取汇总信息
+      const summary = await this.getStudentTechnicalTags(studentId)
+      console.log('🔍 汇总信息:', summary);
+      
+      if (tagsError) {
+        console.warn('获取学生详细技术标签失败:', tagsError)
+        return {
+          tags: [],
+          summary
+        }
+      }
+      
+      console.log('🔍 标签数据:', tagsData);
+      
+      const result = {
+        tags: (tagsData && tagsData.length > 0) ? tagsData.map(tag => {
+          // 从description字段提取课程名称
+          let courseName = tag.description;
+          if (courseName && courseName.startsWith('课程:')) {
+            courseName = courseName.replace('课程:', '').trim();
+          }
+          
+          return {
+            tag_name: tag.tag_name,
+            tag_category: tag.tag_category,
+            proficiency_level: tag.proficiency_level,
+            course_name: courseName,
+            created_at: tag.created_at
+          };
+        }) : [],
+        summary
+      };
+      
+      console.log('🔍 最终返回结果:', result);
+      
+      // console.log('🔍 最终返回结果:', result);
+      return result;
+    } catch (error) {
+      console.error('获取学生详细技术标签异常:', error)
+      const summary = await this.getStudentTechnicalTags(studentId)
+      return {
+        tags: [],
+        summary
+      }
+    }
+  }
+
   // 更新现有个人资料的辅助方法
   private static async updateExistingProfile(
     userId: string,

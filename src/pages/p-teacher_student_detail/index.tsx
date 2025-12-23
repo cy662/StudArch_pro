@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import styles from './styles.module.css';
 import { RewardPunishmentService } from '../../services/rewardPunishmentService';
@@ -8,6 +8,7 @@ import { GraduationDestinationService } from '../../services/graduationDestinati
 import { RewardPunishment, RewardPunishmentCreate, RewardPunishmentUpdate } from '../../types/rewardPunishment';
 import { GraduationDestination } from '../../types/graduationDestination';
 import RewardPunishmentForm from '../../components/RewardPunishmentForm';
+import { supabase } from '../../lib/supabase';
 
 interface StudentData {
   id: string;
@@ -86,6 +87,26 @@ const TeacherStudentDetail: React.FC = () => {
   const [graduationData, setGraduationData] = useState<GraduationDestination | null>(null);
   const [loadingGraduation, setLoadingGraduation] = useState<boolean>(false);
   const [errorGraduation, setErrorGraduation] = useState<string | null>(null);
+  
+  // 技术标签相关状态
+  const [technicalTags, setTechnicalTags] = useState<{
+    tags: Array<{
+      tag_name: string
+      tag_category: string
+      proficiency_level: string
+      course_name?: string
+      created_at: string
+    }>
+    summary: {
+      tag_names: string | null
+      total_tags: number
+      advanced_tags: number
+    }
+  } | null>(null);
+  const [loadingTags, setLoadingTags] = useState<boolean>(false);
+  const [studentProfileId, setStudentProfileId] = useState<string>('');
+  const [userId, setUserId] = useState<string>(''); // 保存userId用于奖惩信息查询
+  const isFirstRender = useRef<boolean>(true);
 
   // 加载学生数据
   useEffect(() => {
@@ -99,20 +120,41 @@ const TeacherStudentDetail: React.FC = () => {
       try {
         setLoading(true);
         
-        // 首先，获取用户ID与档案ID的映射关系
-        const profileMapping = await UserService.getProfileUserMapping([studentId]);
+        // 首先尝试将传入的ID作为user_id获取档案信息
+        let userId = studentId;
+        let studentProfileId = studentId; // 默认值
         
-        // 获取用户基本信息和学生档案信息
-        let userId = '';
-        if (profileMapping.success && profileMapping.data && profileMapping.data.length > 0) {
-          userId = profileMapping.data[0].user_id;
+        console.log('🔗 开始获取学生档案信息，原始studentId:', studentId);
+        
+        // 尝试通过user_id获取档案信息
+        const profileInfo = await StudentProfileService.getStudentProfile(userId);
+        
+        // 如果获取到档案信息，使用档案的id作为studentProfileId
+        if (profileInfo && profileInfo.id) {
+          studentProfileId = profileInfo.id;
+          console.log('✅ 通过user_id获取到档案ID:', studentProfileId);
         } else {
-          // 如果映射失败，尝试直接使用传入的ID作为用户ID
-          userId = studentId;
+          // 如果通过user_id没找到，尝试将传入的ID作为student_profile_id直接使用
+          // 先尝试查询是否存在该档案ID
+          const { data: profileCheck, error: profileError } = await supabase
+            .from('student_profiles')
+            .select('id, user_id')
+            .eq('id', studentId)
+            .single();
+          
+          if (!profileError && profileCheck) {
+            studentProfileId = profileCheck.id;
+            userId = profileCheck.user_id;
+            console.log('✅ 传入的是档案ID，找到对应的user_id:', userId);
+          } else {
+            console.warn('⚠️ 无法确定ID类型，使用原始ID作为studentProfileId');
+          }
         }
         
-        // 获取学生个人信息
-        const profileInfo = await StudentProfileService.getStudentProfile(userId);
+        // 设置studentProfileId和userId，用于后续查询
+        setStudentProfileId(studentProfileId);
+        setUserId(userId);
+        console.log('🔗 ID映射完成，userId:', userId, 'studentProfileId:', studentProfileId);
         
         // 获取学生完整信息
         const completeInfo = await StudentProfileService.getStudentCompleteInfo(userId);
@@ -144,9 +186,12 @@ const TeacherStudentDetail: React.FC = () => {
         };
         
         setStudentData(newStudentData);
+        
+        // studentProfileId已在函数开始时设置，无需重复设置
       } catch (err) {
         console.error('加载学生数据失败:', err);
         setError('加载学生信息失败，请稍后重试');
+        // studentProfileId已在函数开始时设置，无需重复设置
         // 加载失败时使用默认数据
         setStudentData({
           id: studentId || 'unknown',
@@ -172,6 +217,7 @@ const TeacherStudentDetail: React.FC = () => {
         });
       } finally {
         setLoading(false);
+        isFirstRender.current = false;
       }
     };
     
@@ -210,13 +256,13 @@ const TeacherStudentDetail: React.FC = () => {
   // 获取毕业去向数据
   useEffect(() => {
     const fetchGraduationData = async () => {
-      if (!studentId) return;
+      if (!studentProfileId) return;
       
       setLoadingGraduation(true);
       setErrorGraduation(null);
       
       try {
-        const data = await GraduationDestinationService.getGraduationDestinationByStudentId(studentId);
+        const data = await GraduationDestinationService.getGraduationDestinationByStudentId(studentProfileId);
         setGraduationData(data);
       } catch (err) {
         setErrorGraduation('获取毕业去向信息失败');
@@ -227,17 +273,65 @@ const TeacherStudentDetail: React.FC = () => {
     };
     
     fetchGraduationData();
-  }, [studentId]);
+  }, [studentProfileId]);
+
+  // 获取技术标签数据
+  useEffect(() => {
+    const fetchTechnicalTags = async () => {
+      console.log('🏷️ 技术标签useEffect触发，studentProfileId:', studentProfileId, 'loading:', loading, 'isFirstRender:', isFirstRender.current);
+      if (!studentProfileId || loading || isFirstRender.current) {
+        console.log('⚠️ studentProfileId为空、仍在加载中或首次渲染，跳过技术标签获取');
+        if (isFirstRender.current) {
+          isFirstRender.current = false;
+        }
+        return;
+      }
+      
+      console.log('🏷️ 开始获取技术标签数据，学生档案ID:', studentProfileId);
+      setLoadingTags(true);
+      
+      try {
+        const tags = await StudentProfileService.getStudentTechnicalTagsDetail(studentProfileId);
+        console.log('🏷️ 获取到的技术标签数据:', tags);
+        console.log('🏷️ 标签数量:', tags.tags?.length || 0, '汇总标签数:', tags.summary?.total_tags || 0);
+        
+        // 如果tags数组为空但summary有数据，尝试从summary中提取标签
+        if ((!tags.tags || tags.tags.length === 0) && tags.summary && tags.summary.tag_names) {
+          console.log('🏷️ tags数组为空，尝试从summary中提取标签:', tags.summary.tag_names);
+        }
+        
+        console.log('🏷️ 设置技术标签数据到状态');
+        setTechnicalTags(tags);
+        console.log('🏷️ 技术标签状态已设置');
+      } catch (err) {
+        console.error('❌ Error fetching technical tags:', err);
+        setTechnicalTags({
+          tags: [],
+          summary: {
+            tag_names: null,
+            total_tags: 0,
+            advanced_tags: 0
+          }
+        });
+      } finally {
+        console.log('🏷️ 设置loadingTags为false');
+        setLoadingTags(false);
+        isFirstRender.current = false;
+      }
+    };
+    
+    fetchTechnicalTags();
+  }, [studentProfileId, loading]);
   
   // 刷新毕业去向数据（用于编辑后更新）
   const refreshGraduationData = async () => {
-    if (!studentId) return;
+    if (!studentProfileId) return;
     
     setLoadingGraduation(true);
     setErrorGraduation(null);
     
     try {
-      const data = await GraduationDestinationService.getGraduationDestinationByStudentId(studentId);
+      const data = await GraduationDestinationService.getGraduationDestinationByStudentId(studentProfileId);
       setGraduationData(data);
     } catch (err) {
       setErrorGraduation('获取毕业去向信息失败');
@@ -248,18 +342,39 @@ const TeacherStudentDetail: React.FC = () => {
   };
   
   // 加载奖惩信息
-  const loadRewardPunishments = async () => {
+  const loadRewardPunishments = async (currentUserId?: string, currentProfileId?: string) => {
     try {
-      if (!studentId) {
+      // 使用传入的参数或当前状态值
+      const currentUId = currentUserId || userId;
+      const currentPId = currentProfileId || studentProfileId;
+      const queryId = currentUId || currentPId;
+      
+      console.log('🏆 奖惩信息加载，userId:', currentUId, 'studentProfileId:', currentPId, '使用ID:', queryId);
+      
+      if (!queryId) {
+        console.log('⚠️ 查询ID为空，清空奖惩信息');
         setRewardPunishments([]);
         return;
       }
       
       setRewardPunishmentLoading(true);
-      const result = await RewardPunishmentService.getStudentRewardPunishments(
-        studentId, 
+      
+      // 先尝试使用userId查询
+      let result = await RewardPunishmentService.getStudentRewardPunishments(
+        currentUId || queryId, 
         rewardFilters
       );
+      
+      // 如果userId查询结果为空，尝试使用studentProfileId
+      if (result.items.length === 0 && currentUId && currentPId && currentUId !== currentPId) {
+        console.log('🔄 userId查询结果为空，尝试使用studentProfileId查询');
+        result = await RewardPunishmentService.getStudentRewardPunishments(
+          currentPId, 
+          rewardFilters
+        );
+      }
+      
+      console.log('🏆 奖惩信息查询结果:', result.items.length, '条记录');
       setRewardPunishments(result.items);
     } catch (error) {
       console.error('加载奖惩信息失败:', error);
@@ -273,14 +388,30 @@ const TeacherStudentDetail: React.FC = () => {
   useEffect(() => {
     const originalTitle = document.title;
     document.title = '学生档案详情 - 学档通';
-    loadRewardPunishments();
+    console.log('🔄 页面初始化useEffect触发，studentProfileId:', studentProfileId, 'userId:', userId, 'loading:', loading);
+    if ((studentProfileId || userId) && !loading) {
+      console.log('✅ 条件满足，开始加载奖惩信息');
+      loadRewardPunishments(userId, studentProfileId);
+    } else {
+      console.log('❌ 条件不满足，跳过奖惩信息加载', { studentProfileId, userId, loading });
+    }
     return () => { document.title = originalTitle; };
-  }, [studentId]);
+  }, [studentProfileId, userId, loading]);
+  
+  // 当userId或studentProfileId更新时，重新加载奖惩信息
+  useEffect(() => {
+    if ((userId || studentProfileId) && !loading) {
+      console.log('🔄 userId或studentProfileId更新，重新加载奖惩信息', { userId, studentProfileId });
+      loadRewardPunishments(userId, studentProfileId);
+    }
+  }, [userId, studentProfileId]);
 
   // 当奖惩筛选条件改变时重新加载数据
   useEffect(() => {
-    loadRewardPunishments();
-  }, [rewardFilters]);
+    if (userId || studentProfileId) {
+      loadRewardPunishments(userId, studentProfileId);
+    }
+  }, [rewardFilters, userId, studentProfileId]);
 
   // 标签页切换
   const handleTabChange = (tabId: string) => {
@@ -337,8 +468,11 @@ const TeacherStudentDetail: React.FC = () => {
         return;
       }
 
+      // 奖惩表可能使用user_id，优先使用userId，如果没有则使用studentProfileId
+      const rewardStudentId = userId || studentProfileId || studentId;
+      
       const rewardData: RewardPunishmentCreate = {
-        student_id: studentId,
+        student_id: rewardStudentId,
         type: formData.type || 'reward',
         name: formData.name || '',
         level: 'school', // 设置默认值，因为数据库字段是必需的
@@ -369,7 +503,7 @@ const TeacherStudentDetail: React.FC = () => {
 
       hideModal(setShowAddRewardModal);
       setEditingRewardPunishment(null);
-      loadRewardPunishments(); // 重新加载数据
+      loadRewardPunishments(userId, studentProfileId); // 重新加载数据
     } catch (error) {
       console.error('❌ 保存奖惩信息失败:', error);
       console.error('❌ 错误详情:', error instanceof Error ? error.message : '未知错误');
@@ -396,7 +530,7 @@ const TeacherStudentDetail: React.FC = () => {
       alert('奖惩信息已删除');
       hideModal(setShowDeleteRewardModal);
       setDeleteRewardId('');
-      loadRewardPunishments(); // 重新加载数据
+      loadRewardPunishments(userId, studentProfileId); // 重新加载数据
     } catch (error) {
       console.error('删除奖惩信息失败:', error);
       alert('删除失败，请重试');
@@ -662,7 +796,127 @@ const TeacherStudentDetail: React.FC = () => {
           </div>
         </div>
 
+        {/* 技术标签显示区域 */}
+        {technicalTags && technicalTags.tags && technicalTags.tags.length > 0 && (
+          <div className="bg-white rounded-xl shadow-card mb-8 p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-text-primary">
+                <i className="fas fa-tags mr-2 text-blue-500"></i>
+                学生技术标签
+              </h3>
+              <span className="text-sm text-text-secondary">
+                共 {technicalTags.tags.length} 个标签
+              </span>
+            </div>
+            
+            {(() => {
+              // 按课程分组标签
+              const tagsByCourse: Record<string, Array<any>> = {};
+              technicalTags.tags.forEach(tag => {
+                const courseName = tag.course_name || '未分类课程';
+                if (!tagsByCourse[courseName]) {
+                  tagsByCourse[courseName] = [];
+                }
+                tagsByCourse[courseName].push(tag);
+              });
+
+              // 根据标签名称生成稳定的彩色渐变
+              const getTagColor = (tagName?: string, tagCategory?: string) => {
+                // 定义彩色渐变数组
+                const colorGradients = [
+                  { from: '#10b981', to: '#059669' }, // 绿色
+                  { from: '#f97316', to: '#ef4444' }, // 橙红色
+                  { from: '#06b6d4', to: '#3b82f6' }, // 蓝青色
+                  { from: '#a855f7', to: '#ec4899' }, // 紫粉色
+                  { from: '#8b5cf6', to: '#6366f1' }, // 紫色
+                  { from: '#ec4899', to: '#f43f5e' }, // 粉红色
+                  { from: '#14b8a6', to: '#0d9488' }, // 青绿色
+                  { from: '#f59e0b', to: '#d97706' }, // 橙色
+                  { from: '#3b82f6', to: '#2563eb' }, // 蓝色
+                  { from: '#6366f1', to: '#4f46e5' }, //  indigo
+                ];
+
+                // 如果有标签名称，根据名称hash选择颜色
+                if (tagName) {
+                  let hash = 0;
+                  for (let i = 0; i < tagName.length; i++) {
+                    hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+                  }
+                  const index = Math.abs(hash) % colorGradients.length;
+                  return colorGradients[index];
+                }
+
+                // 如果没有标签名称，根据类别选择
+                if (tagCategory) {
+                  const lowerCategory = tagCategory.toLowerCase();
+                  if (lowerCategory === 'programming_language' || lowerCategory.includes('编程语言') || lowerCategory.includes('language')) {
+                    return { from: '#10b981', to: '#059669' };
+                  }
+                  if (lowerCategory === 'database' || lowerCategory.includes('数据库')) {
+                    return { from: '#f97316', to: '#ef4444' };
+                  }
+                  if (lowerCategory === 'framework' || lowerCategory.includes('前端框架') || lowerCategory.includes('framework')) {
+                    return { from: '#06b6d4', to: '#3b82f6' };
+                  }
+                  if (lowerCategory === 'tool' || lowerCategory.includes('工具') || lowerCategory.includes('后端技术')) {
+                    return { from: '#a855f7', to: '#ec4899' };
+                  }
+                }
+
+                // 默认返回第一个彩色渐变
+                return colorGradients[0];
+              };
+
+              const courseEntries = Object.entries(tagsByCourse);
+
+              return (
+                <div className="space-y-4">
+                  {courseEntries.map(([courseName, tags]) => (
+                    <div 
+                      key={courseName} 
+                      className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+                    >
+                      <div className="flex items-center mb-3">
+                        <i className="fas fa-book text-blue-500 mr-2"></i>
+                        <span className="font-semibold text-text-primary text-base">{courseName}</span>
+                        <span className="ml-2 text-sm text-text-secondary">：</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {tags.map((tag: any, index: number) => {
+                          const tagName = tag.tag_name || '未知标签';
+                          const tagColor = getTagColor(tagName, tag.tag_category);
+                          const category = tag.tag_category || '未知类别';
+                          const level = tag.proficiency_level || '未知';
+
+                          return (
+                            <span
+                              key={`${courseName}-${index}-${tagName}`}
+                              className="px-3 py-1.5 text-white text-sm font-medium rounded-full inline-block mb-1 shadow-sm"
+                              style={{
+                                background: `linear-gradient(to right, ${tagColor.from}, ${tagColor.to})`,
+                                minWidth: '60px',
+                                textAlign: 'center',
+                                display: 'inline-block',
+                                color: '#ffffff',
+                                lineHeight: '1.5'
+                              }}
+                              title={`${category} - ${level}`}
+                            >
+                              {tagName}
+                            </span>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
+        )}
+
         {/* 标签页导航 */}
+
         <div className="bg-white rounded-xl shadow-card mb-8">
           <div className="flex border-b border-border-light" role="tablist">
             <button 
@@ -686,6 +940,13 @@ const TeacherStudentDetail: React.FC = () => {
               role="tab"
             >
               毕业去向
+            </button>
+            <button 
+              onClick={() => handleTabChange('technical-tags')}
+              className={`${activeTab === 'technical-tags' ? styles.tabActive : styles.tabInactive} px-6 py-4 text-sm font-medium rounded-t-lg focus:outline-none transition-colors`}
+              role="tab"
+            >
+              技术标签
             </button>
           </div>
 
@@ -1078,8 +1339,376 @@ const TeacherStudentDetail: React.FC = () => {
                 <p className="text-text-secondary mb-4">该学生暂未填写毕业去向信息</p>
               </div>
             )}
+
+          {/* 技术标签内容 */}
+          <div 
+            className={`${styles.tabContent} ${activeTab !== 'technical-tags' ? styles.tabContentHidden : ''} p-6`}
+            data-tab="technical-tags"
+            data-active={activeTab === 'technical-tags' ? 'true' : 'false'}
+          >
+            <div className="bg-white border border-border-light rounded-lg p-6">
+              <h4 className="font-semibold text-text-primary mb-6">
+                <i className="fas fa-tags mr-2 text-blue-500"></i>
+                学生技术标签
+              </h4>
+              {loadingTags ? (
+                <div className="text-center py-12">
+                  <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-500 mx-auto mb-4"></div>
+                  <p className="text-text-secondary">加载技术标签信息中...</p>
+                </div>
+              ) : technicalTags && ((technicalTags.tags && technicalTags.tags.length > 0) || (technicalTags.summary && technicalTags.summary.total_tags > 0)) ? (
+                <div className="space-y-6" data-testid="technical-tags-content">
+                  {/* 标签统计 */}
+                  {technicalTags.summary && (
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-center">
+                        <div className="text-3xl font-bold text-blue-600 mb-2">{technicalTags.summary.total_tags || (technicalTags.tags?.length || 0)}</div>
+                        <div className="text-sm text-blue-800">总技术标签数</div>
+                      </div>
+                      <div className="bg-purple-50 border border-purple-200 rounded-lg p-4 text-center">
+                        <div className="text-3xl font-bold text-purple-600 mb-2">{technicalTags.summary.advanced_tags || 0}</div>
+                        <div className="text-sm text-purple-800">高级标签数</div>
+                      </div>
+                      <div className="bg-green-50 border border-green-200 rounded-lg p-4 text-center">
+                        <div className="text-3xl font-bold text-green-600 mb-2">{(technicalTags.summary.total_tags || (technicalTags.tags?.length || 0)) - (technicalTags.summary.advanced_tags || 0)}</div>
+                        <div className="text-sm text-green-800">基础标签数</div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 技术汇总 - 去重后的所有技术标签 */}
+                  {technicalTags.tags && technicalTags.tags.length > 0 && (() => {
+                    // 根据标签名称生成稳定的彩色渐变
+                    const getTagColor = (tagName?: string, tagCategory?: string) => {
+                      // 定义彩色渐变数组
+                      const colorGradients = [
+                        { from: '#10b981', to: '#059669' }, // 绿色
+                        { from: '#f97316', to: '#ef4444' }, // 橙红色
+                        { from: '#06b6d4', to: '#3b82f6' }, // 蓝青色
+                        { from: '#a855f7', to: '#ec4899' }, // 紫粉色
+                        { from: '#8b5cf6', to: '#6366f1' }, // 紫色
+                        { from: '#ec4899', to: '#f43f5e' }, // 粉红色
+                        { from: '#14b8a6', to: '#0d9488' }, // 青绿色
+                        { from: '#f59e0b', to: '#d97706' }, // 橙色
+                        { from: '#3b82f6', to: '#2563eb' }, // 蓝色
+                        { from: '#6366f1', to: '#4f46e5' }, // indigo
+                      ];
+
+                      // 如果有标签名称，根据名称hash选择颜色
+                      if (tagName) {
+                        let hash = 0;
+                        for (let i = 0; i < tagName.length; i++) {
+                          hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+                        }
+                        const index = Math.abs(hash) % colorGradients.length;
+                        return colorGradients[index];
+                      }
+
+                      // 如果没有标签名称，根据类别选择
+                      if (tagCategory) {
+                        const lowerCategory = tagCategory.toLowerCase();
+                        if (lowerCategory === 'programming_language' || lowerCategory.includes('编程语言') || lowerCategory.includes('language')) {
+                          return { from: '#10b981', to: '#059669' };
+                        }
+                        if (lowerCategory === 'database' || lowerCategory.includes('数据库')) {
+                          return { from: '#f97316', to: '#ef4444' };
+                        }
+                        if (lowerCategory === 'framework' || lowerCategory.includes('前端框架') || lowerCategory.includes('framework')) {
+                          return { from: '#06b6d4', to: '#3b82f6' };
+                        }
+                        if (lowerCategory === 'tool' || lowerCategory.includes('工具') || lowerCategory.includes('后端技术')) {
+                          return { from: '#a855f7', to: '#ec4899' };
+                        }
+                      }
+
+                      // 默认返回第一个彩色渐变
+                      return colorGradients[0];
+                    };
+
+                    // 去重逻辑：按标签名称去重，保留最高熟练度
+                    const proficiencyOrder: Record<string, number> = {
+                      'expert': 4,
+                      'advanced': 3,
+                      'intermediate': 2,
+                      'beginner': 1
+                    };
+
+                    const uniqueTagsMap = new Map<string, any>();
+                    
+                    technicalTags.tags.forEach(tag => {
+                      const tagName = tag.tag_name;
+                      if (!tagName) return;
+
+                      const existingTag = uniqueTagsMap.get(tagName);
+                      if (!existingTag) {
+                        uniqueTagsMap.set(tagName, tag);
+                      } else {
+                        // 比较熟练度，保留更高的
+                        const currentLevel = proficiencyOrder[tag.proficiency_level] || 0;
+                        const existingLevel = proficiencyOrder[existingTag.proficiency_level] || 0;
+                        if (currentLevel > existingLevel) {
+                          uniqueTagsMap.set(tagName, tag);
+                        }
+                      }
+                    });
+
+                    const uniqueTags = Array.from(uniqueTagsMap.values());
+
+                    return (
+                      <div className="mb-6">
+                        <h5 className="font-medium text-text-primary mb-4">
+                          <i className="fas fa-layer-group mr-2 text-blue-500"></i>
+                          技术汇总
+                          <span className="ml-2 text-sm text-text-secondary font-normal">
+                            （已去重，共 {uniqueTags.length} 项技术）
+                          </span>
+                        </h5>
+                        <div className="bg-gradient-to-br from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-5">
+                          <div className="flex flex-wrap gap-2" style={{ minHeight: '60px' }}>
+                            {uniqueTags.map((tag: any, index: number) => {
+                              const tagColor = getTagColor(tag.tag_name, tag.tag_category);
+                              const tagName = tag.tag_name || '未知标签';
+                              const category = tag.tag_category || '未知类别';
+                              const level = tag.proficiency_level || '未知';
+                              const levelText = 
+                                level === 'expert' ? '专家' :
+                                level === 'advanced' ? '高级' :
+                                level === 'intermediate' ? '中级' :
+                                level === 'beginner' ? '基础' : level;
+
+                              return (
+                                <span
+                                  key={`unique-${index}-${tagName}`}
+                                  className="px-3 py-1.5 text-white text-sm font-medium rounded-full inline-block mb-1 shadow-sm hover:shadow-md transition-shadow"
+                                  style={{
+                                    background: `linear-gradient(to right, ${tagColor.from}, ${tagColor.to})`,
+                                    minWidth: '70px',
+                                    textAlign: 'center',
+                                    display: 'inline-block',
+                                    color: '#ffffff',
+                                    lineHeight: '1.5',
+                                    cursor: 'default'
+                                  }}
+                                  title={`${category} - ${levelText}`}
+                                >
+                                  {tagName}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
+                  {/* 标签列表 - 按课程分组显示，格式：课程：标签 */}
+                  <div>
+                    <h5 className="font-medium text-text-primary mb-4">
+                      <i className="fas fa-list-ul mr-2 text-gray-500"></i>
+                      所有技术标签
+                      <span className="ml-2 text-sm text-text-secondary font-normal">
+                        （按课程分组）
+                      </span>
+                    </h5>
+                    {technicalTags.tags && technicalTags.tags.length > 0 ? (
+                      (() => {
+                        // 按课程分组标签
+                        const tagsByCourse: Record<string, Array<any>> = {};
+                        technicalTags.tags.forEach(tag => {
+                          const courseName = tag.course_name || '未分类课程';
+                          if (!tagsByCourse[courseName]) {
+                            tagsByCourse[courseName] = [];
+                          }
+                          tagsByCourse[courseName].push(tag);
+                        });
+
+                        // 根据标签名称生成稳定的彩色渐变
+                        const getTagColor = (tagName?: string, tagCategory?: string) => {
+                          // 定义彩色渐变数组
+                          const colorGradients = [
+                            { from: '#10b981', to: '#059669' }, // 绿色
+                            { from: '#f97316', to: '#ef4444' }, // 橙红色
+                            { from: '#06b6d4', to: '#3b82f6' }, // 蓝青色
+                            { from: '#a855f7', to: '#ec4899' }, // 紫粉色
+                            { from: '#8b5cf6', to: '#6366f1' }, // 紫色
+                            { from: '#ec4899', to: '#f43f5e' }, // 粉红色
+                            { from: '#14b8a6', to: '#0d9488' }, // 青绿色
+                            { from: '#f59e0b', to: '#d97706' }, // 橙色
+                            { from: '#3b82f6', to: '#2563eb' }, // 蓝色
+                            { from: '#6366f1', to: '#4f46e5' }, // indigo
+                          ];
+
+                          // 如果有标签名称，根据名称hash选择颜色
+                          if (tagName) {
+                            let hash = 0;
+                            for (let i = 0; i < tagName.length; i++) {
+                              hash = tagName.charCodeAt(i) + ((hash << 5) - hash);
+                            }
+                            const index = Math.abs(hash) % colorGradients.length;
+                            return colorGradients[index];
+                          }
+
+                          // 如果没有标签名称，根据类别选择
+                          if (tagCategory) {
+                            const lowerCategory = tagCategory.toLowerCase();
+                            if (lowerCategory === 'programming_language' || lowerCategory.includes('编程语言') || lowerCategory.includes('language')) {
+                              return { from: '#10b981', to: '#059669' };
+                            }
+                            if (lowerCategory === 'database' || lowerCategory.includes('数据库')) {
+                              return { from: '#f97316', to: '#ef4444' };
+                            }
+                            if (lowerCategory === 'framework' || lowerCategory.includes('前端框架') || lowerCategory.includes('framework')) {
+                              return { from: '#06b6d4', to: '#3b82f6' };
+                            }
+                            if (lowerCategory === 'tool' || lowerCategory.includes('工具') || lowerCategory.includes('后端技术')) {
+                              return { from: '#a855f7', to: '#ec4899' };
+                            }
+                          }
+
+                          // 默认返回第一个彩色渐变
+                          return colorGradients[0];
+                        };
+
+                        const courseEntries = Object.entries(tagsByCourse);
+
+                        return (
+                          <div className="space-y-4" style={{ minHeight: '100px' }}>
+                            {courseEntries.map(([courseName, tags]) => (
+                                <div 
+                                  key={courseName} 
+                                  className="bg-gray-50 rounded-lg p-4 border border-gray-200"
+                                  style={{ 
+                                    backgroundColor: '#f9fafb',
+                                    border: '1px solid #e5e7eb',
+                                    minHeight: '80px'
+                                  }}
+                                >
+                                  <div className="flex items-center mb-3">
+                                    <i className="fas fa-book text-blue-500 mr-2"></i>
+                                    <span className="font-semibold text-text-primary text-base">{courseName}</span>
+                                    <span className="ml-2 text-sm text-text-secondary">：</span>
+                                  </div>
+                                  <div className="flex flex-wrap gap-2" style={{ minHeight: '40px' }}>
+                                    {tags.map((tag: any, index: number) => {
+                                      const tagName = tag.tag_name || '未知标签';
+                                      const tagColor = getTagColor(tagName, tag.tag_category);
+                                      const category = tag.tag_category || '未知类别';
+                                      const level = tag.proficiency_level || '未知';
+
+                                      return (
+                                        <span
+                                          key={`${courseName}-${index}-${tagName}`}
+                                          className="px-3 py-1.5 text-white text-sm font-medium rounded-full inline-block mb-1 shadow-sm"
+                                          style={{
+                                            background: `linear-gradient(to right, ${tagColor.from}, ${tagColor.to})`,
+                                            minWidth: '60px',
+                                            textAlign: 'center',
+                                            display: 'inline-block',
+                                            color: '#ffffff',
+                                            lineHeight: '1.5'
+                                          }}
+                                          title={`${category} - ${level}`}
+                                        >
+                                          {tagName}
+                                        </span>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                            ))}
+                          </div>
+                        );
+                      })()
+                    ) : (
+                      <div className="text-center py-8 text-text-secondary">
+                        <i className="fas fa-tags text-4xl mb-2 opacity-50"></i>
+                        <p>该学生暂未添加技术标签</p>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 详细标签表格 */}
+                  {technicalTags.tags && technicalTags.tags.length > 0 && (
+                    <div>
+                      <h5 className="font-medium text-text-primary mb-4">
+                        <i className="fas fa-table mr-2 text-gray-500"></i>
+                        标签详情
+                      </h5>
+                      <div className="overflow-x-auto">
+                        <table className="w-full border-collapse">
+                          <thead>
+                            <tr className="bg-gray-50">
+                              <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">技术标签</th>
+                              <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">类别</th>
+                              <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">熟练度</th>
+                              <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">来源课程</th>
+                              <th className="border border-gray-200 px-4 py-2 text-left text-sm font-medium text-gray-700">添加时间</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {technicalTags.tags.map((tag, index) => (
+                              <tr key={index} className="hover:bg-gray-50">
+                                <td className="border border-gray-200 px-4 py-2">
+                                  <span className="font-medium text-gray-900">{tag.tag_name}</span>
+                                </td>
+                                <td className="border border-gray-200 px-4 py-2">
+                                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                    {tag.tag_category || '未分类'}
+                                  </span>
+                                </td>
+                                <td className="border border-gray-200 px-4 py-2">
+                                  <span className={`px-2 py-1 text-xs rounded-full ${
+                                    tag.proficiency_level === 'expert' ? 'bg-purple-100 text-purple-800' :
+                                    tag.proficiency_level === 'advanced' ? 'bg-blue-100 text-blue-800' :
+                                    tag.proficiency_level === 'intermediate' ? 'bg-green-100 text-green-800' :
+                                    'bg-gray-100 text-gray-800'
+                                  }`}>
+                                    {tag.proficiency_level === 'expert' ? '专家' :
+                                     tag.proficiency_level === 'advanced' ? '高级' :
+                                     tag.proficiency_level === 'intermediate' ? '中级' :
+                                     tag.proficiency_level || '未知'}
+                                  </span>
+                                </td>
+                                <td className="border border-gray-200 px-4 py-2">
+                                  <span className="text-gray-700">{tag.course_name || '未指定'}</span>
+                                </td>
+                                <td className="border border-gray-200 px-4 py-2">
+                                  <span className="text-gray-600 text-sm">
+                                    {tag.created_at ? new Date(tag.created_at).toLocaleDateString('zh-CN') : '未知'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 说明信息 */}
+                  <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                    <h5 className="font-medium text-text-primary mb-2">
+                      <i className="fas fa-info-circle mr-2 text-blue-500"></i>
+                      标签来源说明
+                    </h5>
+                    <p className="text-sm text-text-secondary leading-relaxed">
+                      以上技术标签来源于该学生在"教学任务与安排"中为每门课程填写的技能标签。
+                      这些标签反映了学生在学习过程中掌握的技术栈和技能点，是教师了解学生技术能力的重要参考。
+                      熟练度分为：基础、中级、高级、专家四个等级。
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-12">
+                  <i className="fas fa-tags text-gray-400 text-4xl mb-4"></i>
+                  <h5 className="text-lg font-medium text-gray-600 mb-2">暂无技术标签</h5>
+                  <p className="text-text-secondary">该学生暂未添加技术标签</p>
+                </div>
+              )}
+            </div>
           </div>
         </div>
+      </div>
       </main>
 
       {/* 编辑档案模态框 */}
