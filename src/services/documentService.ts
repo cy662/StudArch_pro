@@ -5,6 +5,8 @@ export interface Document {
   user_id: string
   title: string
   description?: string
+  // 学生自定义的文件夹名称，用于归类文件
+  folder_name?: string | null
   file_name: string
   file_path: string
   file_size: number
@@ -60,35 +62,47 @@ export class DocumentService {
     userId: string,
     params: DocumentSearchParams = {}
   ): Promise<DocumentListResponse> {
-    const {
-      document_type,
-      keyword,
-      date_from,
-      date_to,
-      page = 1,
-      limit = 10
-    } = params
-
     try {
-      const { data, error } = await supabase
-        .rpc('get_user_documents', {
-          p_user_id: userId,
-          p_document_type: document_type || null,
-          p_keyword: keyword || null,
-          p_date_from: date_from ? new Date(date_from) : null,
-          p_date_to: date_to ? new Date(date_to) : null,
-          p_page: page,
-          p_limit: limit
-        })
+      const {
+        document_type,
+        date_from,
+        date_to,
+        page = 1,
+        limit = 10
+      } = params
+
+      // 直接从 student_documents 表查询，确保包含 folder_name 等最新字段
+      let query = supabase
+        .from('student_documents')
+        .select('*', { count: 'exact' })
+        .eq('user_id', userId)
+        .eq('status', 'active')
+        .order('created_at', { ascending: false })
+
+      // 如果仍有其它地方传 document_type，则保留兼容
+      if (document_type) {
+        query = query.eq('document_type', document_type)
+      }
+
+      // 后端按时间范围初筛，前端还有一层更精细的过滤
+      if (date_from) {
+        query = query.gte('created_at', `${date_from}T00:00:00`)
+      }
+      if (date_to) {
+        query = query.lte('created_at', `${date_to}T23:59:59`)
+      }
+
+      const from = (page - 1) * limit
+      const to = from + limit - 1
+      const { data, error, count } = await query.range(from, to)
 
       if (error) {
         console.error('获取文档列表失败:', error)
         throw new Error(`获取文档列表失败: ${error.message}`)
       }
 
-      const result = data?.[0]
-      const documents = result?.documents || []
-      const total = result?.total_count || 0
+      const documents = data || []
+      const total = count ?? documents.length
 
       return {
         documents: documents.map((doc: any) => ({
@@ -135,6 +149,24 @@ export class DocumentService {
     return btoa(binary);
   }
 
+  // 生成安全的文件名（避免中文和特殊字符问题）
+  // Supabase Storage 要求文件名只包含字母、数字、连字符、下划线和点
+  private static generateSafeFileName(originalFileName: string): string {
+    // 获取文件扩展名（保留原始扩展名）
+    const extension = originalFileName.split('.').pop() || '';
+    
+    // 生成唯一标识符（时间戳 + 随机字符串）
+    // 只使用字母、数字、连字符和下划线，确保完全兼容 Supabase Storage
+    const timestamp = Date.now();
+    const randomStr = Math.random().toString(36).substring(2, 10);
+    
+    // 使用时间戳和随机字符串生成安全的文件名
+    // 格式：file_timestamp_random.extension
+    const safeFileName = `file_${timestamp}_${randomStr}${extension ? '.' + extension : ''}`;
+    
+    return safeFileName;
+  }
+
   // 上传文档
   static async uploadDocument(
     userId: string,
@@ -142,27 +174,46 @@ export class DocumentService {
     title: string,
     description?: string,
     documentType: Document['document_type'] = 'other',
-    tags: string[] = []
+    tags: string[] = [],
+    folderName?: string | null
   ): Promise<UploadResult> {
     try {
-      // 读取文件内容为 ArrayBuffer
+      // 读取文件内容为 ArrayBuffer，用于哈希计算和上传
       const fileContentArrayBuffer = await this.readFileAsArrayBuffer(file);
-      
-      // 将 ArrayBuffer 转换为 base64 字符串用于哈希计算
-      const fileContentBase64 = this.arrayBufferToBase64(fileContentArrayBuffer);
-      
-      // 生成文件哈希值（简化版本，实际应用中应使用SHA256）
-      const fileHash = await this.generateFileHash(fileContentBase64);
-      
-      // 使用原始文件名而不是生成安全文件名
-      const originalFileName = file.name;
-      const filePath = `${userId}/${originalFileName}`
 
-      // 在数据库中创建文档记录，包含完整文件内容
+      // 生成文件哈希值（简化版本，实际应用中应使用SHA256）
+      const fileContentBase64 = this.arrayBufferToBase64(fileContentArrayBuffer);
+      const fileHash = await this.generateFileHash(fileContentBase64);
+
+      // 保留原始文件名用于显示和下载
+      const originalFileName = file.name;
+      // 生成安全的存储文件名（避免中文和特殊字符问题）
+      const safeFileName = this.generateSafeFileName(originalFileName);
+      const filePath = `${userId}/${safeFileName}`;
+
+      // 先将文件上传到 Supabase Storage，这样后续可以通过路径直接下载
+      const { error: storageError } = await supabase.storage
+        .from('student-documents')
+        .upload(filePath, file, {
+          upsert: true,
+          contentType: file.type || undefined
+        });
+
+      if (storageError) {
+        console.error('上传到 Storage 失败:', storageError);
+        return {
+          document: {} as Document,
+          success: false,
+          error: `文件存储失败: ${storageError.message}`
+        };
+      }
+
+      // 在数据库中创建文档记录，记录文件的存储路径和元数据
       const documentData = {
         user_id: userId,
         title: title || file.name.replace(/\.[^/.]+$/, ''),
         description: description || '',
+        folder_name: folderName || null,
         file_name: originalFileName, // 使用原始文件名
         file_path: filePath,
         file_size: file.size,
@@ -170,8 +221,8 @@ export class DocumentService {
         mime_type: file.type,
         document_type: documentType,
         tags: tags,
+        status: 'active',
         is_public: false,
-        file_content: new Uint8Array(fileContentArrayBuffer), // 存储原始二进制数据
         file_hash: fileHash
       }
 
@@ -247,60 +298,76 @@ export class DocumentService {
   // 下载文档
   static async downloadDocument(documentId: string, userId: string): Promise<{ url: string; fileName: string }> {
     try {
-      // 1. 获取文档信息和内容
-      const { data, error } = await supabase
-        .rpc('get_document_content', {
-          p_document_id: documentId,
-          p_user_id: userId
-        })
-        .single();
+      // 1. 先获取文档基础信息，确保属于当前用户
+      const document = await this.getDocumentById(documentId, userId);
 
-      if (error) {
-        throw new Error(`获取文档内容失败: ${error.message}`);
+      if (!document.file_path) {
+        throw new Error('未找到文件路径，无法下载该文件');
       }
 
-      if (!data || !data.file_content) {
-        throw new Error('文档内容不存在');
+      // 2. 尝试从 Storage 获取带签名的下载地址
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('student-documents')
+        .createSignedUrl(document.file_path, 60 * 10); // 10 分钟有效期
+
+      if (signedError || !signedData?.signedUrl) {
+        console.error('获取签名下载链接失败:', signedError);
+        throw new Error('获取文件下载链接失败，请稍后重试');
       }
 
-      // 2. 将 base64 数据转换为 Blob
+      const url = signedData.signedUrl;
+
+      // 3. 尝试增加下载次数（如果失败不影响下载）
       try {
-        // 构造完整的 data URL
-        const dataUrl = `data:${data.mime_type || 'application/octet-stream'};base64,${data.file_content}`;
-        
-        // 将 data URL 转换为 Blob
-        const response = await fetch(dataUrl);
-        const blob = await response.blob();
-        
-        // 3. 创建下载链接
-        const url = URL.createObjectURL(blob);
-        
-        // 4. 尝试增加下载次数（如果失败不影响下载）
-        try {
-          await supabase.rpc('increment_download_count', {
-            p_document_id: documentId
-          })
-        } catch (countError) {
-          console.warn('增加下载次数失败:', countError)
-        }
+        await supabase.rpc('increment_download_count', {
+          p_document_id: documentId
+        })
+      } catch (countError) {
+        console.warn('增加下载次数失败:', countError)
+      }
 
-        // 5. 记录下载日志（如果失败不影响下载）
-        try {
-          await this.logDocumentAccess(documentId, 'download')
-        } catch (logError) {
-          console.warn('记录下载日志失败:', logError)
-        }
+      // 4. 记录下载日志（如果失败不影响下载）
+      try {
+        await this.logDocumentAccess(documentId, 'download')
+      } catch (logError) {
+        console.warn('记录下载日志失败:', logError)
+      }
 
-        return {
-          url,
-          fileName: data.file_name
-        }
-      } catch (conversionError) {
-        console.error('文件内容转换失败:', conversionError);
-        throw new Error('文件内容转换失败');
+      return {
+        url,
+        fileName: document.file_name
       }
     } catch (error) {
       console.error('DocumentService.downloadDocument error:', error)
+      throw error
+    }
+  }
+
+  // 获取文档预览用的签名URL（不增加下载次数）
+  static async getDocumentPreviewUrl(documentId: string, userId: string): Promise<{ url: string; fileName: string; mimeType?: string }> {
+    try {
+      const document = await this.getDocumentById(documentId, userId)
+
+      if (!document.file_path) {
+        throw new Error('未找到文件路径，无法预览该文件')
+      }
+
+      const { data: signedData, error: signedError } = await supabase.storage
+        .from('student-documents')
+        .createSignedUrl(document.file_path, 60 * 10) // 10 分钟有效期
+
+      if (signedError || !signedData?.signedUrl) {
+        console.error('获取预览链接失败:', signedError)
+        throw new Error('获取文件预览链接失败，请稍后重试')
+      }
+
+      return {
+        url: signedData.signedUrl,
+        fileName: document.file_name,
+        mimeType: document.mime_type || undefined
+      }
+    } catch (error) {
+      console.error('DocumentService.getDocumentPreviewUrl error:', error)
       throw error
     }
   }
@@ -535,6 +602,69 @@ export class DocumentService {
     }
   }
 
+  static async createZipExportByIds(
+    documentIds: string[],
+    userId: string
+  ): Promise<{ success: boolean; error?: string; zipBlob?: Blob; downloadedCount?: number }> {
+    if (!documentIds || documentIds.length === 0) {
+      return { success: false, error: '没有选择要导出的文件' }
+    }
+
+    try {
+      let JSZip;
+      try {
+        JSZip = (await import('jszip')).default;
+      } catch (importError) {
+        console.warn('JSZip导入失败:', importError);
+        return {
+          success: false,
+          error: 'ZIP功能不可用'
+        }
+      }
+
+      const zip = new JSZip();
+      let downloadedCount = 0;
+
+      for (const id of documentIds) {
+        try {
+          const doc = await this.getDocumentById(id, userId);
+          if (!doc.file_path) {
+            continue;
+          }
+
+          const { data: signedData, error: signedError } = await supabase.storage
+            .from('student-documents')
+            .createSignedUrl(doc.file_path, 60 * 10);
+
+          if (signedError || !signedData?.signedUrl) {
+            console.warn('获取签名链接失败:', signedError);
+            continue;
+          }
+
+          const resp = await fetch(signedData.signedUrl);
+          if (!resp.ok) {
+            console.warn('下载文件失败:', doc.file_name);
+            continue;
+          }
+          const blob = await resp.blob();
+          zip.file(doc.file_name, blob);
+          downloadedCount++;
+        } catch (err) {
+          console.warn('处理文件失败:', err);
+        }
+      }
+
+      const zipBlob = await zip.generateAsync({ type: 'blob' });
+      return { success: true, zipBlob, downloadedCount };
+    } catch (error) {
+      console.error('createZipExportByIds error:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'ZIP创建失败'
+      }
+    }
+  }
+
   // 获取文档详情
   static async getDocumentById(documentId: string, userId: string): Promise<Document> {
     try {
@@ -602,16 +732,11 @@ export class DocumentService {
     documentId: string,
     action: 'view' | 'download' | 'upload' | 'delete' | 'export'
   ): Promise<void> {
-    try {
-      await supabase.rpc('log_document_access', {
-        p_document_id: documentId,
-        p_action: action,
-        p_ip_address: null, // 可以从请求中获取
-        p_user_agent: navigator.userAgent
-      })
-    } catch (error) {
-      console.warn('记录文档访问失败:', error)
-    }
+    // 当前环境中后端可能尚未创建 log_document_access 函数，
+    // 为避免在控制台产生 400 报错，这里暂时不调用 RPC，仅保留扩展点。
+    // 如需启用访问日志，可在 Supabase 中创建对应的存储过程后，
+    // 再恢复下面的调用代码。
+    return
   }
 
   // 获取文档统计信息

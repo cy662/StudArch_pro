@@ -1244,25 +1244,25 @@ const TeacherStudentDetail: React.FC = () => {
                       </div>
                       <div className="flex justify-between">
                         <span className="text-text-secondary">单位性质</span>
-                        <span className="font-medium">{graduationData.company_type || '-'}</span>
+                        <span className="font-medium">{(graduationData as any).company_type || '-'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-text-secondary">职位</span>
-                        <span className="font-medium">{graduationData.position || '-'}</span>
+                        <span className="font-medium">{(graduationData as any).position || '-'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-text-secondary">工作地点</span>
-                        <span className="font-medium">{graduationData.location || '-'}</span>
+                        <span className="font-medium">{(graduationData as any).location || '-'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-text-secondary">薪资</span>
-                        <span className="font-medium">{graduationData.salary ? `${graduationData.salary}K/月` : '-'}</span>
+                        <span className="font-medium">{(graduationData as any).salary ? `${(graduationData as any).salary}K/月` : '-'}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-text-secondary">入职时间</span>
                         <span className="font-medium">
-                          {graduationData.employment_date 
-                            ? formatDate(graduationData.employment_date) 
+                          {(graduationData as any).employment_date 
+                            ? formatDate((graduationData as any).employment_date) 
                             : '-'}
                         </span>
                       </div>
@@ -1306,19 +1306,19 @@ const TeacherStudentDetail: React.FC = () => {
                       <>
                         <h5 className="font-medium text-text-primary mb-3 mt-6">证明材料</h5>
                         <div className="space-y-2">
-                          {graduationData.proof_files.map((file, index) => (
+                          {(graduationData as any).proof_files.map((file: any, index: number) => (
                             <div key={index} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
                               <div className="flex items-center space-x-3">
                                 <i className="fas fa-file-pdf text-red-500"></i>
-                                <span className="text-sm">{file.file_name}</span>
+                                <span className="text-sm">{(file as any).file_name}</span>
                               </div>
                               <button 
                                 className="text-secondary hover:text-accent transition-colors"
                                 onClick={() => {
-                                  if (file.file_content) {
-                                    const url = typeof file.file_content === 'string' 
-                                      ? file.file_content 
-                                      : URL.createObjectURL(file.file_content);
+                                  if ((file as any).file_content) {
+                                    const url = typeof (file as any).file_content === 'string' 
+                                      ? (file as any).file_content 
+                                      : URL.createObjectURL((file as any).file_content);
                                     window.open(url, '_blank');
                                   }
                                 }}

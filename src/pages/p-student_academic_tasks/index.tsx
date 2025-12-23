@@ -467,56 +467,74 @@ const StudentAcademicTasks: React.FC = () => {
         }
       }
 
-      // 2. 同步学习收获（使用新的sync接口）
-      try {
-        const achievementResponse = await fetch('/api/student-learning/sync-learning-achievement', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            student_profile_id: currentStudentId,
-            course_name: course.name,
-            content: course.outcomes
-          })
-        });
+      // 2. 学习收获：写入 student_learning_achievements
+      if (course.outcomes && course.outcomes.trim() !== '') {
+        try {
+          const achievementResponse = await fetch('/api/student-learning/add-learning-achievement', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              student_profile_id: currentStudentId,
+              title: course.name,
+              content: course.outcomes,
+              // 满足表的 check 约束：('knowledge','skill','experience','insight','other')
+              achievement_type: 'knowledge',
+              related_course: course.name,
+              // 其它可选字段，避免空值校验
+              achieved_at: new Date().toISOString().split('T')[0],
+              impact_level: 'medium'
+            })
+          });
 
-        if (achievementResponse.ok) {
-          const result = await achievementResponse.json();
-          console.log('学习收获同步成功:', result);
-        } else {
-          const errorData = await achievementResponse.json().catch(() => ({}));
-          console.warn('学习收获同步失败:', errorData);
+          if (achievementResponse.ok) {
+            const result = await achievementResponse.json();
+            console.log('学习收获写入成功:', result);
+          } else {
+            const errorData = await achievementResponse.json().catch(() => ({}));
+            console.warn('学习收获写入失败:', errorData);
+          }
+        } catch (error) {
+          console.warn('学习收获写入API调用失败:', error);
         }
-      } catch (error) {
-        console.warn('学习收获同步API调用失败:', error);
       }
 
-      // 3. 同步学习成果（使用新的sync接口）
-      try {
-        const outcomeResponse = await fetch('/api/student-learning/sync-learning-outcome', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            student_profile_id: currentStudentId,
-            course_name: course.name,
-            description: course.achievements,
-            start_date: course.startDate || new Date().toISOString().split('T')[0],
-            end_date: course.endDate || new Date().toISOString().split('T')[0]
-          })
-        });
+      // 3. 学习成果：写入 student_learning_outcomes
+      if (course.achievements && course.achievements.trim() !== '') {
+        try {
+          const outcomeResponse = await fetch('/api/student-learning/add-learning-outcome', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              student_profile_id: currentStudentId,
+              outcome_title: course.name,
+              outcome_description: course.achievements,
+              // 满足表的 check 约束：('project','competition','certification','research','internship','other')
+              outcome_type: 'project',
+              // 难度等级约束：('basic','medium','advanced','expert')
+              difficulty_level: 'medium',
+              // 完成状态约束：('planning','in_progress','completed','abandoned')
+              completion_status: 'completed',
+              quality_rating: 3,
+              start_date: course.startDate || new Date().toISOString().split('T')[0],
+              completion_date: course.endDate || new Date().toISOString().split('T')[0],
+              related_course: course.name
+            })
+          });
 
-        if (outcomeResponse.ok) {
-          const result = await outcomeResponse.json();
-          console.log('学习成果同步成功:', result);
-        } else {
-          const errorData = await outcomeResponse.json().catch(() => ({}));
-          console.warn('学习成果同步失败:', errorData);
+          if (outcomeResponse.ok) {
+            const result = await outcomeResponse.json();
+            console.log('学习成果写入成功:', result);
+          } else {
+            const errorData = await outcomeResponse.json().catch(() => ({}));
+            console.warn('学习成果写入失败:', errorData);
+          }
+        } catch (error) {
+          console.warn('学习成果写入API调用失败:', error);
         }
-      } catch (error) {
-        console.warn('学习成果同步API调用失败:', error);
       }
 
       alert('课程信息同步成功！已更新现有数据，不会产生重复记录。');
@@ -1130,7 +1148,7 @@ const StudentAcademicTasks: React.FC = () => {
                                 'advlist', 'autolink', 'lists', 'link', 'image', 'charmap',
                                 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
                                 'insertdatetime', 'media', 'table', 'code', 'help', 'wordcount',
-                                'emoticons', 'codesample', 'textcolor', 'colorpicker'
+                                'emoticons', 'codesample', 'advcolor'
                               ],
                               toolbar: 'undo redo | formatselect | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image | code codesample | emoticons | fullscreen',
                               content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px; }',
@@ -1170,7 +1188,7 @@ const StudentAcademicTasks: React.FC = () => {
                                 'advlist', 'autolink', 'lists', 'link', 'image', 'charmap',
                                 'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
                                 'insertdatetime', 'media', 'table', 'code', 'help', 'wordcount',
-                                'emoticons', 'codesample', 'textcolor', 'colorpicker'
+                                'emoticons', 'codesample', 'advcolor'
                               ],
                               toolbar: 'undo redo | formatselect | bold italic underline strikethrough | forecolor backcolor | alignleft aligncenter alignright alignjustify | bullist numlist outdent indent | link image | code codesample | emoticons | fullscreen',
                               content_style: 'body { font-family:Helvetica,Arial,sans-serif; font-size:14px; }',
