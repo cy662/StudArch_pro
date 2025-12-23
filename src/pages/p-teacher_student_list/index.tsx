@@ -39,9 +39,16 @@ const TeacherStudentList: React.FC = () => {
   const [selectedStudents, setSelectedStudents] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [technicalTagFilter, setTechnicalTagFilter] = useState('');
+  const [rewardPunishmentFilter, setRewardPunishmentFilter] = useState('');
+  const [rewardPunishmentType, setRewardPunishmentType] = useState<'reward' | 'punishment' | ''>('');
+  const [rewardPunishmentCategory, setRewardPunishmentCategory] = useState('');
+  const [rewardPunishmentDateFrom, setRewardPunishmentDateFrom] = useState('');
+  const [rewardPunishmentDateTo, setRewardPunishmentDateTo] = useState('');
+  const [showRewardPunishmentFilters, setShowRewardPunishmentFilters] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [isStudentModalOpen, setIsStudentModalOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<UserWithRole | null>(null);
+  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null); // 用于防抖的 ref
   
   // 导入相关状态
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
@@ -214,7 +221,7 @@ const TeacherStudentList: React.FC = () => {
         return;
       }
       
-      console.log('🎯 开始获取教师学生列表:', { currentTeacherId, searchTerm, technicalTagFilter, currentPage, pageSize });
+      console.log('🎯 开始获取教师学生列表:', { currentTeacherId, searchTerm, technicalTagFilter, rewardPunishmentFilter, currentPage, pageSize });
       
       let result;
       if (technicalTagFilter.trim()) {
@@ -236,6 +243,25 @@ const TeacherStudentList: React.FC = () => {
           });
           console.log('🔍 模糊搜索结果:', result);
         }
+      } else if (rewardPunishmentFilter.trim() || rewardPunishmentType || rewardPunishmentCategory.trim() || rewardPunishmentDateFrom || rewardPunishmentDateTo) {
+        // 如果有奖惩筛选，使用奖惩搜索
+        console.log('🏆 开始奖惩信息搜索:', { 
+          name: rewardPunishmentFilter, 
+          type: rewardPunishmentType, 
+          category: rewardPunishmentCategory,
+          date_from: rewardPunishmentDateFrom,
+          date_to: rewardPunishmentDateTo
+        });
+        result = await UserService.getStudentsByRewardPunishment(currentTeacherId, {
+          name: rewardPunishmentFilter.trim() || undefined,
+          type: rewardPunishmentType || undefined,
+          category: rewardPunishmentCategory.trim() || undefined,
+          date_from: rewardPunishmentDateFrom || undefined,
+          date_to: rewardPunishmentDateTo || undefined,
+          page: currentPage,
+          limit: pageSize
+        });
+        console.log('🏆 奖惩信息搜索结果:', result);
       } else {
         // 否则使用普通搜索
         result = await UserService.getTeacherStudents(currentTeacherId, {
@@ -246,12 +272,19 @@ const TeacherStudentList: React.FC = () => {
       }
       
       console.log('✅ 教师学生列表结果:', result);
-      setStudentsData(result.students || []);
-      setStudentsTotal(result.total || 0);
+      // 确保只有在查询成功时才更新数据，避免结果被意外清空
+      if (result && (result.students || result.total !== undefined)) {
+        setStudentsData(result.students || []);
+        setStudentsTotal(result.total || 0);
+      }
     } catch (error) {
       console.error('❌ 获取教师学生列表失败:', error);
-      setStudentsData([]);
-      setStudentsTotal(0);
+      // 查询失败时不清空已有数据，避免覆盖成功的搜索结果
+      // 只有在明确需要清空时才清空（比如搜索条件完全清空）
+      if (!technicalTagFilter.trim() && !rewardPunishmentFilter.trim() && !rewardPunishmentType && !rewardPunishmentCategory.trim() && !rewardPunishmentDateFrom && !rewardPunishmentDateTo && !searchTerm.trim()) {
+        setStudentsData([]);
+        setStudentsTotal(0);
+      }
     } finally {
       setStudentsLoading(false);
     }
@@ -358,13 +391,16 @@ const TeacherStudentList: React.FC = () => {
     }
   }, [isImportModalOpen, importSearchTerm, importPage]);
 
-  // 页面加载时获取教师学生数据
+  // 当搜索条件改变时，重置页码到第一页（但不立即触发查询）
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, technicalTagFilter, rewardPunishmentFilter, rewardPunishmentType, rewardPunishmentCategory, rewardPunishmentDateFrom, rewardPunishmentDateTo]);
+
+  // 页面加载时获取教师学生数据（使用防抖避免频繁查询）
   useEffect(() => {
     // 只有当有有效的教师ID时才获取数据，避免无限循环
     const teacherId = user?.id || localUser?.id;
-    if (teacherId) {
-      fetchTeacherStudents();
-    } else {
+    if (!teacherId) {
       // 如果没有教师ID，尝试从localStorage读取一次
       const storedUser = localStorage.getItem('user_info');
       if (storedUser) {
@@ -378,8 +414,27 @@ const TeacherStudentList: React.FC = () => {
           // 忽略解析错误
         }
       }
+      return;
     }
-  }, [searchTerm, technicalTagFilter, currentPage, pageSize, user?.id, localUser?.id]); // 只依赖ID，不依赖整个对象
+
+    // 添加防抖，避免频繁查询
+    // 清除之前的定时器
+    if (fetchTimeoutRef.current) {
+      clearTimeout(fetchTimeoutRef.current);
+    }
+    
+    fetchTimeoutRef.current = setTimeout(() => {
+      fetchTeacherStudents();
+      fetchTimeoutRef.current = null;
+    }, 300); // 300ms 防抖延迟
+
+    return () => {
+      if (fetchTimeoutRef.current) {
+        clearTimeout(fetchTimeoutRef.current);
+        fetchTimeoutRef.current = null;
+      }
+    };
+  }, [searchTerm, technicalTagFilter, rewardPunishmentFilter, rewardPunishmentType, rewardPunishmentCategory, rewardPunishmentDateFrom, rewardPunishmentDateTo, currentPage, pageSize, user?.id, localUser?.id]); // 只依赖ID，不依赖整个对象
 
 
 
@@ -782,7 +837,99 @@ ${errors.slice(0, 2).join('\n')}`);
                   className="pl-10 pr-4 py-2 border border-border-light rounded-lg w-48"
                 />
               </div>
+              <div className="relative flex items-center space-x-2">
+                <i className="fas fa-trophy absolute left-3 top-1/2 transform -translate-y-1/2 text-text-secondary"></i>
+                <input 
+                  type="text" 
+                  placeholder="搜索奖惩名称" 
+                  value={rewardPunishmentFilter}
+                  onChange={(e) => setRewardPunishmentFilter(e.target.value)}
+                  className="pl-10 pr-4 py-2 border border-border-light rounded-lg w-48"
+                />
+                <button
+                  onClick={() => setShowRewardPunishmentFilters(!showRewardPunishmentFilters)}
+                  className="px-3 py-2 border border-border-light rounded-lg hover:bg-gray-50 transition-colors flex items-center space-x-1"
+                  title="高级筛选"
+                >
+                  <i className={`fas fa-filter ${showRewardPunishmentFilters ? 'text-secondary' : 'text-text-secondary'}`}></i>
+                  <i className={`fas fa-chevron-${showRewardPunishmentFilters ? 'up' : 'down'} text-xs text-text-secondary`}></i>
+                </button>
+              </div>
             </div>
+            
+            {/* 奖惩筛选条件 */}
+            {showRewardPunishmentFilters && (
+              <div className="mt-4 p-4 bg-gray-50 rounded-lg border border-border-light">
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      奖惩类型
+                    </label>
+                    <select
+                      value={rewardPunishmentType}
+                      onChange={(e) => setRewardPunishmentType(e.target.value as 'reward' | 'punishment' | '')}
+                      className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
+                    >
+                      <option value="">全部</option>
+                      <option value="reward">奖励</option>
+                      <option value="punishment">惩罚</option>
+                    </select>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      分类
+                    </label>
+                    <input
+                      type="text"
+                      placeholder="输入分类关键词"
+                      value={rewardPunishmentCategory}
+                      onChange={(e) => setRewardPunishmentCategory(e.target.value)}
+                      className="w-full px-3 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      开始日期
+                    </label>
+                    <input
+                      type="date"
+                      value={rewardPunishmentDateFrom}
+                      onChange={(e) => setRewardPunishmentDateFrom(e.target.value)}
+                      className="w-full px-3 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
+                    />
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-text-primary mb-1">
+                      结束日期
+                    </label>
+                    <input
+                      type="date"
+                      value={rewardPunishmentDateTo}
+                      onChange={(e) => setRewardPunishmentDateTo(e.target.value)}
+                      className="w-full px-3 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
+                    />
+                  </div>
+                </div>
+                
+                <div className="mt-3 flex justify-end">
+                  <button
+                    onClick={() => {
+                      setRewardPunishmentFilter('');
+                      setRewardPunishmentType('');
+                      setRewardPunishmentCategory('');
+                      setRewardPunishmentDateFrom('');
+                      setRewardPunishmentDateTo('');
+                    }}
+                    className="px-4 py-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
+                  >
+                    清空筛选
+                  </button>
+                </div>
+              </div>
+            )}
             
             {/* 批量操作 */}
             <div className="flex items-center space-x-3">

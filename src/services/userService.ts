@@ -959,78 +959,178 @@ export class UserService {
     try {
       console.log('🔍 开始技术标签搜索:', { teacherId, tagName, page, limit });
       
-      // 首先通过 teacher_students 表获取教师管理的学生 user_id 列表
-      const { data: teacherStudents, error: teacherError } = await supabase
-        .from('teacher_students')
-        .select('student_id')
-        .eq('teacher_id', teacherId);
+      // 首先通过 getTeacherStudents 获取教师管理的所有学生（不使用分页，获取全部）
+      // 这样可以避免 RLS 问题，并且使用与普通搜索相同的逻辑
+      const allTeacherStudents = await this.getTeacherStudents(teacherId, {
+        keyword: '',
+        page: 1,
+        limit: 10000 // 获取所有学生
+      });
 
-      if (teacherError) {
-        console.error('❌ 获取教师学生列表失败:', teacherError);
-        throw new Error(`获取教师学生列表失败: ${teacherError.message}`);
-      }
-
-      if (!teacherStudents || teacherStudents.length === 0) {
+      if (!allTeacherStudents.students || allTeacherStudents.students.length === 0) {
         console.log('ℹ️ 该教师没有管理的学生');
         return { students: [], total: 0 };
       }
 
-      const studentUserIds = teacherStudents.map(ts => ts.student_id);
-      console.log(`✅ 教师管理 ${studentUserIds.length} 个学生:`, studentUserIds.slice(0, 3));
+      console.log(`✅ 教师管理 ${allTeacherStudents.students.length} 个学生`);
 
-      // 根据技术标签搜索，先找到有该标签的 student_profile_id
-      const offset = (page - 1) * limit;
+      // 获取这些学生的 profile_id
+      // 优先从学生数据中获取 profile_id（如果存在）
+      const studentProfileIds: string[] = [];
+      const profileIdToUserIdMap: Record<string, string> = {};
+      const studentUserIds: string[] = [];
+
+      // 首先尝试从学生数据中获取 profile_id
+      allTeacherStudents.students.forEach(student => {
+        const profileId = (student as any).profile_id;
+        if (profileId) {
+          if (!studentProfileIds.includes(profileId)) {
+            studentProfileIds.push(profileId);
+            profileIdToUserIdMap[profileId] = student.id;
+            studentUserIds.push(student.id);
+          }
+        } else {
+          studentUserIds.push(student.id);
+        }
+      });
+
+      // 如果从学生数据中没有获取到足够的 profile_id，通过 student_profiles 表查询
+      if (studentProfileIds.length < allTeacherStudents.students.length && studentUserIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('student_profiles')
+          .select('id, user_id')
+          .in('user_id', studentUserIds);
+
+        if (!profilesError && profilesData && profilesData.length > 0) {
+          profilesData.forEach(p => {
+            if (!studentProfileIds.includes(p.id)) {
+              studentProfileIds.push(p.id);
+              profileIdToUserIdMap[p.id] = p.user_id;
+            }
+          });
+        }
+      }
+
+      if (studentProfileIds.length === 0) {
+        console.log('ℹ️ 该教师管理的学生没有档案信息');
+        return { students: [], total: 0 };
+      }
+
+      console.log(`✅ 找到 ${studentProfileIds.length} 个学生档案`);
+
+      // 根据技术标签搜索，使用模糊匹配
+      // ilike 本身就是大小写不敏感的模糊匹配，所以总是使用 % 通配符
+      const searchPattern = `%${tagName.trim()}%`;
       
-      const { data: tagData, error: tagError, count } = await supabase
+      // 先查询所有匹配的标签（不分页，用于获取总数）
+      const { data: allTagData, error: allTagError, count } = await supabase
         .from('student_technical_tags')
+        .select('student_profile_id, tag_name, tag_category, proficiency_level', { count: 'exact' })
+        .ilike('tag_name', searchPattern)
+        .eq('status', 'active')
+        .in('student_profile_id', studentProfileIds);
+
+      if (allTagError) {
+        console.error('❌ 搜索技术标签失败:', allTagError);
+        throw new Error(`搜索技术标签失败: ${allTagError.message}`);
+      }
+
+      console.log(`✅ 找到 ${allTagData?.length || 0} 条匹配的标签记录，总数: ${count}`);
+
+      if (!allTagData || allTagData.length === 0) {
+        return { students: [], total: 0 };
+      }
+
+      // 获取匹配的 profile_id 列表（去重）
+      const matchedProfileIds = [...new Set(allTagData.map(tag => tag.student_profile_id))];
+      
+      // 分页处理
+      const offset = (page - 1) * limit;
+      const paginatedProfileIds = matchedProfileIds.slice(offset, offset + limit);
+
+      // 查询这些 profile 的完整信息
+      // 注意：student_profiles 表中没有 email 和 student_number 字段，这些在 users 表中
+      const { data: profileData, error: profileQueryError } = await supabase
+        .from('student_profiles')
         .select(`
-          student_profile_id,
-          tag_name,
-          tag_category,
-          proficiency_level,
-        student_profiles!inner(
+          id,
           user_id,
-          student_number,
           full_name,
-          email,
           phone,
           class_name,
           profile_status,
-          users!inner(
-            username,
-            created_at,
-            role:roles(*)
-          )
-        )
-        `, { count: 'exact' })
-        .ilike('tag_name', `%${tagName.trim().toLowerCase()}%`)
-        .eq('status', 'active')
-        .in('student_profiles.user_id', studentUserIds)
-        .range(offset, offset + limit - 1);
+          created_at,
+          updated_at
+        `)
+        .in('id', paginatedProfileIds);
 
-      if (tagError) {
-        console.error('❌ 搜索技术标签失败:', tagError);
-        throw new Error(`搜索技术标签失败: ${tagError.message}`);
+      if (profileQueryError) {
+        console.error('❌ 获取学生档案详情失败:', profileQueryError);
+        throw new Error(`获取学生档案详情失败: ${profileQueryError.message}`);
       }
 
-      console.log(`✅ 找到 ${tagData?.length || 0} 条匹配的标签记录，总数: ${count}`);
+      if (!profileData || profileData.length === 0) {
+        return { students: [], total: matchedProfileIds.length };
+      }
+
+      // 获取这些 profile 对应的 user_id 列表
+      const userIds = profileData.map(p => p.user_id).filter(Boolean);
+      
+      // 单独查询 users 信息（包含 email 和 user_number）
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select(`
+          id,
+          username,
+          email,
+          user_number,
+          full_name,
+          created_at,
+          role:roles(*)
+        `)
+        .in('id', userIds);
+
+      if (usersError) {
+        console.error('❌ 获取用户信息失败:', usersError);
+        // 如果获取用户信息失败，仍然返回 profile 数据，只是没有用户详细信息
+      }
+
+      // 创建 user_id 到 user 数据的映射
+      const userIdToUserMap: Record<string, any> = {};
+      if (usersData) {
+        usersData.forEach(user => {
+          userIdToUserMap[user.id] = user;
+        });
+      }
+
+      // 为每个学生找到对应的标签信息
+      const profileIdToTagMap: Record<string, any> = {};
+      allTagData.forEach(tag => {
+        if (!profileIdToTagMap[tag.student_profile_id]) {
+          profileIdToTagMap[tag.student_profile_id] = {
+            tag_name: tag.tag_name,
+            tag_category: tag.tag_category,
+            proficiency_level: tag.proficiency_level
+          };
+        }
+      });
 
       // 转换数据格式
-      const students: UserWithRole[] = (tagData || []).map(item => {
-        const profile = item.student_profiles;
-        const user = profile.users;
+      const students: UserWithRole[] = (profileData || []).map(profile => {
+        const user = userIdToUserMap[profile.user_id] || {};
+        const tag = profileIdToTagMap[profile.id];
         return {
           id: profile.user_id, // 使用 user_id 作为主要ID
-          profile_id: item.student_profile_id, // 保存 profile_id 用于其他操作
+          profile_id: profile.id, // 保存 profile_id 用于其他操作
           username: user.username || '',
-          email: profile.email || '',
-          full_name: profile.full_name || '',
-          user_number: profile.student_number || profile.user_number || '',
-          phone: profile.phone || '',
-          department: profile.department || '待分配',
-          grade: profile.grade || '待分配',
-          class_name: profile.class_name || '待分配',
-          status: profile.profile_status === 'active' || profile.status === 'active' ? '在读' : '其他',
+          email: user.email || '', // 从 users 表获取
+          full_name: profile.full_name || user.full_name || '', // 优先使用 profile 中的，如果没有则使用 users 中的
+          user_number: user.user_number || '', // 从 users 表获取
+          phone: profile.phone || user.phone || '',
+          department: (profile as any).department || (user as any).department || '待分配',
+          grade: (profile as any).grade || (user as any).grade || '待分配',
+          class_name: profile.class_name || (user as any).class_name || '待分配',
+          status: (profile.profile_status === 'approved' || profile.profile_status === 'pending') ? '在读' : '其他',
           role_id: '3',
           role: user.role || {
             id: '3',
@@ -1044,22 +1144,348 @@ export class UserService {
           created_at: user.created_at || profile.created_at,
           updated_at: profile.updated_at || user.created_at,
           // 添加技术标签信息
-          technical_tag: {
-            tag_name: item.tag_name,
-            tag_category: item.tag_category,
-            proficiency_level: item.proficiency_level
-          }
-        } as UserWithRole & { technical_tag: any };
+          technical_tag: tag ? {
+            tag_name: tag.tag_name,
+            tag_category: tag.tag_category,
+            proficiency_level: tag.proficiency_level
+          } : undefined
+        } as UserWithRole & { technical_tag?: any };
       });
 
       console.log(`✅ 转换后的学生数据: ${students.length} 条`);
       
+      // 总数应该是匹配的学生数量（去重后的 profile_id 数量），而不是标签数量
+      const totalStudents = matchedProfileIds.length;
+      
       return {
         students,
-        total: count || 0
+        total: totalStudents
       };
     } catch (error) {
       console.error('❌ 根据技术标签搜索学生失败:', error);
+      return { students: [], total: 0 };
+    }
+  }
+
+  // 根据奖惩信息搜索学生
+  static async getStudentsByRewardPunishment(
+    teacherId: string, 
+    filters?: {
+      name?: string  // 奖惩名称（模糊搜索）
+      type?: 'reward' | 'punishment'  // 奖惩类型
+      category?: string  // 分类
+      date_from?: string  // 开始日期
+      date_to?: string  // 结束日期
+      page?: number
+      limit?: number
+    }
+  ): Promise<{ students: UserWithRole[], total: number }> {
+    const {
+      name = '',
+      type,
+      category,
+      date_from,
+      date_to,
+      page = 1,
+      limit = 20
+    } = filters || {}
+
+    try {
+      console.log('🏆 开始奖惩信息搜索:', { teacherId, filters, page, limit });
+      
+      // 首先通过 getTeacherStudents 获取教师管理的所有学生
+      const allTeacherStudents = await this.getTeacherStudents(teacherId, {
+        keyword: '',
+        page: 1,
+        limit: 10000 // 获取所有学生
+      });
+
+      if (!allTeacherStudents.students || allTeacherStudents.students.length === 0) {
+        console.log('ℹ️ 该教师没有管理的学生');
+        return { students: [], total: 0 };
+      }
+
+      console.log(`✅ 教师管理 ${allTeacherStudents.students.length} 个学生`);
+
+      // 获取这些学生的 user_id 和 profile_id
+      const studentUserIds = allTeacherStudents.students.map(s => s.id);
+      const studentProfileIds: string[] = [];
+      const profileIdToUserIdMap: Record<string, string> = {};
+
+      // 获取 profile_id
+      allTeacherStudents.students.forEach(student => {
+        const profileId = (student as any).profile_id;
+        if (profileId) {
+          if (!studentProfileIds.includes(profileId)) {
+            studentProfileIds.push(profileId);
+            profileIdToUserIdMap[profileId] = student.id;
+          }
+        }
+      });
+
+      // 如果从学生数据中没有获取到足够的 profile_id，通过 student_profiles 表查询
+      if (studentProfileIds.length < allTeacherStudents.students.length && studentUserIds.length > 0) {
+        const { data: profilesData, error: profilesError } = await supabase
+          .from('student_profiles')
+          .select('id, user_id')
+          .in('user_id', studentUserIds);
+
+        if (!profilesError && profilesData && profilesData.length > 0) {
+          profilesData.forEach(p => {
+            if (!studentProfileIds.includes(p.id)) {
+              studentProfileIds.push(p.id);
+              profileIdToUserIdMap[p.id] = p.user_id;
+            }
+          });
+        }
+      }
+
+      if (studentUserIds.length === 0) {
+        console.log('ℹ️ 该教师管理的学生没有有效的ID');
+        return { students: [], total: 0 };
+      }
+
+      // 构建查询
+      let query = supabase
+        .from('reward_punishments')
+        .select('student_id, name, type, level, category, description, date', { count: 'exact' })
+        .in('status', ['approved', 'pending']) // 只搜索已审核或待审核的记录
+        .in('student_id', [...new Set([...studentUserIds, ...studentProfileIds])]); // 同时支持 user_id 和 profile_id
+
+      // 应用筛选条件
+      if (name && name.trim()) {
+        // 如果提供了名称，进行模糊搜索
+        const searchPattern = `%${name.trim()}%`;
+        query = query.or(`name.ilike.${searchPattern},description.ilike.${searchPattern}`);
+      }
+      
+      if (type) {
+        query = query.eq('type', type);
+      }
+      
+      if (category && category.trim()) {
+        query = query.ilike('category', `%${category.trim()}%`);
+      }
+      
+      if (date_from) {
+        query = query.gte('date', date_from);
+      }
+      
+      if (date_to) {
+        query = query.lte('date', date_to);
+      }
+
+      // 执行查询
+      const { data: rewardData, error: rewardError, count } = await query;
+
+      if (rewardError) {
+        console.error('❌ 搜索奖惩信息失败:', rewardError);
+        throw new Error(`搜索奖惩信息失败: ${rewardError.message}`);
+      }
+
+      console.log(`✅ 找到 ${rewardData?.length || 0} 条匹配的奖惩记录，总数: ${count}`);
+
+      if (!rewardData || rewardData.length === 0) {
+        return { students: [], total: 0 };
+      }
+
+      // 获取匹配的学生ID列表（去重）
+      const matchedStudentIds = [...new Set(rewardData.map(r => r.student_id))];
+      
+      // 分页处理
+      const offset = (page - 1) * limit;
+      const paginatedStudentIds = matchedStudentIds.slice(offset, offset + limit);
+
+      // 创建 student_id 到奖惩信息的映射
+      const studentIdToRewardMap: Record<string, any> = {};
+      rewardData.forEach(reward => {
+        if (!studentIdToRewardMap[reward.student_id]) {
+          studentIdToRewardMap[reward.student_id] = {
+            name: reward.name,
+            type: reward.type,
+            level: reward.level,
+            category: reward.category,
+            description: reward.description,
+            date: reward.date
+          };
+        }
+      });
+
+      // 查询这些学生的完整信息
+      // 先尝试通过 user_id 查询
+      const userIds = paginatedStudentIds.filter(id => studentUserIds.includes(id));
+      const profileIds = paginatedStudentIds.filter(id => studentProfileIds.includes(id));
+
+      let students: UserWithRole[] = [];
+
+      // 查询 users 表
+      if (userIds.length > 0) {
+        const { data: usersData, error: usersError } = await supabase
+          .from('users')
+          .select(`
+            id,
+            username,
+            email,
+            user_number,
+            full_name,
+            phone,
+            class_name,
+            created_at,
+            role:roles(*)
+          `)
+          .in('id', userIds);
+
+        if (!usersError && usersData) {
+          // 获取对应的 profile 信息
+          const { data: profilesData } = await supabase
+            .from('student_profiles')
+            .select('id, user_id, profile_status')
+            .in('user_id', userIds);
+
+          const profileMap: Record<string, any> = {};
+          if (profilesData) {
+            profilesData.forEach(p => {
+              profileMap[p.user_id] = p;
+            });
+          }
+
+          students = usersData.map(user => {
+            const profile = profileMap[user.id];
+            const reward = studentIdToRewardMap[user.id];
+            return {
+              id: user.id,
+              profile_id: profile?.id,
+              username: user.username || '',
+              email: user.email || '',
+              full_name: user.full_name || '',
+              user_number: user.user_number || '',
+              phone: user.phone || '',
+              department: (user as any).department || '待分配',
+              grade: (user as any).grade || '待分配',
+              class_name: user.class_name || '待分配',
+              status: profile?.profile_status === 'approved' || profile?.profile_status === 'pending' ? '在读' : '其他',
+              role_id: '3',
+              role: user.role || {
+                id: '3',
+                role_name: 'student',
+                role_description: '学生',
+                permissions: {},
+                is_system_default: true,
+                created_at: '2021-01-01',
+                updated_at: '2021-01-01'
+              },
+              created_at: user.created_at,
+              updated_at: user.created_at,
+              // 添加奖惩信息
+              reward_punishment: reward ? {
+                name: reward.name,
+                type: reward.type,
+                level: reward.level,
+                category: reward.category,
+                description: reward.description,
+                date: reward.date
+              } : undefined
+            } as UserWithRole & { reward_punishment?: any };
+          });
+        }
+      }
+
+      // 如果还有 profile_id 需要查询（这些可能是 profile_id 而不是 user_id）
+      if (profileIds.length > 0 && students.length < paginatedStudentIds.length) {
+        const { data: profileData, error: profileQueryError } = await supabase
+          .from('student_profiles')
+          .select(`
+            id,
+            user_id,
+            full_name,
+            phone,
+            class_name,
+            profile_status,
+            created_at,
+            updated_at
+          `)
+          .in('id', profileIds);
+
+        if (!profileQueryError && profileData) {
+          const profileUserIds = profileData.map(p => p.user_id).filter(Boolean);
+          
+          // 查询对应的 users 信息
+          if (profileUserIds.length > 0) {
+            const { data: usersData, error: usersError } = await supabase
+              .from('users')
+              .select(`
+                id,
+                username,
+                email,
+                user_number,
+                full_name,
+                created_at,
+                role:roles(*)
+              `)
+              .in('id', profileUserIds);
+
+            if (!usersError && usersData) {
+              const userMap: Record<string, any> = {};
+              usersData.forEach(u => {
+                userMap[u.id] = u;
+              });
+
+              profileData.forEach(profile => {
+                const user = userMap[profile.user_id];
+                if (user && !students.find(s => s.id === profile.user_id)) {
+                  const reward = studentIdToRewardMap[profile.id];
+                  students.push({
+                    id: profile.user_id,
+                    profile_id: profile.id,
+                    username: user.username || '',
+                    email: user.email || '',
+                    full_name: profile.full_name || user.full_name || '',
+                    user_number: user.user_number || '',
+                    phone: profile.phone || user.phone || '',
+                    department: (profile as any).department || (user as any).department || '待分配',
+                    grade: (profile as any).grade || (user as any).grade || '待分配',
+                    class_name: profile.class_name || (user as any).class_name || '待分配',
+                    status: profile.profile_status === 'approved' || profile.profile_status === 'pending' ? '在读' : '其他',
+                    role_id: '3',
+                    role: user.role || {
+                      id: '3',
+                      role_name: 'student',
+                      role_description: '学生',
+                      permissions: {},
+                      is_system_default: true,
+                      created_at: '2021-01-01',
+                      updated_at: '2021-01-01'
+                    },
+                    created_at: user.created_at || profile.created_at,
+                    updated_at: profile.updated_at || user.created_at,
+                    // 添加奖惩信息
+                    reward_punishment: reward ? {
+                      name: reward.name,
+                      type: reward.type,
+                      level: reward.level,
+                      category: reward.category,
+                      description: reward.description,
+                      date: reward.date
+                    } : undefined
+                  } as UserWithRole & { reward_punishment?: any });
+                }
+              });
+            }
+          }
+        }
+      }
+
+      console.log(`✅ 转换后的学生数据: ${students.length} 条`);
+      
+      // 总数应该是匹配的学生数量（去重后的 student_id 数量）
+      const totalStudents = matchedStudentIds.length;
+      
+      return {
+        students,
+        total: totalStudents
+      };
+    } catch (error) {
+      console.error('❌ 根据奖惩信息搜索学生失败:', error);
       return { students: [], total: 0 };
     }
   }
