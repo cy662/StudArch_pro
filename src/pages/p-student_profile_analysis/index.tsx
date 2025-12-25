@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../../hooks/useAuth';
 import useStudentProfile from '../../hooks/useStudentProfile';
 import { generateStudentProfile } from '../../services/n8nService';
@@ -15,6 +16,8 @@ import {
 } from 'chart.js';
 import styles from './styles.module.css';
 
+// 注册雷达图所需的组件，避免Chart.js未注册报错
+ChartJS.register(RadialLinearScale, PointElement, LineElement, Filler, Tooltip, Legend);
 // 定义工作流分析结果的类型
 interface AnalysisResult {
   summary: string;
@@ -33,6 +36,10 @@ interface AnalysisResult {
   };
 }
 
+// 生成画像等待的最长时间（毫秒）
+// 注意：524错误是CDN层面的超时，需要更长时间或考虑其他实现方式
+const WORKFLOW_TIMEOUT_MS = 3600000 * 2; // 120分钟，进一步延长超时时间
+
 // 定义雷达图组件
 interface RadarChartProps {
   chartData: AnalysisResult['radarChart'];
@@ -42,6 +49,14 @@ const RadarChart: React.FC<RadarChartProps> = ({ chartData }) => {
   const chartRef = useRef<ChartJS<'radar'>>(null);
 
   if (!chartData) return null;
+
+  // 每次数据变化时销毁旧的Chart实例，避免“Canvas is already in use”错误
+  useEffect(() => {
+    const chartInstance = chartRef.current;
+    return () => {
+      chartInstance?.destroy();
+    };
+  }, [chartData]);
 
   const options: ChartOptions<'radar'> = {
     responsive: true,
@@ -76,7 +91,12 @@ const RadarChart: React.FC<RadarChartProps> = ({ chartData }) => {
 
   return (
     <div className={styles.radarChartContainer}>
-      <Radar ref={chartRef} data={chartData} options={options} />
+      <Radar
+        key={(chartData.labels || []).join('|')} // 强制不同数据时重建canvas
+        ref={chartRef}
+        data={chartData}
+        options={options}
+      />
     </div>
   );
 };
@@ -109,6 +129,7 @@ const mockAnalysisResult: AnalysisResult = {
 };
 
 const StudentProfileAnalysis: React.FC = () => {
+  const navigate = useNavigate();
   const { user: currentUser, loading: authLoading } = useAuth();
   const [loading, setLoading] = useState(true);
   const [generatingPortrait, setGeneratingPortrait] = useState(false);
@@ -121,6 +142,11 @@ const StudentProfileAnalysis: React.FC = () => {
     profile: studentProfile, 
     loading: profileLoading, 
   } = useStudentProfile(currentUser?.id || '');
+
+  // 返回上一页功能
+  const goBack = () => {
+    navigate(-1);
+  };
 
   useEffect(() => {
     const originalTitle = document.title;
@@ -187,10 +213,19 @@ const StudentProfileAnalysis: React.FC = () => {
         const n8nResult = await generateStudentProfile(
           studentId,
           'https://cy2005.app.n8n.cloud/webhook/student-profile-analysis',
-          ''
+          '',
+          WORKFLOW_TIMEOUT_MS
         );
         
         console.log('n8n工作流调用结果:', n8nResult);
+        
+        // 处理524超时错误
+        if (n8nResult.status_code === 524) {
+          setError('生成画像超时，请稍后重试。这可能是由于网络连接问题或n8n服务器响应缓慢导致的。');
+          setPortraitStatus('error');
+          console.error('n8n工作流调用超时(524):', n8nResult);
+          return;
+        }
         
         if (n8nResult.success) {
           // 处理n8n返回的数据
@@ -220,7 +255,7 @@ const StudentProfileAnalysis: React.FC = () => {
               
               // 提取玫瑰图数据并转换为前端期望的雷达图格式
               const roseChartData = workflowData?.roseChartData || workflowData?.chartConfig;
-              let radarChartData = null;
+              let radarChartData: AnalysisResult['radarChart'] | undefined = undefined;
               
               if (roseChartData) {
                 radarChartData = {
@@ -267,10 +302,16 @@ const StudentProfileAnalysis: React.FC = () => {
           setPortraitStatus('error');
         }
       } catch (n8nError) {
-        console.error('调用n8n工作流时发生异常:', n8nError);
-        setError('调用分析服务时发生异常: ' + (n8nError instanceof Error ? n8nError.message : '未知错误'));
-        setPortraitStatus('error');
-      }
+          // 增强对超时的提示，便于用户判断是否需要重试
+          if (n8nError instanceof DOMException && n8nError.name === 'AbortError') {
+            console.error('调用n8n工作流超时，已中断等待');
+            setError('生成耗时较长，前端等待已超时（最长120分钟）。请检查n8n运行状态后重试。');
+          } else {
+            console.error('调用n8n工作流时发生异常:', n8nError);
+            setError('调用分析服务时发生异常: ' + (n8nError instanceof Error ? n8nError.message : '未知错误'));
+          }
+          setPortraitStatus('error');
+        }
     } catch (err) {
       console.error('生成画像时发生错误:', err);
       setError('生成画像时发生网络错误，请稍后重试');
@@ -299,6 +340,54 @@ const StudentProfileAnalysis: React.FC = () => {
 
   return (
     <div className={styles.pageWrapper}>
+      {/* 顶部导航栏 - 从学生仪表盘页面复制并添加返回按钮 */}
+      <header className="fixed top-0 left-0 right-0 bg-white border-b border-border-light h-16 z-50">
+        <div className="flex items-center justify-between h-full px-6">
+          {/* Logo和系统名称 - 添加返回按钮 */}
+          <div className="flex items-center space-x-3">
+            <button onClick={goBack} className="mr-2 text-text-primary hover:text-blue-500">
+              <i className="fas fa-arrow-left text-lg"></i>
+            </button>
+            <div className="w-10 h-10 bg-gradient-to-br from-secondary to-accent rounded-lg flex items-center justify-center">
+              <i className="fas fa-graduation-cap text-white text-lg"></i>
+            </div>
+            <h1 className="text-xl font-bold text-text-primary">学档通</h1>
+          </div>
+          
+          {/* 用户信息和操作 */}
+          <div className="flex items-center space-x-4">
+            {/* 用户信息 */}
+            <Link 
+              to="/student-my-profile"
+              className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+            >
+              <img 
+                src={studentProfile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/DQIklNDlQyw/"} 
+                alt="学生头像" 
+                className="w-8 h-8 rounded-full object-cover" 
+              />
+              <div className="text-sm">
+                <div className="font-medium text-text-primary">
+                  {loading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '未知用户')}
+                </div>
+                <div className="text-text-secondary">
+                  {loading ? '加载中...' : (currentUser?.class_name || '未知班级')}
+                </div>
+              </div>
+              <i className="fas fa-chevron-down text-xs text-text-secondary"></i>
+            </Link>
+            
+            {/* 退出登录 */}
+            <button 
+              onClick={() => navigate('/login')}
+              className="text-text-secondary hover:text-red-500 transition-colors"
+            >
+              <i className="fas fa-sign-out-alt text-lg"></i>
+            </button>
+          </div>
+        </div>
+      </header>
+
       <div className={styles.contentContainer}>
         <div className={styles.header}>
           <h1 className={styles.title}>个人画像分析</h1>
@@ -323,7 +412,7 @@ const StudentProfileAnalysis: React.FC = () => {
               <div className={styles.generatingContainer}>
                 <div className={styles.loadingSpinner}></div>
                 <p className={styles.generatingText}>正在生成个人画像...</p>
-                <p className={styles.generatingSubtext}>这可能需要几秒钟时间</p>
+                <p className={styles.generatingSubtext}>可能需要较长时间处理，最长等待约120分钟</p>
               </div>
             )}
             

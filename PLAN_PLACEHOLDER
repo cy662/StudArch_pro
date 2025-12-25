@@ -1,0 +1,15 @@
+计划：修复 n8n 结果未在学生端个人画像展示
+1) 现状排查
+- 查阅 `src/pages/p-student_profile_analysis/index.tsx`：`generatePortrait` 如何处理 `generateStudentProfile` 返回值、`portraitStatus`/`analysisResult` 状态流。
+- 核对 `src/services/n8nService.ts`：120s 超时、空响应返回 `{}`，确认是否导致页面判定成功但无数据。
+- 查找后端 `/api/n8n/workflow` 代理实现（文件待定位）：判定是同步等待 n8n 结果还是仅返回受理信息，是否需要轮询。
+
+2) 前端策略调整
+- 如果接口同步返回结果但偶发空体：在 `generatePortrait` 增加空结果判定/错误提示，防止直接置成功却无渲染；对耗时操作增加显式超时提示。
+- 如果接口仅受理：实现轮询（带最大次数和取消）或“点击刷新结果”按钮，直到拿到结果或失败；保持 `portraitStatus`=generating 期间展示加载。
+- 优化状态/文案：区分“未生成/生成中/成功/失败”，在错误时展示重试入口并写入日志。
+
+3) 验证
+- 使用 mock 或真实 n8n webhook 触发长耗时与成功场景，确认不再早退、结果成功渲染。
+- 页面自测：生成后确认雷达图/文本正常显示，错误提示与重试路径可用。
+
