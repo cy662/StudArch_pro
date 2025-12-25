@@ -867,7 +867,12 @@ ${errors.slice(0, 2).join('\n')}`);
                     </label>
                     <select
                       value={rewardPunishmentType}
-                      onChange={(e) => setRewardPunishmentType(e.target.value as 'reward' | 'punishment' | '')}
+                      onChange={(e) => {
+                        const newType = e.target.value as 'reward' | 'punishment' | '';
+                        setRewardPunishmentType(newType);
+                        // 当类型改变时，清空分类选择
+                        setRewardPunishmentCategory('');
+                      }}
                       className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
                     >
                       <option value="">全部</option>
@@ -880,13 +885,34 @@ ${errors.slice(0, 2).join('\n')}`);
                     <label className="block text-sm font-medium text-text-primary mb-1">
                       分类
                     </label>
-                    <input
-                      type="text"
-                      placeholder="输入分类关键词"
+                    <select
                       value={rewardPunishmentCategory}
                       onChange={(e) => setRewardPunishmentCategory(e.target.value)}
-                      className="w-full px-3 py-2 border border-border-light rounded-lg focus:ring-2 focus:ring-secondary focus:border-secondary"
-                    />
+                      className="w-full px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-transparent"
+                      disabled={!rewardPunishmentType}
+                    >
+                      <option value="">全部</option>
+                      {rewardPunishmentType === 'reward' ? (
+                        <>
+                          <option value="奖学金">奖学金</option>
+                          <option value="荣誉">荣誉称号</option>
+                          <option value="竞赛">竞赛获奖</option>
+                          <option value="论文">论文发表</option>
+                          <option value="专利">专利申请</option>
+                          <option value="社会实践">社会实践</option>
+                          <option value="其他">其他奖励</option>
+                        </>
+                      ) : rewardPunishmentType === 'punishment' ? (
+                        <>
+                          <option value="纪律处分">纪律处分</option>
+                          <option value="警告">警告处分</option>
+                          <option value="严重警告">严重警告</option>
+                          <option value="记过">记过处分</option>
+                          <option value="留校察看">留校察看</option>
+                          <option value="其他">其他处分</option>
+                        </>
+                      ) : null}
+                    </select>
                   </div>
                   
                   <div>

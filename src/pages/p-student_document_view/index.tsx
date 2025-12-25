@@ -21,8 +21,16 @@ const StudentDocumentView: React.FC = () => {
   const [currentPage, setCurrentPage] = useState(1);
   const [fileTypeFilter, setFileTypeFilter] = useState('');
   const [timeRangeFilter, setTimeRangeFilter] = useState('');
+  const [customDateFrom, setCustomDateFrom] = useState('');
+  const [customDateTo, setCustomDateTo] = useState('');
+  // 上传时为本次文件选择的文件夹名称（学生自定义）
+  const [uploadFolderName, setUploadFolderName] = useState('');
   const [showDocumentModal, setShowDocumentModal] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<Document | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewMime, setPreviewMime] = useState<string | null>(null);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   
   // 文件上传相关状态
   const [showUploadModal, setShowUploadModal] = useState(false);
@@ -30,6 +38,8 @@ const StudentDocumentView: React.FC = () => {
   const [uploadProgress, setUploadProgress] = useState<{[key: string]: number}>({});
   const [isUploading, setIsUploading] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
 
   const pageSize = 10;
@@ -43,7 +53,8 @@ const StudentDocumentView: React.FC = () => {
     
     try {
       const params = {
-        document_type: fileTypeFilter || undefined,
+        // 这里不再按后端的 document_type 过滤，改为前端按文件夹过滤
+        document_type: undefined,
         keyword: '',
         date_from: getDateRangeFilter(timeRangeFilter)?.from,
         date_to: getDateRangeFilter(timeRangeFilter)?.to,
@@ -52,9 +63,38 @@ const StudentDocumentView: React.FC = () => {
       };
 
       const response = await DocumentService.getUserDocuments(currentUser.id, params);
-      setDocuments(response.documents);
-      setTotal(response.total);
-      setCurrentDocuments(response.documents);
+      
+      // 前端再做一层时间范围过滤，确保筛选结果符合预期
+      let docs = response.documents;
+      const range = getDateRangeFilter(timeRangeFilter);
+      if (range) {
+        // 避免时区导致当天过滤失效，显式拼接本地日界限
+        const fromDate = range.from ? new Date(`${range.from}T00:00:00`) : null;
+        const toDate = range.to ? new Date(`${range.to}T23:59:59`) : null;
+        docs = docs.filter(doc => {
+          const created = new Date(doc.created_at);
+          if (fromDate && created < fromDate) return false;
+          if (toDate && created > toDate) return false;
+          return true;
+        });
+      }
+
+      // 再按学生选择的文件夹名称进行过滤
+      if (fileTypeFilter) {
+        docs = docs.filter(doc => (doc.folder_name || '') === fileTypeFilter);
+      }
+
+      setDocuments(docs);
+      setTotal(docs.length);
+      setCurrentDocuments(docs);
+      // 同步选中状态：如果选中的ID不在当前数据中，清掉它们
+      setSelectedIds(prev => {
+        const next = new Set<string>();
+        docs.forEach(d => {
+          if (prev.has(d.id)) next.add(d.id);
+        });
+        return next;
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : '加载文档失败');
     } finally {
@@ -64,7 +104,17 @@ const StudentDocumentView: React.FC = () => {
 
   // 获取日期范围筛选
   const getDateRangeFilter = (timeRange: string) => {
+    // 不选择时间范围时，不限制时间
     if (!timeRange) return null;
+
+    // 自定义时间范围：使用输入的起止日期
+    if (timeRange === 'custom') {
+      if (!customDateFrom && !customDateTo) return null;
+      return {
+        from: customDateFrom || undefined,
+        to: customDateTo || undefined
+      };
+    }
     
     const now = new Date();
     let startDate: Date | null = null;
@@ -158,13 +208,23 @@ const StudentDocumentView: React.FC = () => {
     
     try {
       const doc = documents.find(d => d.id === docId);
-      if (doc) {
-        setSelectedDocument(doc);
-        setShowDocumentModal(true);
-      }
+      if (!doc) return;
+
+      setSelectedDocument(doc);
+      setPreviewLoading(true);
+      setPreviewError(null);
+
+      // 获取预览链接（不增加下载次数）
+      const preview = await DocumentService.getDocumentPreviewUrl(docId, currentUser.id);
+      setPreviewUrl(preview.url);
+      setPreviewMime(preview.mimeType || null);
+      setShowDocumentModal(true);
     } catch (error) {
       console.error('获取文档详情失败:', error);
-      alert('获取文档详情失败');
+      setPreviewError(error instanceof Error ? error.message : '预览失败');
+      setShowDocumentModal(true);
+    } finally {
+      setPreviewLoading(false);
     }
   };
 
@@ -172,6 +232,10 @@ const StudentDocumentView: React.FC = () => {
   const closeModal = () => {
     setShowDocumentModal(false);
     setSelectedDocument(null);
+    setPreviewUrl(null);
+    setPreviewMime(null);
+    setPreviewError(null);
+    setPreviewLoading(false);
   };
 
   // 下载文件
@@ -194,6 +258,29 @@ const StudentDocumentView: React.FC = () => {
     } catch (error) {
       console.error('下载失败:', error);
       alert(error instanceof Error ? error.message : '下载失败');
+    }
+  };
+
+  // 删除文件
+  const handleDeleteDocument = async (docId: string) => {
+    if (!currentUser?.id) return;
+    const confirmed = window.confirm('确定要删除该文件吗？删除后不可恢复。');
+    if (!confirmed) return;
+
+    try {
+      setDeletingId(docId);
+      await DocumentService.deleteDocument(docId, currentUser.id);
+      // 如果当前预览的就是被删的，关闭预览
+      if (selectedDocument?.id === docId) {
+        closeModal();
+      }
+      await loadDocuments();
+      alert('删除成功');
+    } catch (error) {
+      console.error('删除失败:', error);
+      alert(error instanceof Error ? error.message : '删除失败');
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -228,13 +315,17 @@ const StudentDocumentView: React.FC = () => {
         
         setUploadProgress(prev => ({ ...prev, [fileId]: 50 }));
         
+        // 如果学生填写了新的文件夹名称，则优先使用；否则使用在“已有文件夹”下拉框中选择的值
+        const folderNameToUse = uploadFolderName.trim() || fileTypeFilter || null;
+
         const result = await DocumentService.uploadDocument(
           currentUser.id,
           file,
           title,
           '',
           documentType,
-          []
+          [],
+          folderNameToUse
         );
         
         setUploadProgress(prev => ({ ...prev, [fileId]: 100 }));
@@ -254,6 +345,7 @@ const StudentDocumentView: React.FC = () => {
       setUploadFiles([]);
       setUploadProgress({});
       setShowUploadModal(false);
+      setUploadFolderName('');
       
       // 显示结果提示
       if (failedCount === 0) {
@@ -274,24 +366,26 @@ const StudentDocumentView: React.FC = () => {
   const handleBatchExport = async () => {
     if (!currentUser?.id) return;
     
-    if (documents.length === 0) {
+    const idsToExport = selectedIds.size > 0 ? Array.from(selectedIds) : documents.map(d => d.id);
+    if (idsToExport.length === 0) {
       alert('没有可导出的文档！');
       return;
     }
 
-    // 确认导出
-    const confirmed = window.confirm(`确定要导出所有 ${documents.length} 个原始文件吗？
-文件将保持原始格式和内容，尝试打包为ZIP或逐个下载。`);
+    const confirmed = window.confirm(
+      selectedIds.size > 0
+        ? `确定要导出已选的 ${idsToExport.length} 个文件吗？将尝试打包为 ZIP。`
+        : `确定要导出全部 ${idsToExport.length} 个文件吗？将尝试打包为 ZIP。`
+    );
     if (!confirmed) return;
 
     setIsExporting(true);
     
     try {
-      // 先尝试 ZIP 打包下载
-      const zipResult = await DocumentService.createZipExport(currentUser.id);
+      // 优先对选择的文件进行 ZIP 打包
+      const zipResult = await DocumentService.createZipExportByIds(idsToExport, currentUser.id);
       
       if (zipResult.success && zipResult.zipBlob) {
-        // ZIP 下载成功
         const url = URL.createObjectURL(zipResult.zipBlob);
         const link = document.createElement('a');
         link.href = url;
@@ -301,7 +395,7 @@ const StudentDocumentView: React.FC = () => {
         document.body.removeChild(link);
         URL.revokeObjectURL(url);
         
-        alert(`成功导出 ${documents.length} 个文件为ZIP包！`);
+        alert(`成功导出 ${zipResult.downloadedCount ?? idsToExport.length} 个文件为ZIP包！`);
       } else {
         // ZIP 失败，使用单独下载
         console.log('ZIP下载失败，使用单独下载模式');
@@ -474,22 +568,31 @@ ${result.error}`;
           <div className="bg-white rounded-xl shadow-card p-4">
             <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0">
               <div className="flex flex-col sm:flex-row space-y-3 sm:space-y-0 sm:space-x-4">
-                {/* 文件类型筛选 */}
+                {/* 文件夹筛选（使用学生自定义的文件夹名称） */}
                 <div className="flex items-center space-x-2">
-                  <label htmlFor="file-type-filter" className="text-sm font-medium text-text-primary">文件类型：</label>
+                  <label htmlFor="file-type-filter" className="text-sm font-medium text-text-primary">文件夹：</label>
+                  {/** 计算所有已存在的文件夹名称 */}
+                  {(() => {
+                    const folderOptions = Array.from(
+                      new Set(documents.map(d => d.folder_name).filter((n): n is string => !!n))
+                    );
+                    return (
                   <select 
                     id="file-type-filter"
                     value={fileTypeFilter}
                     onChange={(e) => setFileTypeFilter(e.target.value)}
                     className="px-3 py-2 border border-border-light rounded-lg focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
                   >
-                    <option value="">全部类型</option>
-                    <option value="transcript">成绩单</option>
-                    <option value="certificate">在校证明</option>
-                    <option value="graduation">毕业证明</option>
-                    <option value="award">获奖证明</option>
-                    <option value="other">其他</option>
+                    <option value="">全部文件夹</option>
+                    {folderOptions.length === 0 && (
+                      <option value="" disabled>暂无文件夹</option>
+                    )}
+                    {folderOptions.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
                   </select>
+                    );
+                  })()}
                 </div>
                 
                 {/* 时间范围筛选 */}
@@ -507,8 +610,29 @@ ${result.error}`;
                     <option value="month">最近一个月</option>
                     <option value="quarter">最近三个月</option>
                     <option value="year">最近一年</option>
+                    <option value="custom">自定义范围</option>
                   </select>
                 </div>
+
+                {/* 自定义时间范围选择 */}
+                {timeRangeFilter === 'custom' && (
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm text-text-secondary">从</span>
+                    <input
+                      type="date"
+                      value={customDateFrom}
+                      onChange={e => setCustomDateFrom(e.target.value)}
+                      className="px-2 py-1 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
+                    />
+                    <span className="text-sm text-text-secondary">到</span>
+                    <input
+                      type="date"
+                      value={customDateTo}
+                      onChange={e => setCustomDateTo(e.target.value)}
+                      className="px-2 py-1 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
+                    />
+                  </div>
+                )}
               </div>
               
               <div className="flex items-center space-x-2">
@@ -520,11 +644,11 @@ ${result.error}`;
                 </button>
                 <button 
                   onClick={handleBatchExport}
-                  disabled={isExporting || documents.length === 0}
-                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  disabled={isExporting || documents.length === 0 || (selectedIds.size === 0 && currentDocuments.length === 0)}
+                  className="px-4 py-2 bg-green-600 text-white text-sm rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
                 >
                   <i className={`fas fa-download mr-2 ${isExporting ? 'fa-spin' : ''}`}></i>
-                  {isExporting ? '导出中...' : '批量导出'}
+                  {isExporting ? '导出中...' : (selectedIds.size > 0 ? `导出已选(${selectedIds.size})` : '批量导出全部')}
                 </button>
                 <button 
                   onClick={applyFilters}
@@ -555,6 +679,24 @@ ${result.error}`;
               <table className="w-full">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
+                      <input
+                        type="checkbox"
+                        checked={currentDocuments.length > 0 && currentDocuments.every(d => selectedIds.has(d.id))}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          setSelectedIds(prev => {
+                            const next = new Set(prev);
+                            if (checked) {
+                              currentDocuments.forEach(d => next.add(d.id));
+                            } else {
+                              currentDocuments.forEach(d => next.delete(d.id));
+                            }
+                            return next;
+                          });
+                        }}
+                      />
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-text-secondary uppercase tracking-wider">
                       文件名称
                     </th>
@@ -590,38 +732,66 @@ ${result.error}`;
                       </td>
                     </tr>
                   ) : (
-                    currentDocuments.map(doc => (
-                      <tr key={doc.id} className={`${styles.tableRow} transition-colors`}>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
-                          <div className="flex items-center">
-                            <i className={`${DocumentService.getFileIcon(doc.file_type, doc.document_type)} text-secondary mr-3`}></i>
-                            {doc.title}
-                          </div>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap">
-                          <span className={`px-2 py-1 text-xs font-medium ${getTypeColor(doc.document_type)} rounded-full`}>
-                            {DocumentService.getDocumentTypeName(doc.document_type)}
-                          </span>
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">
-                          {formatDate(doc.created_at)}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
-                          <button 
-                            onClick={() => showDocumentPreview(doc.id)}
-                            className="text-secondary hover:text-accent transition-colors"
-                          >
-                            <i className="fas fa-eye"></i>
-                          </button>
-                          <button 
-                            onClick={() => downloadDocument(doc.id)}
-                            className="text-text-secondary hover:text-secondary transition-colors"
-                          >
-                            <i className="fas fa-download"></i>
-                          </button>
-                        </td>
-                      </tr>
-                    ))
+                    currentDocuments.map(doc => {
+                      const checked = selectedIds.has(doc.id);
+                      return (
+                        <tr key={doc.id} className={`${styles.tableRow} transition-colors`}>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm">
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={(e) => {
+                                const c = e.target.checked;
+                                setSelectedIds(prev => {
+                                  const next = new Set(prev);
+                                  if (c) next.add(doc.id); else next.delete(doc.id);
+                                  return next;
+                                });
+                              }}
+                            />
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-text-primary">
+                            <div className="flex items-center">
+                              <i className={`${DocumentService.getFileIcon(doc.file_type, doc.document_type)} text-secondary mr-3`}></i>
+                              {doc.title}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap">
+                            <span className="px-2 py-1 text-xs font-medium bg-blue-50 text-blue-700 rounded-full">
+                              {doc.folder_name || '未分组'}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm text-text-secondary">
+                            {formatDate(doc.created_at)}
+                          </td>
+                          <td className="px-6 py-4 whitespace-nowrap text-sm space-x-2">
+                            <button 
+                              onClick={() => showDocumentPreview(doc.id)}
+                              className="text-secondary hover:text-accent transition-colors"
+                            >
+                              <i className="fas fa-eye"></i>
+                            </button>
+                            <button 
+                              onClick={() => downloadDocument(doc.id)}
+                              className="text-text-secondary hover:text-secondary transition-colors"
+                            >
+                              <i className="fas fa-download"></i>
+                            </button>
+                            <button 
+                              onClick={() => handleDeleteDocument(doc.id)}
+                              disabled={deletingId === doc.id}
+                              className="text-red-500 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                              {deletingId === doc.id ? (
+                                <i className="fas fa-spinner fa-spin"></i>
+                              ) : (
+                                <i className="fas fa-trash"></i>
+                              )}
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -686,7 +856,7 @@ ${result.error}`;
               
               {/* 模态框内容 */}
               <div className="px-6 py-4">
-                {/* 文件选择区域 */}
+              {/* 文件选择区域 */}
                 <div className="mb-6">
                   <div className="border-2 border-dashed border-border-light rounded-lg p-8 text-center hover:border-secondary transition-colors">
                     <input 
@@ -767,6 +937,48 @@ ${result.error}`;
                   </div>
                 </div>
               </div>
+
+              {/* 文件夹选择/创建 */}
+              <div className="mb-6">
+                <h4 className="font-medium text-text-primary mb-2">文件夹归类（可选）</h4>
+                <p className="text-xs text-text-secondary mb-2">
+                  你可以将本次上传的所有文件放入同一个文件夹中，方便后续按文件夹筛选和查看。
+                </p>
+                <div className="flex flex-col sm:flex-row sm:items-center sm:space-x-3 space-y-2 sm:space-y-0">
+                  {(() => {
+                    const folderOptions = Array.from(
+                      new Set(documents.map(d => d.folder_name).filter((n): n is string => !!n))
+                    );
+                    return (
+                      <>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm text-text-secondary">已有文件夹：</span>
+                          <select
+                            value={fileTypeFilter}
+                            onChange={e => setFileTypeFilter(e.target.value)}
+                            className="px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
+                          >
+                            <option value="">不按文件夹分类</option>
+                            {folderOptions.map(name => (
+                              <option key={name} value={name}>{name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="flex-1 flex items-center space-x-2">
+                          <span className="text-sm text-text-secondary">或新建文件夹：</span>
+                          <input
+                            type="text"
+                            placeholder="输入新的文件夹名称，例如：奖学金材料"
+                            value={uploadFolderName}
+                            onChange={e => setUploadFolderName(e.target.value)}
+                            className="flex-1 px-3 py-2 border border-border-light rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-secondary focus:border-secondary"
+                          />
+                        </div>
+                      </>
+                    );
+                  })()}
+                </div>
+              </div>
               
               {/* 模态框底部 */}
               <div className="px-6 py-4 border-t border-border-light flex items-center justify-end space-x-3">
@@ -834,12 +1046,44 @@ ${result.error}`;
                   </div>
                   
                   {/* 文件预览区域 */}
-                  <div className="border border-border-light rounded-lg overflow-hidden">
-                    <div className="p-8 text-center bg-gray-50">
-                      <i className="fas fa-file-pdf text-6xl text-red-500 mb-4"></i>
-                      <p className="text-text-secondary mb-4">文件预览功能</p>
-                      <p className="text-sm text-text-secondary">在实际应用中，这里将显示PDF文件的预览内容</p>
-                    </div>
+                  <div className="border border-border-light rounded-lg overflow-hidden min-h-[280px] bg-gray-50 flex items-center justify-center">
+                    {previewLoading ? (
+                      <div className="text-center py-10">
+                        <i className="fas fa-spinner fa-spin text-2xl text-secondary mb-3"></i>
+                        <p className="text-text-secondary">正在加载预览...</p>
+                      </div>
+                    ) : previewError ? (
+                      <div className="text-center py-10">
+                        <i className="fas fa-exclamation-triangle text-2xl text-red-500 mb-3"></i>
+                        <p className="text-text-secondary mb-2">预览失败：{previewError}</p>
+                        <p className="text-sm text-text-secondary">您可以尝试下载文件查看。</p>
+                      </div>
+                    ) : previewUrl ? (
+                      <>
+                        {((previewMime || '').startsWith('image/') || ['jpg','jpeg','png','gif','bmp','webp'].includes(selectedDocument.file_type?.toLowerCase())) && (
+                          <img src={previewUrl} alt={selectedDocument.title} className="max-h-[520px] object-contain mx-auto" />
+                        )}
+                        {((previewMime || '').includes('pdf') || selectedDocument.file_type?.toLowerCase() === 'pdf') && (
+                          <iframe
+                            src={previewUrl}
+                            title="文件预览"
+                            className="w-full min-h-[520px] bg-white"
+                          ></iframe>
+                        )}
+                        {!((previewMime || '').startsWith('image/') || (previewMime || '').includes('pdf') || ['jpg','jpeg','png','gif','bmp','webp','pdf'].includes(selectedDocument.file_type?.toLowerCase())) && (
+                          <div className="text-center py-10">
+                            <i className="fas fa-file-alt text-4xl text-secondary mb-3"></i>
+                            <p className="text-text-secondary mb-2">暂不支持该格式在线预览</p>
+                            <p className="text-sm text-text-secondary">请点击下方“下载文件”查看原始内容。</p>
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <div className="text-center py-10">
+                        <i className="fas fa-file-alt text-4xl text-secondary mb-3"></i>
+                        <p className="text-text-secondary">选择文件后即可预览</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
@@ -851,6 +1095,23 @@ ${result.error}`;
                   className="px-4 py-2 bg-secondary text-white rounded-lg hover:bg-accent transition-colors"
                 >
                   <i className="fas fa-download mr-2"></i>下载文件
+                </button>
+                <button
+                  onClick={() => handleDeleteDocument(selectedDocument.id)}
+                  disabled={deletingId === selectedDocument.id}
+                  className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {deletingId === selectedDocument.id ? (
+                    <>
+                      <i className="fas fa-spinner fa-spin mr-2"></i>
+                      删除中...
+                    </>
+                  ) : (
+                    <>
+                      <i className="fas fa-trash mr-2"></i>
+                      删除文件
+                    </>
+                  )}
                 </button>
                 <button 
                   onClick={closeModal}
