@@ -31,8 +31,8 @@ const P_teacher_learning_analysis: React.FC = () => {
   };
 
   const handleAnalysis = async () => {
-    if (!studentId.trim() || !studentName.trim()) {
-      alert('请填写完整的学号和姓名信息');
+    if (!studentId.trim()) {
+      alert('请填写学生学号');
       return;
     }
     
@@ -47,7 +47,7 @@ const P_teacher_learning_analysis: React.FC = () => {
       const mockResults = {
         studentInfo: {
           studentId: studentId,
-          name: studentName,
+          name: studentName.trim() || '未填写姓名',
           class: '计算机科学与技术2023-1班',
           major: '计算机科学与技术',
           enrollmentDate: '2023-09-01'
@@ -226,7 +226,7 @@ const P_teacher_learning_analysis: React.FC = () => {
               
               <div>
                 <label htmlFor="studentName" className="block text-sm font-medium text-gray-700 mb-2">
-                  学生姓名 <span className="text-red-500">*</span>
+                  学生姓名 <span className="text-gray-400">（选填）</span>
                 </label>
                 <input
                   id="studentName"
@@ -243,7 +243,7 @@ const P_teacher_learning_analysis: React.FC = () => {
               <button
                 onClick={handleAnalysis}
                 disabled={isAnalyzing}
-                className="px-8 py-3 bg-gradient-to-r from-blue-500 to-blue-600 text-white font-medium rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-200 flex items-center space-x-2 shadow-md hover:shadow-lg transform hover:-translate-y-0.5 disabled:opacity-50 disabled:cursor-not-allowed"
+                className="px-8 py-3 bg-secondary text-white font-medium rounded-lg hover:bg-accent transition-colors flex items-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isAnalyzing ? (
                   <>
