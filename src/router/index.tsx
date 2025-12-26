@@ -14,6 +14,7 @@ import P_teacher_student_list from '../pages/p-teacher_student_list';
 import P_teacher_student_detail from '../pages/p-teacher_student_detail';
 
 import P_teacher_graduation_management from '../pages/p-teacher_graduation_management';
+import P_teacher_job_matching from '../pages/p-teacher_job_matching';
 
 import P_student_dashboard from '../pages/p-student_dashboard';
 import P_student_my_profile from '../pages/p-student_my_profile';
@@ -128,6 +129,15 @@ const router = createBrowserRouter([
         <AuthGuard requiredRole="teacher">
           <P_teacher_graduation_management />
         </AuthGuard>
+      </ErrorBoundary>
+    ),
+    errorElement: <ErrorPage />,
+  },
+  {
+    path: '/teacher-job-matching',
+    element: (
+      <ErrorBoundary>
+        <P_teacher_job_matching />
       </ErrorBoundary>
     ),
     errorElement: <ErrorPage />,

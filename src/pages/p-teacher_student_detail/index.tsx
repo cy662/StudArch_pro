@@ -643,6 +643,14 @@ const TeacherStudentDetail: React.FC = () => {
             <span className="font-medium">毕业去向管理</span>
           </Link>
           
+          <Link 
+            to="/teacher-job-matching" 
+            className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
+          >
+            <i className="fas fa-briefcase text-lg"></i>
+            <span className="font-medium">岗位匹配与推送</span>
+          </Link>
+          
         </nav>
       </aside>
 

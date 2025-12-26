@@ -856,7 +856,7 @@ const StudentAcademicTasks: React.FC = () => {
         {/* 课程统计信息 */}
         <section className="mb-8">
           <h3 className="text-lg font-semibold text-text-primary mb-4">课程概览</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300`}>
               <div className="flex items-center justify-between">
                 <div>
@@ -866,34 +866,6 @@ const StudentAcademicTasks: React.FC = () => {
                 </div>
                 <div className="w-12 h-12 bg-gradient-to-br from-blue-400 to-blue-600 rounded-lg flex items-center justify-center">
                   <i className="fas fa-book text-white text-xl"></i>
-                </div>
-              </div>
-            </div>
-            <div className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-text-secondary text-sm mb-1">已完成</p>
-                  <p className="text-3xl font-bold text-green-600">
-                    {getFilteredCourses().filter(c => c.status === 'completed').length}
-                  </p>
-                  <p className="text-text-secondary text-sm mt-1">课程完成</p>
-                </div>
-                <div className="w-12 h-12 bg-gradient-to-br from-green-400 to-green-600 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-check-circle text-white text-xl"></i>
-                </div>
-              </div>
-            </div>
-            <div className={`bg-white rounded-xl shadow-card p-6 ${styles.cardHover} transition-all duration-300`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-text-secondary text-sm mb-1">进行中</p>
-                  <p className="text-3xl font-bold text-orange-600">
-                    {getFilteredCourses().filter(c => c.status === 'in_progress').length}
-                  </p>
-                  <p className="text-text-secondary text-sm mt-1">正在学习</p>
-                </div>
-                <div className="w-12 h-12 bg-gradient-to-br from-orange-400 to-orange-600 rounded-lg flex items-center justify-center">
-                  <i className="fas fa-clock text-white text-xl"></i>
                 </div>
               </div>
             </div>

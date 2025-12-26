@@ -55,7 +55,51 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-
+// Webhook 代理端点 - 必须在通用路由之前定义
+app.post('/api/webhook-proxy', async (req, res) => {
+  try {
+    const webhookUrl = 'https://liu0521.app.n8n.cloud/webhook/teacher-job-matching';
+    
+    console.log('[Webhook 代理] 收到请求:', JSON.stringify(req.body, null, 2));
+    console.log('[Webhook 代理] 转发到:', webhookUrl);
+    
+    const response = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'User-Agent': 'StuArch Server Proxy'
+      },
+      body: JSON.stringify(req.body)
+    });
+    
+    console.log('[Webhook 代理] n8n 响应状态:', response.status);
+    
+    if (response.ok) {
+      const responseText = await response.text();
+      console.log('[Webhook 代理] n8n 响应内容:', responseText);
+      res.status(200).json({
+        success: true,
+        message: 'Webhook 请求发送成功',
+        n8nResponse: responseText
+      });
+    } else {
+      const errorText = await response.text();
+      console.error('[Webhook 代理] n8n 错误响应:', errorText);
+      res.status(response.status).json({
+        success: false,
+        message: 'Webhook 请求失败',
+        error: errorText
+      });
+    }
+  } catch (error) {
+    console.error('[Webhook 代理] 代理服务器错误:', error);
+    res.status(500).json({
+      success: false,
+      message: '代理服务器内部错误',
+      error: error.message
+    });
+  }
+});
 
 // 学生学习信息相关API（只使用修复后的版本）
 app.use('/api', studentLearningRoutes);

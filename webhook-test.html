@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Webhook 测试</title>
+</head>
+<body>
+    <h1>Webhook 测试页面</h1>
+    <button onclick="testWebhook()">测试 Webhook</button>
+    <div id="result"></div>
+
+    <script>
+        async function testWebhook() {
+            const webhookUrl = 'https://liu0521.app.n8n.cloud/webhook/014a3e71-b221-460d-8de8-1c5bb4c02dad';
+            const requestData = {
+                岗位信息: '前端',
+                提交时间: new Date().toLocaleString('zh-CN'),
+                操作用户: '测试用户'
+            };
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = '正在发送请求...';
+            
+            try {
+                // 尝试使用 img 标签（GET 请求，但可以触发 webhook）
+                const img = new Image();
+                const params = new URLSearchParams();
+                params.append('data', JSON.stringify(requestData));
+                img.src = `${webhookUrl}?${params.toString()}`;
+                img.onload = () => {
+                    resultDiv.innerHTML = 'Webhook 请求已发送（GET 方式）';
+                };
+                img.onerror = () => {
+                    // 如果 GET 失败，尝试 POST
+                    sendPostRequest(webhookUrl, requestData);
+                };
+            } catch (error) {
+                resultDiv.innerHTML = `错误: ${error.message}`;
+            }
+        }
+        
+        async function sendPostRequest(url, data) {
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    mode: 'no-cors',  // 绕过 CORS 检查
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                document.getElementById('result').innerHTML = 'POST 请求已发送（no-cors 模式）';
+            } catch (error) {
+                document.getElementById('result').innerHTML = `POST 请求失败: ${error.message}`;
+            }
+        }
+    </script>
+</body>
+</html>

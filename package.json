@@ -16,7 +16,8 @@
     "start:full": "concurrently \"npm run api\" \"npm run dev\"",
     "setup-training": "node setup_training_program.js",
     "setup-training:test": "node setup_training_program.js --test-data",
-    "quick-start": "node 快速启动培养方案系统.js"
+    "quick-start": "node 快速启动培养方案系统.js",
+    "webhook-proxy": "node webhook-proxy.js"
   },
   "dependencies": {
     "@fortawesome/fontawesome-free": "^6.4.0",
