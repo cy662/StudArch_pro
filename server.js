@@ -161,11 +161,21 @@ app.post('/api/n8n/workflow', async (req, res) => {
       params: params || {}
     });
     
+    // 创建AbortController设置30分钟超时
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => {
+      controller.abort();
+    }, 1800000); // 30分钟超时
+    
     const response = await fetch(webhook_url, {
       method: 'POST',
       headers: headers,
       body: JSON.stringify(params || {}),
+      signal: controller.signal
     });
+    
+    // 清除超时定时器
+    clearTimeout(timeoutId);
 
     console.log('n8n工作流响应状态:', response.status);
     console.log('n8n工作流响应头:', response.headers);
