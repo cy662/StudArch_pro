@@ -14,7 +14,8 @@ import P_teacher_student_list from '../pages/p-teacher_student_list';
 import P_teacher_student_detail from '../pages/p-teacher_student_detail';
 
 import P_teacher_graduation_management from '../pages/p-teacher_graduation_management';
-import P_teacher_job_matching from '../pages/p-teacher_job_matching';
+
+import P_teacher_learning_analysis from '../pages/p-teacher_learning_analysis';
 
 import P_student_dashboard from '../pages/p-student_dashboard';
 import P_student_my_profile from '../pages/p-student_my_profile';
@@ -133,11 +134,14 @@ const router = createBrowserRouter([
     ),
     errorElement: <ErrorPage />,
   },
+
   {
-    path: '/teacher-job-matching',
+    path: '/teacher-learning-analysis',
     element: (
       <ErrorBoundary>
-        <P_teacher_job_matching />
+        <AuthGuard requiredRole="teacher">
+          <P_teacher_learning_analysis />
+        </AuthGuard>
       </ErrorBoundary>
     ),
     errorElement: <ErrorPage />,

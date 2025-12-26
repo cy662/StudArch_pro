@@ -644,11 +644,11 @@ const TeacherStudentDetail: React.FC = () => {
           </Link>
           
           <Link 
-            to="/teacher-job-matching" 
+            to="/teacher-learning-analysis" 
             className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
           >
-            <i className="fas fa-briefcase text-lg"></i>
-            <span className="font-medium">岗位匹配与推送</span>
+            <i className="fas fa-chart-line text-lg"></i>
+            <span className="font-medium">学习成果智能分析</span>
           </Link>
           
         </nav>
