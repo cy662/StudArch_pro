@@ -903,4 +903,47 @@ router.get('/get-custom-courses/:student_profile_id', async (req, res) => {
   }
 });
 
+// 10. 获取学生最新的个人画像分析记录
+router.get('/student-learning/get-latest-profile-job/:user_id', async (req, res) => {
+  try {
+    const { user_id } = req.params;
+
+    if (!user_id) {
+      return res.status(400).json({
+        success: false,
+        message: '缺少用户ID'
+      });
+    }
+
+    // 查询profile_jobs表中指定user_id的最新记录
+    const { data, error } = await supabase
+      .from('profile_jobs')
+      .select('*')
+      .eq('user_id', user_id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single();
+
+    if (error) {
+      // 如果表不存在或没有记录，返回友好提示
+      if (error.code === 'PGRST116' || error.message.includes('No rows found')) {
+        return res.status(404).json({
+          success: false,
+          message: '未找到个人画像分析记录'
+        });
+      }
+      return handleApiError(error, res, '获取个人画像分析记录失败');
+    }
+
+    res.json({
+      success: true,
+      message: '获取个人画像分析记录成功',
+      data
+    });
+
+  } catch (error) {
+    handleApiError(error, res, '获取个人画像分析记录时发生错误');
+  }
+});
+
 export default router;

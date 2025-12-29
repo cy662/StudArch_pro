@@ -199,119 +199,83 @@ const StudentProfileAnalysis: React.FC = () => {
       setPortraitStatus('generating');
       setError(null);
 
-      // 准备n8n工作流调用
-      console.log('准备调用n8n工作流，学生ID:', studentId);
-
-      // 直接调用n8n工作流生成个性化分析结果和画像
+      // 1. 调用n8n工作流但不等待其完成
+      console.log('调用n8n工作流生成画像...');
       try {
         // 使用用户提供的实际n8n工作流webhook URL
-        console.log('调用n8n工作流前的参数检查:', {
-          studentId: studentId,
-          webhookUrl: 'https://cy2005.app.n8n.cloud/webhook/student-profile-analysis'
-        });
-        
-        const n8nResult = await generateStudentProfile(
+        generateStudentProfile(
           studentId,
           'https://cy2005.app.n8n.cloud/webhook/student-profile-analysis',
           '',
           WORKFLOW_TIMEOUT_MS
-        );
-        
-        console.log('n8n工作流调用结果:', n8nResult);
-        
-        // 处理524超时错误
-        if (n8nResult.status_code === 524) {
-          setError('生成画像超时，请稍后重试。这可能是由于网络连接问题或n8n服务器响应缓慢导致的。');
-          setPortraitStatus('error');
-          console.error('n8n工作流调用超时(524):', n8nResult);
-          return;
-        }
-        
-        if (n8nResult.success) {
-          // 处理n8n返回的数据
-          const workflowData = n8nResult.data;
-          
-          console.log('n8n返回的工作流数据:', workflowData);
-          
-          // 检查工作流数据是否包含必要的字段
-          if (workflowData) {
-            // 检查是否包含所有必要的字段
-            const hasSummary = workflowData?.summary || workflowData?.output?.summary;
-            const hasStrengths = workflowData?.strengths || workflowData?.output?.strengths;
-            const hasAchievements = workflowData?.achievements || workflowData?.output?.achievements;
-            const hasSuggestions = workflowData?.developmentSuggestions || workflowData?.output?.developmentSuggestions;
-            
-            console.log('工作流数据字段检查:', {
-              hasSummary,
-              hasStrengths,
-              hasAchievements,
-              hasSuggestions
-            });
-            
-            // 处理n8n返回的数据结构，适配前端组件
-            if (workflowData) {
-              // 提取分析结果
-              const profileData = workflowData?.profile || workflowData;
-              
-              // 提取玫瑰图数据并转换为前端期望的雷达图格式
-              const roseChartData = workflowData?.roseChartData || workflowData?.chartConfig;
-              let radarChartData: AnalysisResult['radarChart'] | undefined = undefined;
-              
-              if (roseChartData) {
-                radarChartData = {
-                  labels: roseChartData.dimensions || [],
-                  datasets: [{
-                    label: '能力评分',
-                    data: roseChartData.values || [],
-                    backgroundColor: ['rgba(255, 99, 132, 0.2)', 'rgba(54, 162, 235, 0.2)', 'rgba(255, 206, 86, 0.2)', 'rgba(75, 192, 192, 0.2)', 'rgba(153, 102, 255, 0.2)'],
-                    borderColor: ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)'],
-                    borderWidth: 1
-                  }]
-                };
-              }
-              
-              // 构建前端需要的AnalysisResult对象
-              const result: AnalysisResult = {
-                summary: profileData.summary || '',
-                strengths: profileData.strengths || [],
-                achievements: profileData.achievements || [],
-                developmentSuggestions: profileData.developmentSuggestions || '',
-                radarChart: radarChartData
-              };
-              
-              setAnalysisResult(result);
-            } else {
-              throw new Error('工作流未返回分析结果');
-            }
-            
-            // 不再设置画像URL，因为不需要显示图片
-            
-            setPortraitStatus('success');
-            setError(null);
-            console.log('画像和分析结果生成成功:', studentId, n8nResult.data);
-          } else {
-            console.warn('n8n工作流返回成功但数据为空:', n8nResult);
-            // 如果工作流返回空数据，使用模拟数据作为备选
-            setAnalysisResult(mockAnalysisResult);
-            setPortraitStatus('success');
-            setError('当前工作流返回数据为空，使用模拟数据展示');
-          }
-        } else {
-          console.error('获取n8n工作流结果失败:', n8nResult.error);
-          setError('生成分析结果失败: ' + (n8nResult.error || '未知错误'));
-          setPortraitStatus('error');
-        }
+        ).then(n8nResult => {
+          console.log('n8n工作流调用结果（异步）:', n8nResult);
+        }).catch(n8nError => {
+          console.error('调用n8n工作流时发生异常（异步）:', n8nError);
+        });
       } catch (n8nError) {
-          // 增强对超时的提示，便于用户判断是否需要重试
-          if (n8nError instanceof DOMException && n8nError.name === 'AbortError') {
-            console.error('调用n8n工作流超时，已中断等待');
-            setError('生成耗时较长，前端等待已超时（最长120分钟）。请检查n8n运行状态后重试。');
-          } else {
-            console.error('调用n8n工作流时发生异常:', n8nError);
-            setError('调用分析服务时发生异常: ' + (n8nError instanceof Error ? n8nError.message : '未知错误'));
+        console.error('调用n8n工作流时发生异常:', n8nError);
+        // 继续执行，不中断流程
+      }
+
+      // 2. 直接查询数据库获取最新的个人画像记录
+      console.log('查询数据库获取最新个人画像记录...');
+      try {
+        const response = await fetch(`/api/student-learning/get-latest-profile-job/${studentId}`);
+        const result = await response.json();
+        console.log('数据库查询结果:', result);
+
+        if (result.success) {
+          // 处理数据库返回的数据
+          const profileData = result.data;
+          
+          // 提取分析结果数据
+          const analysisData = profileData.analysis_result || {};
+          
+          // 提取雷达图数据并转换为前端期望的格式
+          let radarChartData: AnalysisResult['radarChart'] | undefined = undefined;
+          if (analysisData.radarChart) {
+            radarChartData = analysisData.radarChart;
+          } else if (analysisData.roseChartData) {
+            radarChartData = {
+              labels: analysisData.roseChartData.dimensions || [],
+              datasets: [{
+                label: '能力评分',
+                data: analysisData.roseChartData.values || [],
+                backgroundColor: ['rgba(255, 99, 132, 0.2)', 'rgba(54, 162, 235, 0.2)', 'rgba(255, 206, 86, 0.2)', 'rgba(75, 192, 192, 0.2)', 'rgba(153, 102, 255, 0.2)'],
+                borderColor: ['rgba(255, 99, 132, 1)', 'rgba(54, 162, 235, 1)', 'rgba(255, 206, 86, 1)', 'rgba(75, 192, 192, 1)', 'rgba(153, 102, 255, 1)'],
+                borderWidth: 1
+              }]
+            };
           }
-          setPortraitStatus('error');
+          
+          // 构建前端需要的AnalysisResult对象
+          const resultData: AnalysisResult = {
+            summary: analysisData.summary || '',
+            strengths: analysisData.strengths || [],
+            achievements: analysisData.achievements || [],
+            developmentSuggestions: analysisData.developmentSuggestions || '',
+            radarChart: radarChartData
+          };
+          
+          setAnalysisResult(resultData);
+          setPortraitStatus('success');
+          setError(null);
+          console.log('画像和分析结果查询成功:', studentId, resultData);
+        } else {
+          console.error('获取个人画像分析记录失败:', result.message);
+          // 如果没有找到记录，使用模拟数据作为备选
+          setAnalysisResult(mockAnalysisResult);
+          setPortraitStatus('success');
+          setError(result.message || '未找到个人画像分析记录，使用模拟数据展示');
         }
+      } catch (dbError) {
+        console.error('查询数据库时发生异常:', dbError);
+        // 如果数据库查询失败，使用模拟数据作为备选
+        setAnalysisResult(mockAnalysisResult);
+        setPortraitStatus('success');
+        setError('查询数据库失败，使用模拟数据展示');
+      }
     } catch (err) {
       console.error('生成画像时发生错误:', err);
       setError('生成画像时发生网络错误，请稍后重试');
