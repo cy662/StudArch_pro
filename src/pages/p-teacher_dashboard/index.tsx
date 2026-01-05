@@ -5,6 +5,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
 import { UserWithRole } from '../../types/user';
 import UserService from '../../services/userService';
+import ChangePasswordModal from '../../components/ChangePasswordModal';
 
 const TeacherDashboard: React.FC = () => {
   const navigate = useNavigate();
@@ -17,6 +18,8 @@ const TeacherDashboard: React.FC = () => {
   const [approvedGraduationCount, setApprovedGraduationCount] = useState<number>(0);
   const [graduationCompletionRate, setGraduationCompletionRate] = useState<string>('0%');
   const [graduationRateLoading, setGraduationRateLoading] = useState<boolean>(true);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   useEffect(() => {
     const loadUserInfo = async () => {
@@ -41,18 +44,23 @@ const TeacherDashboard: React.FC = () => {
     const loadStudentCount = async () => {
       try {
         setStudentCountLoading(true);
-        // 直接获取student_complete_info表中的学生总数
-        const count = await UserService.getStudentCompleteInfoCount();
+        // 获取当前登录教师的信息
+        const userInfo = localStorage.getItem('user_info');
+        if (!userInfo) {
+          setStudentCount(0);
+          setStudentCountLoading(false);
+          return;
+        }
+        
+        const userData = JSON.parse(userInfo);
+        const teacherId = userData.id;
+        
+        // 获取该教师管理的学生总数
+        const count = await UserService.getStudentCompleteInfoCount(teacherId);
         setStudentCount(count || 0);
         
-        // 学生总数加载完成后，加载毕业去向完成率
-        const userInfo = localStorage.getItem('user_info');
-        if (userInfo) {
-          const userData = JSON.parse(userInfo);
-          await loadGraduationCompletionRate(userData.id);
-        } else {
-          await loadGraduationCompletionRate();
-        }
+        // 学生总数加载完成后，加载毕业去向完成率（传入学生总数）
+        await loadGraduationCompletionRate(teacherId, count || 0);
       } catch (error) {
         console.error('加载学生统计数据失败:', error);
       } finally {
@@ -73,16 +81,17 @@ const TeacherDashboard: React.FC = () => {
       }
     };
 
-    const loadGraduationCompletionRate = async (teacherId?: string) => {
+    const loadGraduationCompletionRate = async (teacherId?: string, currentStudentCount?: number) => {
       try {
         setGraduationRateLoading(true);
         // 获取已审批毕业去向学生数量
         const approvedCount = await UserService.getApprovedGraduationApplicationsCount(teacherId);
         setApprovedGraduationCount(approvedCount || 0);
         
-        // 计算完成率
-        if (studentCount > 0 && approvedCount !== undefined) {
-          const rate = (approvedCount / studentCount) * 100;
+        // 计算完成率（使用传入的学生总数或当前状态中的学生总数）
+        const totalStudents = currentStudentCount !== undefined ? currentStudentCount : studentCount;
+        if (totalStudents > 0 && approvedCount !== undefined) {
+          const rate = (approvedCount / totalStudents) * 100;
           setGraduationCompletionRate(`${rate.toFixed(1)}%`);
         } else {
           setGraduationCompletionRate('0%');
@@ -165,35 +174,55 @@ const TeacherDashboard: React.FC = () => {
           
           {/* 用户信息和操作 */}
           <div className="flex items-center space-x-4">
-
-            {/* 用户信息 */}
-            <div 
-              onClick={handleUserInfoClick}
-              className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
-            >
-              <img 
-                src="https://s.coze.cn/image/CMFdm7Dv1Bo/" 
-                alt="教师头像" 
-                className="w-8 h-8 rounded-full" 
-              />
-              <div className="text-sm">
-                <div className="font-medium text-text-primary">
-                  {loading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '未知教师')}
+            {/* 用户信息下拉菜单 */}
+            <div className="relative">
+              <div 
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+              >
+                <img 
+                  src="https://s.coze.cn/image/CMFdm7Dv1Bo/" 
+                  alt="教师头像" 
+                  className="w-8 h-8 rounded-full" 
+                />
+                <div className="text-sm">
+                  <div className="font-medium text-text-primary">
+                    {loading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '未知教师')}
+                  </div>
+                  <div className="text-text-secondary">
+                    {loading ? '加载中...' : (currentUser?.role_name || '教师')}
+                  </div>
                 </div>
-                <div className="text-text-secondary">
-                  {loading ? '加载中...' : (currentUser?.role_name || '教师')}
-                </div>
+                <i className="fas fa-chevron-down text-xs text-text-secondary"></i>
               </div>
-              <i className="fas fa-chevron-down text-xs text-text-secondary"></i>
+              
+              {/* 下拉菜单 */}
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowChangePasswordModal(true);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  >
+                    <i className="fas fa-key mr-2"></i>
+                    修改密码
+                  </button>
+                  <div className="border-t border-gray-200 my-1"></div>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      handleLogoutClick();
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <i className="fas fa-sign-out-alt mr-2"></i>
+                    退出登录
+                  </button>
+                </div>
+              )}
             </div>
-            
-            {/* 退出登录 */}
-            <button 
-              onClick={handleLogoutClick}
-              className="text-text-secondary hover:text-red-500 transition-colors"
-            >
-              <i className="fas fa-sign-out-alt text-lg"></i>
-            </button>
           </div>
         </div>
       </header>
@@ -352,6 +381,26 @@ const TeacherDashboard: React.FC = () => {
           </div>
         </section>
       </main>
+
+      {/* 修改密码弹窗 */}
+      {currentUser?.id && (
+        <ChangePasswordModal
+          visible={showChangePasswordModal}
+          onClose={() => setShowChangePasswordModal(false)}
+          userId={currentUser.id}
+          onSuccess={() => {
+            alert('密码修改成功！');
+          }}
+        />
+      )}
+
+      {/* 点击外部关闭下拉菜单 */}
+      {showUserMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowUserMenu(false)}
+        />
+      )}
     </div>
   );
 };

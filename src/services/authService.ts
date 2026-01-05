@@ -497,6 +497,99 @@ export class AuthService {
       return null
     }
   }
+
+  // 修改密码
+  static async changePassword(userId: string, oldPassword: string, newPassword: string): Promise<{ success: boolean; error?: string }> {
+    try {
+      console.log('修改密码请求:', { userId })
+
+      // 验证新密码格式
+      if (!newPassword || newPassword.length < 6) {
+        return {
+          success: false,
+          error: '新密码长度至少为6位'
+        }
+      }
+
+      // 检查是否为模拟模式
+      const isDemoMode = !import.meta.env.VITE_SUPABASE_URL || 
+          import.meta.env.VITE_SUPABASE_URL.includes('your-project-ref') ||
+          import.meta.env.VITE_SUPABASE_URL.includes('demo.supabase.co')
+
+      if (isDemoMode) {
+        console.log('模拟模式：密码修改成功')
+        return { success: true }
+      }
+
+      // 获取用户信息
+      const { data: user, error: userError } = await supabase
+        .from('users')
+        .select('id, password_hash')
+        .eq('id', userId)
+        .single()
+
+      if (userError || !user) {
+        console.error('获取用户信息失败:', userError)
+        return {
+          success: false,
+          error: '用户不存在'
+        }
+      }
+
+      // 验证旧密码
+      const oldPasswordHash = await hashPassword(oldPassword)
+      if (oldPasswordHash !== user.password_hash) {
+        // 尝试使用RPC函数验证（如果存在）
+        try {
+          const { data: passwordCheck, error: passwordError } = await supabase.rpc(
+            'verify_password',
+            {
+              user_id: userId,
+              password: oldPassword
+            }
+          )
+
+          if (passwordError || !passwordCheck) {
+            return {
+              success: false,
+              error: '原密码错误'
+            }
+          }
+        } catch (rpcError) {
+          return {
+            success: false,
+            error: '原密码错误'
+          }
+        }
+      }
+
+      // 生成新密码哈希
+      const newPasswordHash = await hashPassword(newPassword)
+
+      // 更新密码
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ password_hash: newPasswordHash })
+        .eq('id', userId)
+
+      if (updateError) {
+        console.error('更新密码失败:', updateError)
+        return {
+          success: false,
+          error: `更新密码失败: ${updateError.message}`
+        }
+      }
+
+      console.log('密码修改成功')
+      return { success: true }
+    } catch (error) {
+      console.error('修改密码异常:', error)
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : '修改密码失败'
+      }
+    }
+  }
 }
 
 export default AuthService

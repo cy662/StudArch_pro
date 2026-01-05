@@ -7,12 +7,15 @@ import styles from './styles.module.css';
 import { UserWithRole } from '../../types/user';
 import { useAuth } from '../../hooks/useAuth';
 import useStudentProfile from '../../hooks/useStudentProfile';
+import ChangePasswordModal from '../../components/ChangePasswordModal';
 
 const StudentDashboard: React.FC = () => {
   const navigate = useNavigate();
   const { user: currentUser, loading: authLoading, needsProfileCompletion, clearProfileCompletionReminder } = useAuth();
   const [showProfileReminder, setShowProfileReminder] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
 
   // 使用useStudentProfile hook获取个人信息状态
   const { 
@@ -462,34 +465,63 @@ const StudentDashboard: React.FC = () => {
           
           {/* 用户信息和操作 */}
           <div className="flex items-center space-x-4">
-            {/* 用户信息 */}
-            <Link 
-              to="/student-my-profile"
-              className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
-            >
-              <img 
-                src={profile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/DQIklNDlQyw/"} 
-                alt="学生头像" 
-                className="w-8 h-8 rounded-full object-cover" 
-              />
-              <div className="text-sm">
-                <div className="font-medium text-text-primary">
-                  {loading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '未知用户')}
+            {/* 用户信息下拉菜单 */}
+            <div className="relative">
+              <div 
+                onClick={() => setShowUserMenu(!showUserMenu)}
+                className="flex items-center space-x-3 cursor-pointer hover:bg-gray-50 rounded-lg p-2 transition-colors"
+              >
+                <img 
+                  src={profile?.profile_photo || currentUser?.avatar || "https://s.coze.cn/image/DQIklNDlQyw/"} 
+                  alt="学生头像" 
+                  className="w-8 h-8 rounded-full object-cover" 
+                />
+                <div className="text-sm">
+                  <div className="font-medium text-text-primary">
+                    {loading ? '加载中...' : (currentUser?.full_name || currentUser?.username || '未知用户')}
+                  </div>
+                  <div className="text-text-secondary">
+                    {loading ? '加载中...' : (currentUser?.class_name || '未知班级')}
+                  </div>
                 </div>
-                <div className="text-text-secondary">
-                  {loading ? '加载中...' : (currentUser?.class_name || '未知班级')}
-                </div>
+                <i className="fas fa-chevron-down text-xs text-text-secondary"></i>
               </div>
-              <i className="fas fa-chevron-down text-xs text-text-secondary"></i>
-            </Link>
-            
-            {/* 退出登录 */}
-            <button 
-              onClick={handleLogoutClick}
-              className="text-text-secondary hover:text-red-500 transition-colors"
-            >
-              <i className="fas fa-sign-out-alt text-lg"></i>
-            </button>
+              
+              {/* 下拉菜单 */}
+              {showUserMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-lg border border-gray-200 py-2 z-50">
+                  <Link 
+                    to="/student-my-profile"
+                    onClick={() => setShowUserMenu(false)}
+                    className="block px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  >
+                    <i className="fas fa-user mr-2"></i>
+                    个人资料
+                  </Link>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      setShowChangePasswordModal(true);
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
+                  >
+                    <i className="fas fa-key mr-2"></i>
+                    修改密码
+                  </button>
+                  <div className="border-t border-gray-200 my-1"></div>
+                  <button
+                    onClick={() => {
+                      setShowUserMenu(false);
+                      handleLogoutClick();
+                    }}
+                    className="w-full text-left px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <i className="fas fa-sign-out-alt mr-2"></i>
+                    退出登录
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -755,6 +787,26 @@ const StudentDashboard: React.FC = () => {
 
 
       </main>
+
+      {/* 修改密码弹窗 */}
+      {currentUser?.id && (
+        <ChangePasswordModal
+          visible={showChangePasswordModal}
+          onClose={() => setShowChangePasswordModal(false)}
+          userId={currentUser.id}
+          onSuccess={() => {
+            message.success('密码修改成功！');
+          }}
+        />
+      )}
+
+      {/* 点击外部关闭下拉菜单 */}
+      {showUserMenu && (
+        <div
+          className="fixed inset-0 z-40"
+          onClick={() => setShowUserMenu(false)}
+        />
+      )}
     </div>
   );
 };

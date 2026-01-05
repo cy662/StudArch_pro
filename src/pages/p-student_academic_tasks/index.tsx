@@ -355,7 +355,7 @@ const StudentAcademicTasks: React.FC = () => {
 
   useEffect(() => {
     const originalTitle = document.title;
-    document.title = '教学任务与安排 - 学档通';
+    document.title = '教学任务与安安排 - 学档通';
     return () => { document.title = originalTitle; };
   }, []);
 
@@ -804,7 +804,7 @@ const StudentAcademicTasks: React.FC = () => {
             className={`${styles.navItem} ${styles.navItemActive} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors`}
           >
             <i className="fas fa-book text-lg"></i>
-            <span className="font-medium">教学任务与安排</span>
+            <span className="font-medium">课程收获与成功</span>
           </Link>
         </nav>
       </aside>
@@ -814,11 +814,11 @@ const StudentAcademicTasks: React.FC = () => {
         {/* 页面头部 */}
         <div className="mb-8">
           <div>
-            <h2 className="text-2xl font-bold text-text-primary mb-2">教学任务与安排</h2>
+            <h2 className="text-2xl font-bold text-text-primary mb-2">课程收获与成功</h2>
             <nav className="text-sm text-text-secondary">
               <Link to="/student-dashboard" className="hover:text-secondary">首页</Link>
               <span className="mx-2">/</span>
-              <span>教学任务与安排</span>
+              <span>课程收获与成功</span>
             </nav>
           </div>
         </div>

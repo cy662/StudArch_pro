@@ -782,8 +782,16 @@ export class UserService {
   }
 
   // 获取student_complete_info表中的学生总数
-  static async getStudentCompleteInfoCount(): Promise<number> {
+  static async getStudentCompleteInfoCount(teacherId?: string): Promise<number> {
     try {
+      // 如果提供了教师ID，只统计该教师管理的学生
+      if (teacherId) {
+        // 获取该教师管理的学生列表总数
+        const result = await this.getTeacherStudents(teacherId, { page: 1, limit: 1 });
+        return result.total;
+      }
+
+      // 如果没有提供教师ID，返回所有学生总数（保持向后兼容）
       const { error, count } = await supabase
         .from('student_complete_info')
         .select('*', { count: 'exact', head: true });
@@ -803,18 +811,62 @@ export class UserService {
   // 获取未审核毕业去向申请数量
   static async getPendingGraduationApplicationsCount(teacherId?: string): Promise<number> {
     try {
-      let query = supabase
-        .from('graduation_destinations')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'pending'); // 未审核状态为'pending'
-
-      // 如果提供了教师ID，可以根据需要添加过滤条件
+      // 如果提供了教师ID，只统计该教师管理的学生
       if (teacherId) {
-        // 这里可以根据数据库结构添加相应的过滤条件
-        // 例如通过关联student_profiles和teacher_students表
+        // 1. 获取该教师管理的学生 user_id 列表
+        const { data: teacherStudents, error: tsError } = await supabase
+          .from('teacher_students')
+          .select('student_id')
+          .eq('teacher_id', teacherId);
+
+        if (tsError) {
+          console.error('获取教师学生列表失败:', tsError);
+          throw new Error(`获取教师学生列表失败: ${tsError.message}`);
+        }
+
+        if (!teacherStudents || teacherStudents.length === 0) {
+          return 0; // 该教师没有管理的学生
+        }
+
+        const studentUserIds = teacherStudents.map(ts => ts.student_id);
+
+        // 2. 获取这些 user_id 对应的 student_profiles.id 列表
+        const { data: profiles, error: profileError } = await supabase
+          .from('student_profiles')
+          .select('id')
+          .in('user_id', studentUserIds);
+
+        if (profileError) {
+          console.error('获取学生档案列表失败:', profileError);
+          throw new Error(`获取学生档案列表失败: ${profileError.message}`);
+        }
+
+        if (!profiles || profiles.length === 0) {
+          return 0; // 没有对应的学生档案
+        }
+
+        const profileIds = profiles.map(p => p.id);
+
+        // 3. 统计这些 profile_id 的未审核毕业去向申请数量
+        const { error, count } = await supabase
+          .from('graduation_destinations')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'pending')
+          .in('student_id', profileIds);
+
+        if (error) {
+          console.error('获取未审核毕业去向申请数量失败:', error);
+          throw new Error(`获取未审核任务数量失败: ${error.message}`);
+        }
+
+        return count || 0;
       }
 
-      const { error, count } = await query;
+      // 如果没有提供教师ID，返回所有未审核申请数量（保持向后兼容）
+      const { error, count } = await supabase
+        .from('graduation_destinations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'pending');
 
       if (error) {
         console.error('获取未审核毕业去向申请数量失败:', error);
@@ -831,18 +883,62 @@ export class UserService {
   // 获取已审批毕业去向学生数量
   static async getApprovedGraduationApplicationsCount(teacherId?: string): Promise<number> {
     try {
-      let query = supabase
-        .from('graduation_destinations')
-        .select('*', { count: 'exact', head: true })
-        .eq('status', 'approved'); // 已审批状态为'approved'
-
-      // 如果提供了教师ID，可以根据需要添加过滤条件
+      // 如果提供了教师ID，只统计该教师管理的学生
       if (teacherId) {
-        // 这里可以根据数据库结构添加相应的过滤条件
-        // 例如通过关联student_profiles和teacher_students表
+        // 1. 获取该教师管理的学生 user_id 列表
+        const { data: teacherStudents, error: tsError } = await supabase
+          .from('teacher_students')
+          .select('student_id')
+          .eq('teacher_id', teacherId);
+
+        if (tsError) {
+          console.error('获取教师学生列表失败:', tsError);
+          throw new Error(`获取教师学生列表失败: ${tsError.message}`);
+        }
+
+        if (!teacherStudents || teacherStudents.length === 0) {
+          return 0; // 该教师没有管理的学生
+        }
+
+        const studentUserIds = teacherStudents.map(ts => ts.student_id);
+
+        // 2. 获取这些 user_id 对应的 student_profiles.id 列表
+        const { data: profiles, error: profileError } = await supabase
+          .from('student_profiles')
+          .select('id')
+          .in('user_id', studentUserIds);
+
+        if (profileError) {
+          console.error('获取学生档案列表失败:', profileError);
+          throw new Error(`获取学生档案列表失败: ${profileError.message}`);
+        }
+
+        if (!profiles || profiles.length === 0) {
+          return 0; // 没有对应的学生档案
+        }
+
+        const profileIds = profiles.map(p => p.id);
+
+        // 3. 统计这些 profile_id 的已审批毕业去向申请数量
+        const { error, count } = await supabase
+          .from('graduation_destinations')
+          .select('*', { count: 'exact', head: true })
+          .eq('status', 'approved')
+          .in('student_id', profileIds);
+
+        if (error) {
+          console.error('获取已审批毕业去向学生数量失败:', error);
+          throw new Error(`获取已审批毕业去向学生数量失败: ${error.message}`);
+        }
+
+        return count || 0;
       }
 
-      const { error, count } = await query;
+      // 如果没有提供教师ID，返回所有已审批申请数量（保持向后兼容）
+      const { error, count } = await supabase
+        .from('graduation_destinations')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'approved');
 
       if (error) {
         console.error('获取已审批毕业去向学生数量失败:', error);

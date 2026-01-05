@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import styles from './styles.module.css';
+import { supabase } from '../../lib/supabase';
+import { StudentProfileService } from '../../services/studentProfileService';
 
 const P_teacher_learning_analysis: React.FC = () => {
   const navigate = useNavigate();
@@ -40,17 +42,82 @@ const P_teacher_learning_analysis: React.FC = () => {
     setIsAnalyzing(true);
     
     try {
-      // 模拟分析过程 - 实际项目中这里应该调用后端API
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // 1. 通过学号查询用户信息
+      const { data: userData, error: userError } = await supabase
+        .from('users')
+        .select('id, full_name, user_number, class_name')
+        .eq('user_number', studentId.trim())
+        .single();
       
-      // 模拟分析结果
-      const mockResults = {
+      if (userError || !userData) {
+        alert('未找到该学号对应的学生信息，请检查学号是否正确');
+        setIsAnalyzing(false);
+        return;
+      }
+      
+      console.log('找到用户信息:', userData);
+      
+      // 2. 通过 user_id 获取学生档案信息
+      const studentProfile = await StudentProfileService.getStudentProfile(userData.id);
+      
+      if (!studentProfile) {
+        alert('未找到该学生的档案信息');
+        setIsAnalyzing(false);
+        return;
+      }
+      
+      console.log('找到学生档案:', studentProfile);
+      
+      // 3. 获取学生技术标签
+      const technicalTagsDetail = await StudentProfileService.getStudentTechnicalTagsDetail(studentProfile.id);
+      console.log('技术标签信息:', technicalTagsDetail);
+      
+      // 4. 处理技术标签，按类别分组
+      const tagsByCategory: Record<string, string[]> = {};
+      technicalTagsDetail.tags.forEach(tag => {
+        const category = tag.tag_category || '其他';
+        if (!tagsByCategory[category]) {
+          tagsByCategory[category] = [];
+        }
+        if (!tagsByCategory[category].includes(tag.tag_name)) {
+          tagsByCategory[category].push(tag.tag_name);
+        }
+      });
+      
+      // 5. 构建技能分析数据
+      const skillsAnalysis = Object.keys(tagsByCategory).map(category => {
+        const skills = tagsByCategory[category];
+        // 根据标签数量判断等级
+        let level = '一般';
+        if (skills.length >= 5) {
+          level = '优秀';
+        } else if (skills.length >= 3) {
+          level = '良好';
+        }
+        return {
+          category: category,
+          skills: skills,
+          level: level
+        };
+      });
+      
+      // 如果没有技术标签，显示提示信息
+      if (skillsAnalysis.length === 0) {
+        skillsAnalysis.push({
+          category: '技术标签',
+          skills: ['该学生暂未添加技术标签'],
+          level: '暂无'
+        });
+      }
+      
+      // 6. 构建分析结果（使用真实的学生基本信息和技术标签，其他保持模拟数据）
+      const analysisResults = {
         studentInfo: {
-          studentId: studentId,
-          name: studentName.trim() || '未填写姓名',
-          class: '计算机科学与技术2023-1班',
-          major: '计算机科学与技术',
-          enrollmentDate: '2023-09-01'
+          studentId: userData.user_number || studentId,
+          name: userData.full_name || studentName.trim() || '未填写姓名',
+          class: userData.class_name || studentProfile.class_name || '未分配班级',
+          major: (studentProfile as any).major || '未分配专业',
+          enrollmentDate: studentProfile.admission_date || '未知'
         },
         academicPerformance: {
           overallScore: 85.5,
@@ -59,12 +126,7 @@ const P_teacher_learning_analysis: React.FC = () => {
           credits: 98,
           completedCourses: 32
         },
-        skillsAnalysis: [
-          { category: '编程语言', skills: ['Java', 'Python', 'C++', 'JavaScript'], level: '优秀' },
-          { category: '前端开发', skills: ['React', 'Vue', 'HTML/CSS'], level: '良好' },
-          { category: '后端开发', skills: ['Spring Boot', 'Node.js', 'MySQL'], level: '良好' },
-          { category: '工具使用', skills: ['Git', 'Docker', 'Linux'], level: '一般' }
-        ],
+        skillsAnalysis: skillsAnalysis,
         projectsExperience: [
           { name: '学生管理系统', role: '主要开发者', description: '使用Java Spring Boot开发的学生信息管理系统', technologies: ['Java', 'Spring Boot', 'MySQL'] },
           { name: '电商网站', role: '前端开发', description: '使用React开发的电商前端项目', technologies: ['React', 'TypeScript', 'Tailwind CSS'] }
@@ -89,12 +151,12 @@ const P_teacher_learning_analysis: React.FC = () => {
         careerDirection: '建议向全栈开发或后端开发方向发展，当前技术栈匹配度较高'
       };
       
-      setAnalysisResults(mockResults);
-      console.log('分析完成:', mockResults);
+      setAnalysisResults(analysisResults);
+      console.log('分析完成:', analysisResults);
       
     } catch (error) {
       console.error('分析过程中出错:', error);
-      alert('分析失败，请重试');
+      alert('分析失败，请重试: ' + (error instanceof Error ? error.message : '未知错误'));
     } finally {
       setIsAnalyzing(false);
     }
