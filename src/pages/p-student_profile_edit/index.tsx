@@ -586,7 +586,7 @@ const StudentProfileEdit: React.FC = () => {
             className={`${STYLES.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
           >
             <i className="fas fa-book text-lg"></i>
-            <span className="font-medium">课程收获与成功</span>
+            <span className="font-medium">课程收获与成果</span>
           </Link>
         </nav>
       </aside>

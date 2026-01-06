@@ -574,7 +574,7 @@ const StudentDashboard: React.FC = () => {
             className={`${styles.navItem} flex items-center space-x-3 px-4 py-3 rounded-lg transition-colors text-text-secondary`}
           >
             <i className="fas fa-book text-lg"></i>
-            <span className="font-medium">教学任务与安排</span>
+            <span className="font-medium">课程收获与成果</span>
           </Link>
         </nav>
       </aside>

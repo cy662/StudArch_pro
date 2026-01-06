@@ -355,20 +355,7 @@ const P_teacher_learning_analysis: React.FC = () => {
                   </div>
                 </div>
 
-                {/* 学业表现 */}
-                <div className="border-l-4 border-green-500 pl-4">
-                  <h4 className="font-semibold text-gray-800 mb-2">学业表现</h4>
-                  <div className="grid grid-cols-2 gap-4 text-sm">
-                    <div className="bg-gray-50 p-3 rounded">
-                      <div className="text-gray-600">综合成绩</div>
-                      <div className="text-xl font-bold text-green-600">{analysisResults.academicPerformance.overallScore}分</div>
-                    </div>
-                    <div className="bg-gray-50 p-3 rounded">
-                      <div className="text-gray-600">班级排名</div>
-                      <div className="text-xl font-bold text-blue-600">{analysisResults.academicPerformance.ranking}</div>
-                    </div>
-                  </div>
-                </div>
+
 
                 {/* 技能分析 */}
                 <div className="border-l-4 border-purple-500 pl-4">
